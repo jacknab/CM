@@ -1706,9 +1706,9 @@ router.post("/growth-assistant", async (req, res) => {
     return res.status(400).json({ error: "A question is required." });
   }
 
-  // Atomically claim the account's 12-hour briefing window. Doing this on the
-  // server makes the rule work across browsers/devices and prevents two tabs
-  // from launching duplicate AI requests.
+  // The opening briefing (owner, 2026-11-01): a refresh shows the last one again (kept in users.last_manage_briefing)
+  // instead of an empty page; a new one is written once it is 30 minutes old, since it describes what is happening
+  // in the salon now. Claiming the window on the server keeps two tabs from writing two at once.
   let briefingClaimedAt: Date | null = null;
   const briefingUserId = (req.session as any)?.userId as string | undefined;
   if (isAutomaticBriefing) {
@@ -1717,13 +1717,16 @@ router.post("/growth-assistant", async (req, res) => {
       `UPDATE users
           SET last_manage_briefing_at = NOW()
         WHERE id = $1
-          AND (last_manage_briefing_at IS NULL OR last_manage_briefing_at < NOW() - INTERVAL '12 hours')
+          AND (last_manage_briefing_at IS NULL OR last_manage_briefing IS NULL OR last_manage_briefing_at < NOW() - INTERVAL '30 minutes')
       RETURNING last_manage_briefing_at`,
       [briefingUserId],
     );
     briefingClaimedAt = claim.rows[0]?.last_manage_briefing_at ?? null;
     if (!briefingClaimedAt) {
-      console.info(`[growth-assistant:${diagnosticId}] automatic briefing skipped`, { reason: "visited_within_12_hours" });
+      const kept = await pool.query<{ last_manage_briefing: any }>(`SELECT last_manage_briefing FROM users WHERE id = $1`, [briefingUserId]);
+      const briefing = kept.rows[0]?.last_manage_briefing;
+      if (briefing?.reply) return res.json(briefing);
+      console.info(`[growth-assistant:${diagnosticId}] automatic briefing skipped`, { reason: "being_written" });
       return res.json({ skipped: true });
     }
   }
@@ -1802,11 +1805,15 @@ ${JSON.stringify(snapshot)}`;
       .filter((a: any) => !isAutomaticBriefing || a.id !== "at_risk")
       .slice(0, 2);
 
-    return res.json({
+    const answer = {
       reply: typeof parsed.reply === "string" && parsed.reply.trim() ? parsed.reply.trim() : "I couldn't find a reliable answer in your salon data.",
       highlights,
       actions,
-    });
+    };
+    if (briefingClaimedAt && briefingUserId) {
+      await pool.query(`UPDATE users SET last_manage_briefing = $2::jsonb WHERE id = $1`, [briefingUserId, JSON.stringify(answer)]).catch(() => undefined);
+    }
+    return res.json(answer);
   } catch (err: any) {
     if (briefingClaimedAt && briefingUserId) {
       // A failed provider/database call should not suppress the next attempt.
