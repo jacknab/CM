@@ -4311,6 +4311,9 @@ export async function registerRoutes(
   // POS setup: the /nail POS's first-time setup wizard (routes/posSetup.ts, plans/pos-setup.md).
   const { default: posSetupRouter } = await import("./routes/posSetup.js");
   app.use(posSetupRouter);
+  // The /manage assistant: looks things up and changes account and front desk settings after the owner confirms.
+  const { default: ownerAssistantRouter } = await import("./routes/ownerAssistant.js");
+  app.use(ownerAssistantRouter);
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);

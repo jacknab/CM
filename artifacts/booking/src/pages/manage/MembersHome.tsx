@@ -40,20 +40,24 @@ type Highlight = {
   detail?: string;
 };
 
+/** A settings change the assistant proposed; it happens only when the owner taps Confirm. */
+type ProposedChange = { id: number; summary: string; status: string; result?: string | null };
+
 type ConversationTurn = {
   id: number;
   prompt: string;
   response: string;
   highlights: Highlight[];
   actions: AssistantAction[];
+  changes?: ProposedChange[];
   showPrompt?: boolean;
 };
 
 const QUICK_PROMPTS: QuickPrompt[] = [
-  { label: "Find my biggest growth opportunity", prompt: "What is my biggest growth opportunity right now?", icon: TrendingUp },
-  { label: "Compare this month to last month", prompt: "How is my revenue this month compared with last month?", icon: BarChart3 },
-  { label: "Show clients at risk", prompt: "What do my at-risk and drifting client numbers tell me?", icon: Users },
-  { label: "Tell me what to do next", prompt: "Based on my salon data, what is the most valuable action I should take next?", icon: Lightbulb },
+  { label: "How did this week go?", prompt: "How did this week go compared with last week?", icon: BarChart3 },
+  { label: "Who are my best clients?", prompt: "Who are my best clients this year?", icon: Users },
+  { label: "Help me set up my front desk", prompt: "Help me set up my front desk, one step at a time.", icon: Lightbulb },
+  { label: "Check my front desk settings", prompt: "What are my front desk settings right now?", icon: TrendingUp },
 ];
 
 async function fetchOverview(): Promise<Overview> {
@@ -86,7 +90,7 @@ function AiBubble({ children, animate = false }: { children: React.ReactNode; an
   return (
     <div className={`flex items-start gap-3 ${animate ? "members-slide-in" : ""}`} style={{ maxWidth: "90%" }}>
       <CertxaAvatar />
-      <div className="rounded-2xl rounded-tl-sm border border-gray-200 bg-white px-4 py-3 text-sm leading-relaxed text-gray-900 shadow-sm">
+      <div className="rounded-2xl rounded-tl-sm border border-gray-200 bg-white px-4 py-3 text-sm leading-relaxed text-gray-900 shadow-sm whitespace-pre-line">
         {children}
       </div>
     </div>
@@ -147,6 +151,23 @@ export default function MembersHome() {
     setIsReplying(true);
 
     try {
+      // Questions go to the assistant that can look things up and propose settings changes (routes/ownerAssistant.ts);
+      // the opening briefing still comes from the growth assistant.
+      if (!options.automaticBriefing) {
+        const response = await fetch("/api/assistant/chat", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: cleanPrompt }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.message || "The assistant is unavailable right now.");
+        setTurns(previous => [...previous, {
+          id: Date.now(), prompt: cleanPrompt, response: String(payload.reply || ""),
+          highlights: [], actions: [], changes: Array.isArray(payload.actions) ? payload.actions : [],
+        }]);
+        return;
+      }
       const history = turns.flatMap(turn => [
         { role: "user", content: turn.prompt },
         { role: "assistant", content: turn.response },
@@ -208,14 +229,39 @@ export default function MembersHome() {
     if (authLoading || isLoading || !data || briefingAttemptedRef.current) return;
     briefingAttemptedRef.current = true;
     const ownerName = data.user?.firstName || user?.firstName || "there";
-    ask(
-      `${greeting}, ${ownerName}. Give me a concise overview of my business right now. Include revenue progress, client risk, schedule utilization, and the single most valuable action to take next.`,
-      { automaticBriefing: true },
-    );
+    void ownerName;
+    // The kept conversation first, then today's briefing under it.
+    void (async () => {
+      try {
+        const r = await fetch("/api/assistant/history", { credentials: "include" });
+        const msgs: { id: number; role: string; content: string; actions?: ProposedChange[] }[] = r.ok ? await r.json() : [];
+        const past: ConversationTurn[] = [];
+        for (let i = 0; i < msgs.length; i++) {
+          if (msgs[i].role !== "user") continue;
+          const answer = msgs[i + 1]?.role === "assistant" ? msgs[i + 1] : null;
+          past.push({ id: msgs[i].id, prompt: msgs[i].content, response: answer?.content ?? "", highlights: [], actions: [], changes: answer?.actions ?? [] });
+        }
+        if (past.length) setTurns(past);
+      } catch { /* the briefing still comes */ }
+      ask("Give me my briefing.", { automaticBriefing: true });
+    })();
     // `ask` intentionally runs once per mounted visit; the server enforces the
     // durable cross-device 12-hour window.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, isLoading, data, user?.firstName, greeting]);
+
+  async function decide(turnId: number, change: ProposedChange, decision: "confirm" | "cancel") {
+    const mark = (patch: Partial<ProposedChange>) => setTurns(prev => prev.map(t => t.id !== turnId ? t
+      : { ...t, changes: (t.changes ?? []).map(c => c.id === change.id ? { ...c, ...patch } : c) }));
+    mark({ status: "working" });
+    try {
+      const r = await fetch(`/api/assistant/actions/${change.id}/${decision}`, { method: "POST", credentials: "include" });
+      const d = await r.json().catch(() => ({}));
+      mark({ status: d.status ?? (r.ok ? "done" : "failed"), result: d.message ?? null });
+    } catch {
+      mark({ status: "pending", result: "No connection — try again." });
+    }
+  }
 
   function submitMessage(event: FormEvent) {
     event.preventDefault();
@@ -280,6 +326,28 @@ export default function MembersHome() {
           <div key={turn.id} className="space-y-3">
             {turn.showPrompt !== false && <div className="flex justify-end"><UserBubble>{turn.prompt}</UserBubble></div>}
             <AiBubble animate={index === turns.length - 1}>{turn.response}</AiBubble>
+            {(turn.changes ?? []).map(change => (
+              <div key={change.id} className="ml-11 rounded-xl border-2 bg-white px-3.5 py-3" style={{ borderColor: "#D1D5DB" }} data-testid="assistant-change">
+                <p className="text-sm font-medium text-gray-900">{change.summary}</p>
+                {change.status === "pending" || change.status === "working" ? (
+                  <div className="mt-2.5 flex gap-2">
+                    <button type="button" disabled={change.status === "working"} onClick={() => void decide(turn.id, change, "confirm")}
+                      className="min-h-[40px] flex-1 rounded-lg text-sm font-semibold text-white disabled:opacity-60" style={{ background: PLUM }} data-testid="assistant-change-confirm">
+                      {change.status === "working" ? "Saving…" : "Confirm"}
+                    </button>
+                    <button type="button" disabled={change.status === "working"} onClick={() => void decide(turn.id, change, "cancel")}
+                      className="min-h-[40px] flex-1 rounded-lg border-2 border-gray-300 text-sm font-semibold text-gray-700 disabled:opacity-60" data-testid="assistant-change-cancel">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <p className={`mt-1.5 text-xs font-medium ${change.status === "failed" ? "text-red-700" : "text-gray-500"}`} data-testid="assistant-change-result">
+                    {change.result || (change.status === "done" ? "Done." : change.status === "cancelled" ? "Cancelled — nothing was changed." : change.status === "failed" ? "That change didn't go through." : "")}
+                  </p>
+                )}
+                {change.status === "pending" && change.result && <p className="mt-1.5 text-xs text-red-700">{change.result}</p>}
+              </div>
+            ))}
             <div className="ml-11 space-y-2">
               {turn.actions.map(action => {
                 return (
