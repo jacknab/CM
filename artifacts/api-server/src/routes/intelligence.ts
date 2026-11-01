@@ -1569,15 +1569,21 @@ export async function buildAssistantSnapshot(storeId: number) {
         COALESCE(SUM(a.total_paid) FILTER (WHERE a.status = 'completed'), 0)::float AS revenue,
         COALESCE(SUM(a.tip_amount) FILTER (WHERE a.status = 'completed'), 0)::float AS tips,
         COUNT(*) FILTER (WHERE a.status IN ('no_show', 'no-show'))::int AS no_shows,
+        COALESCE(SUM(COALESCE(NULLIF(a.service_revenue, 0), sv.price, 0)) FILTER (WHERE a.status IN ('no_show', 'no-show')), 0)::float AS no_show_value,
         COUNT(*) FILTER (WHERE a.status IN ('cancelled', 'canceled'))::int AS cancellations,
+        COALESCE(SUM(COALESCE(NULLIF(a.service_revenue, 0), sv.price, 0)) FILTER (WHERE a.status IN ('cancelled', 'canceled')), 0)::float AS cancellation_value,
         COUNT(*) FILTER (WHERE a.started_at IS NOT NULL AND ${notCancelled} AND a.status <> 'completed')::int AS in_service_now,
         COUNT(*) FILTER (WHERE a.checked_in_at IS NOT NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed')::int AS waiting_now,
         COUNT(*) FILTER (WHERE a.checked_in_at IS NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal})::int AS still_coming_today,
         to_char(MIN(${local}) FILTER (WHERE a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal}), 'FMHH12:MI AM') AS next_booking_at
-      FROM appointments a WHERE a.store_id = $1 AND ${local}::date = ${day}`);
+      FROM appointments a LEFT JOIN services sv ON sv.id = a.service_id WHERE a.store_id = $1 AND ${local}::date = ${day}`);
   // Certxa's own texts that day (intelligence_interventions), and clients who booked that day after a Certxa text
   // in the 30 days before; Autumn's calls that day.
-  const [texts] = await q(`SELECT COUNT(*)::int AS sent, COUNT(DISTINCT customer_id)::int AS clients
+  const [texts] = await q(`SELECT COUNT(*)::int AS sent, COUNT(DISTINCT customer_id)::int AS clients,
+        COUNT(*) FILTER (WHERE intervention_type = 'rebooking_nudge')::int AS rebooking,
+        COUNT(*) FILTER (WHERE intervention_type = 'winback')::int AS winback,
+        COUNT(*) FILTER (WHERE intervention_type = 'cancellation_recovery')::int AS after_cancel,
+        COUNT(*) FILTER (WHERE intervention_type = 'no_show_winback')::int AS after_no_show
       FROM intelligence_interventions WHERE store_id = $1 AND status = 'sent' AND (sent_at AT TIME ZONE 'UTC' AT TIME ZONE $2)::date = ${day}`);
   const [cameBack] = await q(`SELECT COUNT(DISTINCT a.customer_id)::int AS clients, COALESCE(SUM(${money}), 0)::float AS value
       FROM appointments a LEFT JOIN services sv ON sv.id = a.service_id
@@ -1633,8 +1639,19 @@ export async function buildAssistantSnapshot(storeId: number) {
         rightNow: { clientsInService: today?.in_service_now ?? 0, clientsWaiting: today?.waiting_now ?? 0, teamClockedIn: team?.working ?? 0 },
         stillComingToday: today?.still_coming_today ?? 0, nextBookingAt: today?.next_booking_at ?? null,
       } : {}),
-      totals: { servicesDone: today?.services_done ?? 0, revenue: round(today?.revenue), tips: round(today?.tips), noShows: today?.no_shows ?? 0, cancellations: today?.cancellations ?? 0 },
-      certxaTexts: { textsSent: texts?.sent ?? 0, clientsTexted: texts?.clients ?? 0, clientsWhoBookedAfterACertxaText: cameBack?.clients ?? 0, valueOfThoseBookings: round(cameBack?.value) },
+      totals: {
+        servicesDone: today?.services_done ?? 0, revenue: round(today?.revenue), tips: round(today?.tips),
+        noShows: today?.no_shows ?? 0, estimatedRevenueLostToNoShows: round(today?.no_show_value),
+        cancellations: today?.cancellations ?? 0, estimatedRevenueLostToCancellations: round(today?.cancellation_value),
+      },
+      // What Certxa's own texts that day were for (each one is a text to one client).
+      certxaTexts: {
+        rebookingRemindersToClientsDueForTheirNextVisit: texts?.rebooking ?? 0,
+        textsToClientsWhoHaventBeenBackInAWhile: texts?.winback ?? 0,
+        followUpsToClientsWhoCancelled: texts?.after_cancel ?? 0,
+        followUpsToClientsWhoMissedTheirAppointment: texts?.after_no_show ?? 0,
+        clientsWhoBookedAfterACertxaText: cameBack?.clients ?? 0, valueOfThoseBookings: round(cameBack?.value),
+      },
       autumn: { callsAnswered: calls?.calls ?? 0, bookingsMade: calls?.booked ?? 0 },
     },
     next7Days: { bookings: week?.bookings ?? 0, expectedValue: round(week?.value), busiestDay: busiest[0]?.day ?? null, busiestDayBookings: busiest[0]?.bookings ?? 0 },
@@ -1715,6 +1732,18 @@ router.post("/growth-assistant", async (req, res) => {
   try {
     const snapshotStartedAt = Date.now();
     const snapshot = await buildAssistantSnapshot(storeId);
+    // Zeros are left out of the business day before the model sees it (owner, 2026-11-01: never "Autumn answered no
+    // calls" or "no clients booked"); a section with nothing in it is dropped.
+    {
+      const bd: any = (snapshot as any).businessDay;
+      for (const key of ["totals", "certxaTexts", "autumn"]) {
+        const section = bd?.[key];
+        if (!section) continue;
+        for (const [k, v] of Object.entries(section)) if (v === 0) delete section[k];
+        if (!Object.keys(section).length) delete bd[key];
+      }
+      if (bd && !bd.totals) bd.nothingHappenedYet = true;
+    }
     console.info(`[growth-assistant:${diagnosticId}] snapshot built`, {
       durationMs: Date.now() - snapshotStartedAt,
       salon: snapshot.salon,
@@ -1747,7 +1776,9 @@ RULES:
 - The first message of a visit is a short briefing about ONE business day — businessDay (no headings or labels, just sentences). Say which day it is ("today" or "yesterday", from businessDay.which):
   - If businessDay.salonIsOpenNow is true: what is happening in the salon right now — clients in service, clients waiting, team clocked in, how many are still coming today and when the next one is — and revenue and services done so far today.
   - Otherwise: how that day went — revenue, services done, tips, no-shows and cancellations (businessDay.totals).
-  - Then what Certxa and Autumn did that same day: Certxa's texts (businessDay.certxaTexts) and Autumn's calls (businessDay.autumn).
+  - Whenever there are no-shows or cancellations, give the estimated revenue lost to them with the count (for example "4 no-shows, about $180 in lost bookings"), from totals.estimatedRevenueLostToNoShows / estimatedRevenueLostToCancellations. Call it an estimate.
+  - Then what Certxa and Autumn did that same day. Always say what Certxa's texts were for, by purpose, never a bare count (for example "Certxa followed up with the 4 clients who missed their appointment and sent 1 rebooking reminder"). Then Autumn's calls (businessDay.autumn).
+  - Leave out anything that is 0 — never say "no clients booked", "made no bookings" or "$0". If nothing happened yet today, say so in plain words.
   Then one short line on money this month with a fair comparison.
 - Every number in businessDay is for that one day only. Never present a day's number as a month or all-time figure, and never mix numbers from different periods in one sentence.
 - Only state things the data shows. Never claim Autumn or Certxa did something the numbers don't show (for example, don't say Autumn booked appointments when businessDay.autumn.bookingsMade is 0 — just leave bookings out).
