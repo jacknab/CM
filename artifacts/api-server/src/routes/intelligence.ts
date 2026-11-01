@@ -1626,6 +1626,10 @@ export async function buildAssistantSnapshot(storeId: number) {
     salon: store?.name ?? "the salon",
     revenue: {
       thisMonthSoFar: round(r.this_month), lastFullMonth: round(r.last_month),
+      // Worked out here so the wording is always right: "up 136%" / "down 12%" against last month's total.
+      changeVsLastMonth: Number(r.last_month) > 0
+        ? `${Number(r.this_month) >= Number(r.last_month) ? "up" : "down"} ${Math.abs(Math.round((Number(r.this_month) - Number(r.last_month)) / Number(r.last_month) * 100))}%`
+        : null,
       visitsThisMonthSoFar: visits, visitsLastMonth: r.visits_last_month ?? 0,
       dayOfMonth: r.day_of_month ?? null,
       averageTicketThisMonth: visits ? round(Number(r.this_month) / visits) : 0,
@@ -1637,7 +1641,10 @@ export async function buildAssistantSnapshot(storeId: number) {
       salonIsOpenNow: openNow,
       ...(openNow ? {
         closesAt: hoursNow?.close_time ?? null,
-        rightNow: { clientsInService: today?.in_service_now ?? 0, clientsWaiting: today?.waiting_now ?? 0, teamClockedIn: team?.working ?? 0 },
+        rightNow: {
+          clientsInTheSalonNow: (today?.in_service_now ?? 0) + (today?.waiting_now ?? 0),
+          clientsBeingServiced: today?.in_service_now ?? 0, clientsWaiting: today?.waiting_now ?? 0, teamClockedIn: team?.working ?? 0,
+        },
         // Appointments still to come today and what they are worth at their booked prices.
         stillComingToday: today?.still_coming_today ?? 0, stillComingTodayExpectedRevenue: round(today?.still_coming_value),
         nextBookingAt: today?.next_booking_at ?? null,
@@ -1740,7 +1747,7 @@ router.post("/growth-assistant", async (req, res) => {
     {
       const bd: any = (snapshot as any).businessDay;
       // Open, and no client finished yet: say so plainly, with what is still coming today.
-      if (bd?.salonIsOpenNow && !bd.totals?.servicesDone && !bd.totals?.revenue) bd.noClientsFinishedYetToday = true;
+      if (bd?.salonIsOpenNow && !bd.totals?.servicesDone && !bd.totals?.revenue) bd.noServicesCompletedYetToday = true;
       for (const key of ["totals", "certxaTexts", "autumn"]) {
         const section = bd?.[key];
         if (!section) continue;
@@ -1779,13 +1786,16 @@ RULES:
 - Answer the owner's question first and directly, in the question's own terms. Don't repeat the briefing.
 - If the owner asks how to grow or get more clients, say what is already working (new clients, top services, top team, clients who came back after Certxa's texts, Autumn's bookings) and that Certxa keeps doing this for them every day.
 - The first message of a visit is a short briefing about ONE business day — businessDay (no headings or labels, just sentences). Say which day it is ("today" or "yesterday", from businessDay.which):
-  - If businessDay.salonIsOpenNow is true: what is happening in the salon right now — clients in service, clients waiting, team clocked in — and revenue and services done so far today. Always add the appointments still coming today with what they are worth ("7 more appointments today, worth about $680") and when the next one is. Then any no-shows and cancellations so far today with the estimated revenue lost.
-  - If businessDay.noClientsFinishedYetToday is true: say plainly that no clients have been finished yet today, so no revenue yet — then the appointments still coming today and their expected value, as above.
+  - If businessDay.salonIsOpenNow is true, in this order:
+    1. Who is in the salon right now (businessDay.rightNow): if clientsInTheSalonNow is 0 say "No one is in the salon right now"; otherwise how many are being serviced and how many are waiting.
+    2. Today so far: revenue and services completed. If noServicesCompletedYetToday is true, say "No services have been completed yet today."
+    3. The appointments still coming today with what they are worth ("7 more appointments today, worth about $680") and when the next one is.
+    4. Any no-shows and cancellations so far today with the estimated revenue lost.
   - Otherwise: how that day went — revenue, services done, tips, no-shows and cancellations (businessDay.totals).
   - Whenever there are no-shows or cancellations, give the estimated revenue lost to them with the count (for example "4 no-shows, about $180 in lost bookings"), from totals.estimatedRevenueLostToNoShows / estimatedRevenueLostToCancellations. Call it an estimate.
   - Then what Certxa and Autumn did that same day. Always say what Certxa's texts were for, by purpose, never a bare count (for example "Certxa followed up with the 4 clients who missed their appointment and sent 1 rebooking reminder"). Then Autumn's calls (businessDay.autumn).
   - Leave out anything that is 0 or not in the data — never say "no clients booked", "made no bookings", "$0", or that something "isn't shown". If nothing happened yet today, say so in plain words.
-  Then one short line on money this month with a fair comparison.
+  Then one short line on this month: revenue so far and revenue.changeVsLastMonth exactly as given, with last month's total (for example "This month: $6,563, up 136% from last month's $2,778.").
 - Every number in businessDay is for that one day only. Never present a day's number as a month or all-time figure, and never mix numbers from different periods in one sentence.
 - Only state things the data shows. Never claim Autumn or Certxa did something the numbers don't show (for example, don't say Autumn booked appointments when businessDay.autumn.bookingsMade is 0 — just leave bookings out).
 
