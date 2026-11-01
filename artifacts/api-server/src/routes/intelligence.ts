@@ -1575,6 +1575,7 @@ export async function buildAssistantSnapshot(storeId: number) {
         COUNT(*) FILTER (WHERE a.started_at IS NOT NULL AND ${notCancelled} AND a.status <> 'completed')::int AS in_service_now,
         COUNT(*) FILTER (WHERE a.checked_in_at IS NOT NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed')::int AS waiting_now,
         COUNT(*) FILTER (WHERE a.checked_in_at IS NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal})::int AS still_coming_today,
+        COALESCE(SUM(COALESCE(NULLIF(a.service_revenue, 0), sv.price, 0)) FILTER (WHERE a.checked_in_at IS NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal}), 0)::float AS still_coming_value,
         to_char(MIN(${local}) FILTER (WHERE a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal}), 'FMHH12:MI AM') AS next_booking_at
       FROM appointments a LEFT JOIN services sv ON sv.id = a.service_id WHERE a.store_id = $1 AND ${local}::date = ${day}`);
   // Certxa's own texts that day (intelligence_interventions), and clients who booked that day after a Certxa text
@@ -1637,7 +1638,9 @@ export async function buildAssistantSnapshot(storeId: number) {
       ...(openNow ? {
         closesAt: hoursNow?.close_time ?? null,
         rightNow: { clientsInService: today?.in_service_now ?? 0, clientsWaiting: today?.waiting_now ?? 0, teamClockedIn: team?.working ?? 0 },
-        stillComingToday: today?.still_coming_today ?? 0, nextBookingAt: today?.next_booking_at ?? null,
+        // Appointments still to come today and what they are worth at their booked prices.
+        stillComingToday: today?.still_coming_today ?? 0, stillComingTodayExpectedRevenue: round(today?.still_coming_value),
+        nextBookingAt: today?.next_booking_at ?? null,
       } : {}),
       totals: {
         servicesDone: today?.services_done ?? 0, revenue: round(today?.revenue), tips: round(today?.tips),
@@ -1736,6 +1739,8 @@ router.post("/growth-assistant", async (req, res) => {
     // calls" or "no clients booked"); a section with nothing in it is dropped.
     {
       const bd: any = (snapshot as any).businessDay;
+      // Open, and no client finished yet: say so plainly, with what is still coming today.
+      if (bd?.salonIsOpenNow && !bd.totals?.servicesDone && !bd.totals?.revenue) bd.noClientsFinishedYetToday = true;
       for (const key of ["totals", "certxaTexts", "autumn"]) {
         const section = bd?.[key];
         if (!section) continue;
@@ -1774,7 +1779,8 @@ RULES:
 - Answer the owner's question first and directly, in the question's own terms. Don't repeat the briefing.
 - If the owner asks how to grow or get more clients, say what is already working (new clients, top services, top team, clients who came back after Certxa's texts, Autumn's bookings) and that Certxa keeps doing this for them every day.
 - The first message of a visit is a short briefing about ONE business day — businessDay (no headings or labels, just sentences). Say which day it is ("today" or "yesterday", from businessDay.which):
-  - If businessDay.salonIsOpenNow is true: what is happening in the salon right now — clients in service, clients waiting, team clocked in, how many are still coming today and when the next one is — and revenue and services done so far today.
+  - If businessDay.salonIsOpenNow is true: what is happening in the salon right now — clients in service, clients waiting, team clocked in — and revenue and services done so far today. Always add the appointments still coming today with what they are worth ("7 more appointments today, worth about $680") and when the next one is. Then any no-shows and cancellations so far today with the estimated revenue lost.
+  - If businessDay.noClientsFinishedYetToday is true: say plainly that no clients have been finished yet today, so no revenue yet — then the appointments still coming today and their expected value, as above.
   - Otherwise: how that day went — revenue, services done, tips, no-shows and cancellations (businessDay.totals).
   - Whenever there are no-shows or cancellations, give the estimated revenue lost to them with the count (for example "4 no-shows, about $180 in lost bookings"), from totals.estimatedRevenueLostToNoShows / estimatedRevenueLostToCancellations. Call it an estimate.
   - Then what Certxa and Autumn did that same day. Always say what Certxa's texts were for, by purpose, never a bare count (for example "Certxa followed up with the 4 clients who missed their appointment and sent 1 rebooking reminder"). Then Autumn's calls (businessDay.autumn).
