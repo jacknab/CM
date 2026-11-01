@@ -1545,32 +1545,6 @@ export async function buildAssistantSnapshot(storeId: number) {
   const leakage = await computeRevenueLeakage(storeId);
   const round = (n: unknown) => Math.round(Number(n) || 0);
 
-  // What Certxa did on its own in the last 30 days (owner, 2026-10-31: the assistant talks about this work, never
-  // hands the owner chores). Outreach is logged in intelligence_interventions; "booked again" = a messaged client
-  // who made a booking after the message (not cancelled).
-  const auto = await pool.query(
-    `WITH sent AS (
-       SELECT customer_id, intervention_type, sent_at FROM intelligence_interventions
-        WHERE store_id = $1 AND status = 'sent' AND sent_at >= NOW() - INTERVAL '30 days'
-     ),
-     back AS (
-       SELECT DISTINCT ON (a.id) a.id, a.customer_id, COALESCE(NULLIF(a.total_paid, 0), a.service_revenue, 0)::float AS amount
-         FROM appointments a JOIN sent s ON s.customer_id = a.customer_id
-        WHERE a.store_id = $1 AND a.created_at > s.sent_at AND a.created_at <= s.sent_at + INTERVAL '30 days'
-          AND COALESCE(a.status, '') NOT IN ('cancelled', 'canceled', 'no_show', 'no-show')
-     )
-     SELECT
-       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'rebooking_nudge')::int AS rebooking_reminders,
-       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'winback')::int AS win_back_texts,
-       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'cancellation_recovery')::int AS cancellation_follow_ups,
-       (SELECT COUNT(*) FROM sent WHERE intervention_type = 'no_show_winback')::int AS no_show_follow_ups,
-       (SELECT COUNT(DISTINCT customer_id) FROM sent)::int AS clients_reached,
-       (SELECT COUNT(DISTINCT customer_id) FROM back)::int AS clients_booked_again,
-       (SELECT COALESCE(SUM(amount), 0) FROM back)::float AS bookings_value`,
-    [storeId],
-  ).catch(() => ({ rows: [] as any[] }));
-  const a: any = auto.rows[0] ?? {};
-
   // What an owner checks between clients (owner, 2026-10-31): today, the week ahead, what sells, who's doing well,
   // new vs returning clients, reviews, and the phone calls Autumn handled. All in the salon's own time zone.
   const q = async (text: string): Promise<any[]> => (await pool.query(text, [storeId, tz]).catch(() => ({ rows: [] as any[] }))).rows;
@@ -1585,6 +1559,11 @@ export async function buildAssistantSnapshot(storeId: number) {
       FROM business_hours bh WHERE bh.store_id = $1 AND bh.day_of_week = EXTRACT(DOW FROM ${nowLocal})::int LIMIT 1`);
   const nowHm = String(hoursNow?.now_hm ?? "");
   const openNow = !!hoursNow && !hoursNow.is_closed && nowHm >= String(hoursNow.open_time) && nowHm < String(hoursNow.close_time);
+  // The business day the briefing talks about (owner, 2026-11-01): today while the salon is open and after it
+  // closes; from midnight until opening time (or on a day off) the previous day. Every "day" number below is for it.
+  const beforeOpening = !!hoursNow && !hoursNow.is_closed && nowHm < String(hoursNow.open_time);
+  const reportYesterday = !hoursNow || hoursNow.is_closed || beforeOpening;
+  const day = `(${nowLocal}::date - ${reportYesterday ? 1 : 0})`;
   const [today] = await q(`SELECT
         COUNT(*) FILTER (WHERE a.status = 'completed')::int AS services_done,
         COALESCE(SUM(a.total_paid) FILTER (WHERE a.status = 'completed'), 0)::float AS revenue,
@@ -1595,7 +1574,18 @@ export async function buildAssistantSnapshot(storeId: number) {
         COUNT(*) FILTER (WHERE a.checked_in_at IS NOT NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed')::int AS waiting_now,
         COUNT(*) FILTER (WHERE a.checked_in_at IS NULL AND a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal})::int AS still_coming_today,
         to_char(MIN(${local}) FILTER (WHERE a.started_at IS NULL AND ${notCancelled} AND a.status <> 'completed' AND ${local} > ${nowLocal}), 'FMHH12:MI AM') AS next_booking_at
-      FROM appointments a WHERE a.store_id = $1 AND ${local}::date = ${nowLocal}::date`);
+      FROM appointments a WHERE a.store_id = $1 AND ${local}::date = ${day}`);
+  // Certxa's own texts that day (intelligence_interventions), and clients who booked that day after a Certxa text
+  // in the 30 days before; Autumn's calls that day.
+  const [texts] = await q(`SELECT COUNT(*)::int AS sent, COUNT(DISTINCT customer_id)::int AS clients
+      FROM intelligence_interventions WHERE store_id = $1 AND status = 'sent' AND (sent_at AT TIME ZONE 'UTC' AT TIME ZONE $2)::date = ${day}`);
+  const [cameBack] = await q(`SELECT COUNT(DISTINCT a.customer_id)::int AS clients, COALESCE(SUM(${money}), 0)::float AS value
+      FROM appointments a LEFT JOIN services sv ON sv.id = a.service_id
+     WHERE a.store_id = $1 AND ${notCancelled} AND (a.created_at AT TIME ZONE 'UTC' AT TIME ZONE $2)::date = ${day}
+       AND EXISTS (SELECT 1 FROM intelligence_interventions i WHERE i.store_id = a.store_id AND i.customer_id = a.customer_id
+                    AND i.status = 'sent' AND i.sent_at < a.created_at AND i.sent_at > a.created_at - INTERVAL '30 days')`);
+  const [calls] = await q(`SELECT COUNT(*)::int AS calls, COUNT(appointment_id)::int AS booked
+      FROM ai_call_log WHERE store_id = $1 AND (started_at AT TIME ZONE 'UTC' AT TIME ZONE $2)::date = ${day}`);
   const [team] = await q(`SELECT COUNT(DISTINCT t.staff_id)::int AS working
       FROM timeclock t WHERE t.store_id = $1 AND t.clock_out IS NULL AND (t.clock_in AT TIME ZONE $2)::date = ${nowLocal}::date`);
   const [week] = await q(`SELECT COUNT(*)::int AS bookings, COALESCE(SUM(${money}), 0)::float AS value
@@ -1623,8 +1613,6 @@ export async function buildAssistantSnapshot(storeId: number) {
         FROM appointments a JOIN firsts f ON f.customer_id = a.customer_id WHERE a.store_id = $1 AND ${thisMonth}`);
   const [rev] = await q(`SELECT COUNT(*)::int AS reviews, ROUND(AVG(rating)::numeric, 1)::float AS avg_rating
       FROM reviews WHERE store_id = $1 AND created_at >= NOW() - INTERVAL '30 days' AND $2::text IS NOT NULL`);
-  const [calls] = await q(`SELECT COUNT(*)::int AS calls, COUNT(appointment_id)::int AS booked
-      FROM ai_call_log WHERE store_id = $1 AND started_at >= NOW() - INTERVAL '30 days' AND $2::text IS NOT NULL`);
 
   const visits = Number(r.visits_this_month) || 0;
   return {
@@ -1636,34 +1624,27 @@ export async function buildAssistantSnapshot(storeId: number) {
       averageTicketThisMonth: visits ? round(Number(r.this_month) / visits) : 0,
       tipsThisMonth: round(extras?.tips), retailSalesThisMonth: round(extras?.retail),
     },
-    today: openNow
-      ? {
-          salonIsOpenNow: true, closesAt: hoursNow?.close_time ?? null,
-          rightNow: { clientsInService: today?.in_service_now ?? 0, clientsWaiting: today?.waiting_now ?? 0, teamClockedIn: team?.working ?? 0 },
-          stillComingToday: today?.still_coming_today ?? 0, nextBookingAt: today?.next_booking_at ?? null,
-          soFarToday: { servicesDone: today?.services_done ?? 0, revenue: round(today?.revenue), tips: round(today?.tips), noShows: today?.no_shows ?? 0, cancellations: today?.cancellations ?? 0 },
-        }
-      : {
-          salonIsOpenNow: false,
-          todaysTotals: { servicesDone: today?.services_done ?? 0, revenue: round(today?.revenue), tips: round(today?.tips), noShows: today?.no_shows ?? 0, cancellations: today?.cancellations ?? 0 },
-          reason: hoursNow?.is_closed ? "closed today" : (nowHm && hoursNow && nowHm < String(hoursNow.open_time) ? "not open yet today" : "closed for the day"),
-        },
+    businessDay: {
+      which: reportYesterday ? "yesterday" : "today",
+      why: reportYesterday ? (hoursNow?.is_closed ? "the salon is closed today" : !hoursNow ? "no opening hours set for today" : "the salon has not opened yet today") : (openNow ? "the salon is open now" : "the salon has closed for the day"),
+      salonIsOpenNow: openNow,
+      ...(openNow ? {
+        closesAt: hoursNow?.close_time ?? null,
+        rightNow: { clientsInService: today?.in_service_now ?? 0, clientsWaiting: today?.waiting_now ?? 0, teamClockedIn: team?.working ?? 0 },
+        stillComingToday: today?.still_coming_today ?? 0, nextBookingAt: today?.next_booking_at ?? null,
+      } : {}),
+      totals: { servicesDone: today?.services_done ?? 0, revenue: round(today?.revenue), tips: round(today?.tips), noShows: today?.no_shows ?? 0, cancellations: today?.cancellations ?? 0 },
+      certxaTexts: { textsSent: texts?.sent ?? 0, clientsTexted: texts?.clients ?? 0, clientsWhoBookedAfterACertxaText: cameBack?.clients ?? 0, valueOfThoseBookings: round(cameBack?.value) },
+      autumn: { callsAnswered: calls?.calls ?? 0, bookingsMade: calls?.booked ?? 0 },
+    },
     next7Days: { bookings: week?.bookings ?? 0, expectedValue: round(week?.value), busiestDay: busiest[0]?.day ?? null, busiestDayBookings: busiest[0]?.bookings ?? 0 },
     topServicesThisMonth: topServices.map((x) => ({ name: x.name, visits: x.visits, revenue: round(x.revenue) })),
     topTeamThisMonth: topTeam.map((x) => ({ name: x.name, visits: x.visits, revenue: round(x.revenue) })),
     clients: {
       total: round(cs?.total), newThisMonth: mix?.new_clients ?? 0, repeatVisitorsThisMonth: mix?.returning_clients ?? 0, // visited before this month too
-      notBackLately: round(cs?.drifting) + round(cs?.atRisk), avgRebookingRatePct: round(parseFloat(cs?.avgRebooking || "0")),
+      avgRebookingRatePct: round(parseFloat(cs?.avgRebooking || "0")),
     },
     reviewsLast30Days: { count: rev?.reviews ?? 0, averageRating: rev?.avg_rating ?? null },
-    autumnPhoneLast30Days: { callsAnswered: calls?.calls ?? 0, bookingsMade: calls?.booked ?? 0 },
-    certxaAutomaticWorkLast30Days: {
-      rebookingReminders: a.rebooking_reminders ?? 0, winBackTexts: a.win_back_texts ?? 0,
-      cancellationFollowUps: a.cancellation_follow_ups ?? 0, noShowFollowUps: a.no_show_follow_ups ?? 0,
-      clientsReached: a.clients_reached ?? 0, clientsWhoBookedAgain: a.clients_booked_again ?? 0,
-      valueOfThoseBookings: round(a.bookings_value),
-    },
-    noShowsAndCancellationsLast45Days: { noShows: leakage.breakdown.noShowCount, cancellations: leakage.breakdown.cancellationCount },
     growthScore: (growth as any)?.hasData ? { score: (growth as any).overallScore, grade: (growth as any).grade } : null,
   };
 }
@@ -1754,7 +1735,6 @@ WHAT THE OWNER CARES ABOUT, in this order:
 CERTXA DOES THE CLIENT OUTREACH — ALWAYS:
 Certxa automatically texts clients who are due to rebook, brings back clients who haven't visited in a while, follows up cancellations and no-shows, and Autumn answers the phone and books appointments. This is always running. The owner has nothing to switch on, no setting to change, and nothing to do.
 - Never tell the owner to send messages, run campaigns, contact or "nudge" clients, fill the schedule, change a setting, turn anything on, or "focus on" anything.
-- Clients who haven't been back lately (clients.notBackLately) are Certxa's job: mention them only as Certxa reaching out to them, never as a problem.
 - Never end with a task or advice ("keep focusing", "consider", "make sure"). End with something good or useful to know.
 
 RULES:
@@ -1764,14 +1744,16 @@ RULES:
 - Money in whole dollars like $6,563. Skip any number that is 0 or missing instead of reporting it.
 - Answer the owner's question first and directly, in the question's own terms. Don't repeat the briefing.
 - If the owner asks how to grow or get more clients, say what is already working (new clients, top services, top team, clients who came back after Certxa's texts, Autumn's bookings) and that Certxa keeps doing this for them every day.
-- The first message of a visit is a short briefing that starts with today (no headings or labels, just sentences):
-  - If today.salonIsOpenNow is true: what is happening in the salon right now — clients in service, clients waiting, team clocked in, how many are still coming today and when the next one is, and revenue and services done so far today.
-  - If it is false: how today went — today's revenue, services done, no-shows and cancellations (say "not open yet today" or "closed today" from today.reason when nothing happened yet).
-  Then, briefly: money this month with a fair comparison, and what Certxa and Autumn did for them.
-- Only state things the data shows. Never claim Autumn or Certxa did something the numbers don't show (for example, don't say Autumn books appointments when autumnPhoneLast30Days.bookingsMade is 0).
+- The first message of a visit is a short briefing about ONE business day — businessDay (no headings or labels, just sentences). Say which day it is ("today" or "yesterday", from businessDay.which):
+  - If businessDay.salonIsOpenNow is true: what is happening in the salon right now — clients in service, clients waiting, team clocked in, how many are still coming today and when the next one is — and revenue and services done so far today.
+  - Otherwise: how that day went — revenue, services done, tips, no-shows and cancellations (businessDay.totals).
+  - Then what Certxa and Autumn did that same day: Certxa's texts (businessDay.certxaTexts) and Autumn's calls (businessDay.autumn).
+  Then one short line on money this month with a fair comparison.
+- Every number in businessDay is for that one day only. Never present a day's number as a month or all-time figure, and never mix numbers from different periods in one sentence.
+- Only state things the data shows. Never claim Autumn or Certxa did something the numbers don't show (for example, don't say Autumn booked appointments when businessDay.autumn.bookingsMade is 0 — just leave bookings out).
 
 Reply with a JSON object: {"reply": string (under 80 words, real numbers),
-"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} — the first card is about today (open: revenue so far today, or the next booking; closed: today's revenue with services done in the detail), then cards an owner is glad to see: revenue this month, bookings in the next 7 days, top service or top team member, clients who booked again after Certxa's texts, Autumn bookings, average rating. Never a card about a problem,
+"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} — the first card is about the business day (open: revenue so far today, or the next booking; otherwise that day's revenue with services done in the detail, labeled "Today" or "Yesterday"), then cards an owner is glad to see: revenue this month, bookings in the next 7 days, top service or top team member, clients who booked after Certxa's texts that day, Autumn's calls that day, average rating. Never a card about a problem,
 "actions": up to 2 of {"id": one of ${Object.keys(ASSISTANT_LINKS).join(" | ")}} — only links that let the owner look at something useful}.
 
 SALON DATA (JSON):

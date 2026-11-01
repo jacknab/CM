@@ -280,17 +280,6 @@ export default function MembersHome() {
           <div key={turn.id} className="space-y-3">
             {turn.showPrompt !== false && <div className="flex justify-end"><UserBubble>{turn.prompt}</UserBubble></div>}
             <AiBubble animate={index === turns.length - 1}>{turn.response}</AiBubble>
-            {turn.highlights.length > 0 && (
-              <div className="ml-11 grid grid-cols-2 gap-2">
-                {turn.highlights.map((highlight, highlightIndex) => (
-                  <div key={`${highlight.label}-${highlightIndex}`} className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
-                    <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800/70">{highlight.label}</p>
-                    <p className="mt-0.5 text-lg font-bold" style={{ color: PLUM }}>{highlight.value}</p>
-                    {highlight.detail && <p className="mt-1 text-[11px] leading-snug text-gray-500">{highlight.detail}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
             <div className="ml-11 space-y-2">
               {turn.actions.map(action => {
                 return (
