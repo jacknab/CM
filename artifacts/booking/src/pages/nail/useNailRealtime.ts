@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { refreshOfflineManagerPin } from "@/lib/managerPin";
+import { onDeviceCommandMessage } from "@/lib/deviceCommands";
 import { forRegister, localHub } from "@/lib/local-hub";
 import { useQueryClient } from "@tanstack/react-query";
 import { boardKey } from "./nailApi";
@@ -68,6 +70,14 @@ export function useNailRealtime(opts: {
             case "settings_changed":
               cb.current.refreshAll();
               break;
+            // The manager PIN was changed (on any device): this tablet's offline copy follows.
+            case "manager_pin_changed":
+              void refreshOfflineManagerPin(storeId);
+              break;
+            // A fix the server wants this tablet to carry out (lib/deviceCommands.ts; offline health, phase 3).
+            case "device_command":
+              onDeviceCommandMessage(data);
+              break;
             case "kiosk_checkin_typing":
               cb.current.onFrontdeskTyping?.(data.typing === true);
               break;
@@ -95,20 +105,44 @@ export function useNailRealtime(opts: {
     const connect = () => {
       if (destroyed) return;
       const proto = window.location.protocol === "https:" ? "wss" : "ws";
-      ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${opts.registerId}`);
-      ws.onopen = () => {
+      const sock = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${opts.registerId}`);
+      ws = sock;
+      // Heartbeat: a socket can stay "open" after the Wi-Fi drops or changes while nothing gets through. This
+      // screen then believed it was live, polled only every 5 minutes and missed check-ins until a reload (store 2,
+      // 2026-11-01). The server answers every ping; nothing heard for 50 s → replace the socket (onopen refetches).
+      let lastHeard = Date.now();
+      const heartbeat = setInterval(() => {
+        if (sock.readyState !== WebSocket.OPEN) return;
+        if (Date.now() - lastHeard > 50_000) {
+          // Closing a dead socket can wait a long time for an answer that never comes: let it go and start afresh.
+          clearInterval(heartbeat);
+          sock.onclose = null;
+          try { sock.close(); } catch { /* already gone */ }
+          setConnected(false);
+          if (!destroyed) connect();
+          return;
+        }
+        try { sock.send(JSON.stringify({ type: "ping", ts: Date.now() })); } catch { /* onclose reconnects */ }
+      }, 20_000);
+      sock.onopen = () => {
+        lastHeard = Date.now();
         setConnected(true);
+        // The manager PIN for offline use, fresh on every (re)connect — a change made while this tablet was away is picked up.
+        void refreshOfflineManagerPin(storeId);
         // A reconnect may have missed events while offline.
         if (seenOpen) { invalidateTickets(); cb.current.refreshAll(); }
         seenOpen = true;
       };
-      ws.onmessage = (event) => {
+      sock.onmessage = (event) => {
+        lastHeard = Date.now();
         let data: any;
         try { data = JSON.parse(event.data); } catch { return; }
         onData(data);
       };
-      ws.onerror = () => ws?.close();
-      ws.onclose = () => {
+      sock.onerror = () => sock.close();
+      sock.onclose = () => {
+        clearInterval(heartbeat);
+        if (ws !== sock) return;
         setConnected(false);
         if (!destroyed) timer = setTimeout(connect, 3000);
       };

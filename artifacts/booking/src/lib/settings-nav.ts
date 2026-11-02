@@ -24,6 +24,8 @@ export type SettingsNavItem = {
   external?: boolean;
   /** hide unless the POS feature is enabled */
   requiresPos?: boolean;
+  /** hide when the booking system is switched off (Advanced Features › Booking System) */
+  requiresBooking?: boolean;
   /** only for businesses on the Solo plan */
   requiresSoloPlan?: boolean;
   /** small pill next to the label (plan gate like "Gold", or a count) */
@@ -139,12 +141,12 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
         {
           label: pick({ en: "Booking Page", vi: "Trang đặt lịch", es: "Página de reservas", fr: "Page de réservation" }),
           description: pick({ en: "Your public booking page, widget and availability.", vi: "Trang đặt lịch công khai, widget và tình trạng còn chỗ.", es: "Tu página de reserva pública, widget y disponibilidad.", fr: "Votre page de réservation publique, widget et disponibilités." }),
-          to: "/settings/online-booking", slug: "online-booking",
+          to: "/settings/online-booking", slug: "online-booking", requiresBooking: true,
         },
         {
           label: pick({ en: "Booking Controls", vi: "Kiểm soát đặt lịch", es: "Controles de reserva", fr: "Contrôles de réservation" }),
           description: pick({ en: "Approval, lead time, advance limit, card-on-file, cancellation policy and fees.", vi: "Duyệt, thời gian báo trước, giới hạn đặt trước, thẻ lưu, chính sách và phí hủy.", es: "Aprobación, antelación, límite de reserva, tarjeta en archivo, política y tarifas de cancelación.", fr: "Approbation, délai, limite d'anticipation, carte enregistrée, politique et frais d'annulation." }),
-          to: "/settings/booking-controls", slug: "booking-controls",
+          to: "/settings/booking-controls", slug: "booking-controls", requiresBooking: true,
         },
         {
           label: pick({ en: "Client Notifications", vi: "Thông báo cho khách", es: "Notificaciones a clientes", fr: "Notifications clients" }),

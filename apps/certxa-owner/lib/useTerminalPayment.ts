@@ -28,10 +28,13 @@ import { terminalDiag } from './terminalDiag';
 import { captureWithRetry, pendingCapture, pendingIntent, nextStepForStatus } from './captureRecovery';
 import { displayPrompt, inputPrompt } from './readerPrompts';
 import type { CardDetails } from './printer';
+import { isNetworkFailure, newOfflineRef, offlineLimitProblem, saveLocation, savedLocation } from './offlineCard';
 
 /** Ticket context the server records with the payment (tip, discount, cash already taken). */
 export interface PaymentContext {
   nailCheckout?: boolean;
+  /** The page says it has no internet: take the card offline straight away (offlineCard.ts). */
+  offline?: boolean;
   tipCents?:           number;
   discountCents?:      number;
   priorTenderedCents?: number;
@@ -53,6 +56,8 @@ export interface PaymentResult {
   cardDetails?: CardDetails;
   /** The captured PaymentIntent (lets the web sheet ignore a duplicate completion event). */
   paymentIntentId?: string;
+  /** Taken with no internet: saved on this tablet and sent to Stripe later; the sale carries this reference. */
+  offlineRef?: string;
 }
 
 interface PaymentServerResult {
@@ -71,6 +76,8 @@ export function useTerminalPayment() {
 
   const {
     retrievePaymentIntent,
+    createPaymentIntent,
+    getOfflineStatus,
     collectPaymentMethod,
     confirmPaymentIntent,
     cancelCollectPaymentMethod,
@@ -84,13 +91,28 @@ export function useTerminalPayment() {
   // ── Server helpers ────────────────────────────────────────────────────────────
 
   const getLocationId = async (): Promise<string> => {
-    const r = await apiCaller.call('/api/payments/terminal/location', 'GET');
+    let r: any;
+    try {
+      r = await apiCaller.call('/api/payments/terminal/location', 'GET');
+    } catch (e) {
+      // No internet: the location this tablet last used (the reader connects offline from Stripe's own saved copy).
+      const saved = await savedLocation();
+      if (saved) return saved.locationId;
+      throw e;
+    }
     if (!r?.locationId) {
       // Surface the real server error (e.g. "Store has no connected Stripe account")
       // instead of a generic message that hides the root cause.
       throw new Error(r?.error ?? 'Could not get terminal location from server');
     }
+    void saveLocation({ locationId: r.locationId, storeId: Number.isSafeInteger(r.storeId) ? r.storeId : null,
+      applicationFeeCents: Number.isSafeInteger(r.applicationFeeCents) ? r.applicationFeeCents : 60 });
     return r.locationId as string;
+  };
+
+  /** Is the Stripe SDK itself without internet? */
+  const sdkOffline = async (): Promise<boolean> => {
+    try { return ((await getOfflineStatus()) as any)?.sdk?.networkStatus === 'offline'; } catch { return false; }
   };
 
   const createPaymentIntentOnServer = async (
@@ -206,10 +228,96 @@ export function useTerminalPayment() {
   ): Promise<PaymentResult> => {
     statusRef.current = callbacks.onStatus;
     try {
-      return await runPayment(amountCents, appointmentId, clientName, method, callbacks, ctx);
+      // No internet (the page said so, or the SDK knows): the M2 takes the card offline.
+      if (method === 'm2' && (ctx?.offline || await sdkOffline())) {
+        return await runOffline(amountCents, appointmentId, clientName, callbacks, ctx);
+      }
+      try {
+        return await runPayment(amountCents, appointmentId, clientName, method, callbacks, ctx);
+      } catch (e) {
+        // The server couldn't be reached before anything was charged: take it offline instead.
+        if (method === 'm2' && !createdOnline.current && isNetworkFailure(e)) {
+          return await runOffline(amountCents, appointmentId, clientName, callbacks, ctx);
+        }
+        throw e;
+      }
     } finally {
       statusRef.current = null;
     }
+  };
+
+  /** Set once the server created this attempt's PaymentIntent: from then on it is never redone offline. */
+  const createdOnline = useRef(false);
+
+  /**
+   * The card with no internet (offlineCard.ts). The SDK creates the payment, the M2 reads the card (chip or tap) and
+   * the SDK keeps it until the internet is back. If the SDK finds the internet after all, the payment went through
+   * online and is charged on the server as usual.
+   */
+  const runOffline = async (
+    amountCents:   number,
+    appointmentId: number,
+    clientName:    string,
+    callbacks:     PaymentPhaseCallbacks,
+    ctx?:          PaymentContext,
+  ): Promise<PaymentResult> => {
+    // A card already approved online and not yet charged must be finished, never taken a second time offline.
+    if (pendingCapture.peek()) throw new Error('A card approved earlier is still being finished. Wait for the internet, then try again.');
+    const status: any = await getOfflineStatus().catch(() => null);
+    const stored = Number(status?.sdk?.offlinePaymentAmountsByCurrency?.usd ?? 0) || 0;
+    const problem = offlineLimitProblem(amountCents, stored);
+    if (problem) throw new Error(problem);
+    const loc = await savedLocation();
+    const offlineRef = newOfflineRef();
+    const fee = loc?.applicationFeeCents ?? 60;
+    const metadata: Record<string, string> = { offline_ref: offlineRef, method: 'm2', source: 'nail_checkout' };
+    if (loc?.storeId != null) metadata.store_id = String(loc.storeId);
+    if (appointmentId > 0) metadata.appointment_id = String(appointmentId);
+    if (clientName) metadata.client_name = clientName.slice(0, 200);
+    if (ctx?.tipCents) metadata.tip_cents = String(toCents(ctx.tipCents));
+
+    callbacks.onPhase('connected');
+    callbacks.onStatus('No internet: taking the card offline…');
+    const { paymentIntent: created, error: createErr } = await createPaymentIntent({
+      amount: amountCents,
+      currency: 'usd',
+      captureMethod: 'manual',
+      paymentMethodTypes: ['card_present'] as any,
+      ...(amountCents > fee ? { applicationFeeAmount: fee } : {}),
+      metadata,
+      offlineBehavior: 'prefer_online',
+    } as any);
+    if (createErr || !created) throw new Error(createErr?.message ?? 'Could not start the card payment');
+
+    callbacks.onPhase('collecting');
+    callbacks.onStatus('Insert or tap card…');
+    const { paymentIntent: collected, error: collectErr } = await collectPaymentMethod({ paymentIntent: created });
+    if (collectErr || !collected) throw new Error(collectErr?.message ?? 'Payment cancelled or failed');
+
+    callbacks.onPhase('processing');
+    callbacks.onStatus('Processing…');
+    const { paymentIntent: confirmed, error: confirmErr } = await confirmPaymentIntent({ paymentIntent: collected });
+    if (confirmErr || !confirmed) throw new Error(confirmErr?.message ?? 'Confirmation failed');
+
+    const offlineDetails = (confirmed as any).offlineDetails;
+    if (!offlineDetails && (confirmed as any).id) {
+      // The internet was there after all: an ordinary card payment, charged on the server now.
+      await captureOnServer((confirmed as any).id, 'm2');
+      return { cardDetails: extractCardDetails(confirmed, (confirmed as any).id), paymentIntentId: (confirmed as any).id };
+    }
+    const cd = offlineDetails?.offlineCardPresentDetails ?? {};
+    const cardDetails: CardDetails = {
+      last4: cd.last4 ?? '????',
+      brand: cd.brand ?? 'card',
+      approvalCode: undefined,
+      entryMethod: cd.readMethod,
+      arqc: cd.receiptDetails?.applicationCryptogram ?? cd.receipt?.applicationCryptogram,
+      aid: undefined,
+      pinVerified: undefined,
+      paymentIntentId: offlineRef,
+    } as CardDetails;
+    console.log('[Stripe] card taken offline', offlineRef);
+    return { cardDetails, offlineRef };
   };
 
   const runPayment = async (
@@ -220,6 +328,7 @@ export function useTerminalPayment() {
     callbacks:     PaymentPhaseCallbacks,
     ctx?:          PaymentContext,
   ): Promise<PaymentResult> => {
+    createdOnline.current = false;
     // 1. A previous attempt for this ticket + amount was approved on the card but its
     //    capture failed. Finish THAT payment — never create a second one.
     const resumable = pendingCapture.matching(appointmentId, amountCents);
@@ -246,6 +355,7 @@ export function useTerminalPayment() {
       callbacks.onStatus('Creating charge…');
       console.log('[Stripe] createPaymentIntent()');
       const r = await createPaymentIntentOnServer(amountCents, appointmentId, clientName, method, ctx);
+      createdOnline.current = true;
       intent = { paymentIntentId: r.paymentIntentId, clientSecret: r.clientSecret, appointmentId, amountCents, method, at: Date.now() };
       pendingIntent.set({ paymentIntentId: r.paymentIntentId, clientSecret: r.clientSecret, appointmentId, amountCents, method });
     };

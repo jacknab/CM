@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { printSettings } from "@/lib/printSettings";
 import { getDeviceId } from "@/lib/device-id";
 import { nailOffline } from "@/lib/nail-offline";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -81,6 +82,8 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
   const [closeError, setCloseError] = useState<string | null>(null);
   // The server asked whether a quiet tablet has been checked; true once the person closing confirms it.
   // The Z Report printed on the Certxa Android app's own (IP/USB) receipt printer right after the close.
+  // The shift just closed, for printing its Z Report when it doesn't print by itself.
+  const [closedSession, setClosedSession] = useState<number | null>(null);
   const [zPrint, setZPrint] = useState<{ state: "idle" | "printing" | "printed" | "failed"; error?: string; sessionId?: number }>({ state: "idle" });
 
   /**
@@ -270,7 +273,9 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
         queryClient.invalidateQueries({ queryKey: [boardPath, storeId] });
       }
       setSuccessData(true);
-      void printDayCloseReport(closedSessionId);
+      setClosedSession(closedSessionId);
+      // The salon chose whether the report prints by itself (front desk setup → Printing).
+      if (printSettings().dayClose === "auto") void printDayCloseReport(closedSessionId);
     },
     onError: (err: any) => {
       // The open-ticket and lock responses already replace the sheet with their own explanation.
@@ -314,6 +319,9 @@ export function DayCloseModal({ open, onClose, storeId, userName, drawerId = 0, 
               </div>
             </div>
             <p className="text-sm text-gray-500">Cash count submitted. A new shift is open.</p>
+            {zPrint.state === "idle" && closedSession != null && canNativePrint() && (
+              <Button variant="outline" className="w-full h-10" onClick={() => void printDayCloseReport(closedSession)} data-testid="day-close-zprint-button">Print the Z Report</Button>
+            )}
             {zPrint.state === "printing" && <p className="text-sm text-gray-500" data-testid="day-close-zprint">Printing the Z Report…</p>}
             {zPrint.state === "printed" && <p className="text-sm text-emerald-700" data-testid="day-close-zprint">Z Report printed.</p>}
             {zPrint.state === "failed" && (

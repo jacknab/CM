@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useFeatureFlags } from "@/hooks/use-features";
 import { gridZoomRef } from "./gridZoom";
 import { Armchair, CalendarDays, Clock, EyeOff, PersonStanding, Ticket, UserCheck, Users, X } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
@@ -85,6 +86,8 @@ export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance
   onView?: (view: Page["kind"]) => void;
   onTechs?: () => void;
 }) {
+  // The booking system switched off (Advanced Features › Booking System): no Appointments tile (the upcoming list).
+  const { bookingSystem } = useFeatureFlags();
   const tiles: { id: keyof typeof GLANCE_ICON | "completed"; label: string; value: string; tone: string; view?: Page["kind"]; action?: () => void }[] = [
     { id: "avg-wait", label: "Avg Wait", value: waitLabel, tone: "green" },
     { id: "checked-in", label: "Waiting", value: String(checkedIn), tone: "blue", view: "waiting" },
@@ -99,7 +102,7 @@ export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance
   return (
     <div className="tt-glance q-glance" data-testid="nail-queue-glance">
       <div className="q-glance-row">
-        {tiles.map((t) => {
+        {tiles.filter((t) => bookingSystem || t.id !== "appointments").map((t) => {
           const Icon = t.id === "completed" ? UserCheck : GLANCE_ICON[t.id];
           const clickable = (!!t.view && !!onView) || !!t.action;
           const Tag = clickable ? "button" : "div";
@@ -380,7 +383,8 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
               </button>
             )}
             <div className="q-booking-client q-booking-client-top q-unified-head">
-              {r.provisional ? <span data-testid="nail-queue-not-sent">NOT SENT</span> : r.ticketNumber != null && <span className="q-ticket-no">{r.ticketNumber}</span>}
+              {/* A ticket made offline shows its ticket number like any other; NOT SENT only when it has none yet. */}
+              {r.ticketNumber != null ? <span className="q-ticket-no">{r.ticketNumber}</span> : r.provisional && <span data-testid="nail-queue-not-sent">NOT SENT</span>}
               <strong>{r.name}</strong>
               <em className="q-unified-pill" data-kind={urgency ? `urgent-${urgency}` : r.subKind} data-testid={urgency ? `${r.testId}-why` : undefined}>{urgency && r.wait ? waitReasonText(r.wait, r.tech) : upNext ? "UP NEXT" : r.sub}</em>
             </div>

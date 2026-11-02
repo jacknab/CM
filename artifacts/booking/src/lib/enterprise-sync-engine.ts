@@ -1,6 +1,7 @@
 import { actionQueueDB, type ActionType, type SyncAction } from "./action-queue-db";
 import { syncStateDB } from "./sync-state-db";
 import { getDeviceId } from "./device-id";
+import { syncEngine } from "./sync-engine";
 import type { ConflictKind } from "@/hooks/use-sync-conflicts";
 
 export type EnterpriseSyncStatus =
@@ -30,18 +31,10 @@ type WsEventListener = (e: WsEvent) => void;
 type QueueCountListener = (n: number) => void;
 type ConflictListener = (kind: ConflictKind, detail?: string) => void;
 
-const SYNC_PROTOCOL_VERSION = "1.0";
-const MAX_ATTEMPTS = 5;
-const BACKOFF_CAPS = [1_000, 5_000, 15_000, 60_000];
 const WS_RECONNECT_BASE_MS = 2_000;
 const WS_RECONNECT_MAX_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
-
-function backoffDelay(attempts: number): number {
-  const index = Math.min(attempts, BACKOFF_CAPS.length - 1);
-  return BACKOFF_CAPS[index] + Math.random() * 500;
-}
 
 function buildWsUrl(storeId: number): string {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -64,17 +57,6 @@ function entityFingerprint(type: ActionType, payload: Record<string, unknown>): 
   return "";
 }
 
-function makeBatchId(): string {
-  return `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function inferConflictKind(actionType: string): ConflictKind {
-  if (actionType === "ASSIGN_STAFF") return "staff_changed";
-  if (actionType === "WALKIN") return "walkin_merged";
-  if (["UPDATE_BOOKING", "CHECKIN", "CHECKOUT", "CREATE_BOOKING"].includes(actionType)) return "booking_updated";
-  return "generic";
-}
-
 class EnterpriseSyncEngine {
   private status: EnterpriseSyncStatus = navigator.onLine ? "online" : "offline";
   private statusListeners = new Set<StatusListener>();
@@ -82,7 +64,6 @@ class EnterpriseSyncEngine {
   private queueCountListeners = new Set<QueueCountListener>();
   private conflictListeners = new Set<ConflictListener>();
 
-  private isSyncing = false;
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
   private ws: WebSocket | null = null;
   private wsReconnectAttempts = 0;
@@ -128,10 +109,6 @@ class EnterpriseSyncEngine {
     this.wsEventListeners.forEach((fn) => fn(e));
   }
 
-  private emitConflict(kind: ConflictKind, detail?: string) {
-    this.conflictListeners.forEach((fn) => fn(kind, detail));
-  }
-
   private async emitQueueCount() {
     try {
       const count = await actionQueueDB.getPendingCount();
@@ -163,23 +140,10 @@ class EnterpriseSyncEngine {
   async initialize(storeId: number): Promise<void> {
     this.currentStoreId = storeId;
     this.connectWebSocket(storeId);
-
-    const pendingBatch = await syncStateDB.getPendingBatch().catch(() => null);
-    if (pendingBatch && pendingBatch.action_ids.length > 0) {
-      const ageMs = Date.now() - pendingBatch.started_at;
-      if (ageMs < 24 * 60 * 60 * 1000) {
-        this.emitConflict(
-          "batch_resumed",
-          `Resuming ${pendingBatch.action_ids.length} unfinished action(s) from previous session`
-        );
-      } else {
-        await syncStateDB.clearPendingBatch().catch(() => {});
-      }
-    }
-
-    if (navigator.onLine) {
-      await this.runBulkSync();
-    }
+    // A batch record left by the bulk sender this engine used to run (see runBulkSync). Its actions were put back
+    // in line or sent since; announcing it made every launch say "Resuming 1 unfinished action(s)" for a day.
+    await syncStateDB.clearPendingBatch().catch(() => {});
+    await this.runBulkSync(storeId);
   }
 
   async enqueueAction(
@@ -198,139 +162,26 @@ class EnterpriseSyncEngine {
 
     await this.emitQueueCount();
 
-    if (navigator.onLine && !this.isSyncing) {
-      this.scheduleSyncWithDelay(200);
-    }
+    if (navigator.onLine) this.scheduleSyncWithDelay(200);
 
     return action;
   }
 
+  /**
+   * Sends the queued actions — through the main sync engine (lib/sync-engine.ts), the one sender for this queue.
+   * This engine used to post them to /api/sync/queue as well, at the same time: that route only knows nine action
+   * types, so a clock-in, turn adjustment, /nail booking or receipt text sent that way got no answer and was left
+   * marked SYNCING, where neither engine would ever send it (2026-11-02).
+   */
   async runBulkSync(storeId?: number): Promise<void> {
-    if (this.isSyncing || !navigator.onLine) return;
-
     const effectiveStoreId = storeId ?? this.currentStoreId;
-    if (!effectiveStoreId) return;
-
-    this.isSyncing = true;
+    if (!effectiveStoreId || !navigator.onLine) return;
     this.emit("syncing");
-
     try {
-      // TURN actions use the dedicated sync engine because the enterprise batch
-      // endpoint does not implement TURN_ASSIGN/TURN_LOG_OVERRIDE handlers.
-      const pending = (await actionQueueDB.getPending()).filter(
-        (action) => action.type !== "TURN_ASSIGN" && action.type !== "TURN_LOG_OVERRIDE",
-      );
-      if (pending.length === 0) {
-        this.emit("online");
-        this.isSyncing = false;
-        return;
-      }
-
-      const batchId = makeBatchId();
-      const ids = pending.map((a) => a.id);
-      await actionQueueDB.setStates(ids, "SYNCING");
-      await syncStateDB.savePendingBatch(batchId, ids).catch(() => {});
-
-      const { batchId: resumeBatchId, index: lastConfirmedIndex } =
-        await syncStateDB.getLastConfirmedIndex().catch(() => ({ batchId: null, index: -1 }));
-
-      const actionsToSend = pending.map((a, i) => ({
-        id: a.id,
-        type: a.type,
-        entity_temp_id: a.entity_temp_id,
-        payload: a.payload,
-        timestamp: a.timestamp,
-        idempotency_key: a.idempotency_key,
-        device_id: a.device_id,
-        sequence_index: a.sequence_index,
-        order_index: i,
-        entity_fingerprint: (a.payload as any)?._fingerprint ?? undefined,
-      }));
-
-      const res = await fetch("/api/sync/queue", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Device-ID": getDeviceId(),
-        },
-        body: JSON.stringify({
-          storeId: effectiveStoreId,
-          batch_id: batchId,
-          sync_protocol_version: SYNC_PROTOCOL_VERSION,
-          actions: actionsToSend,
-        }),
-        credentials: "include",
-      });
-
-      if (res.status === 409) {
-        const body = await res.json().catch(() => ({})) as any;
-        if (body?.version_mismatch) {
-          console.warn("[enterprise-sync] Protocol version mismatch — clearing queue and re-initializing");
-          await actionQueueDB.setStates(ids, "PENDING");
-          await syncStateDB.clearPendingBatch().catch(() => {});
-          this.emitConflict("generic", "Sync protocol mismatch — snapshot refreshed");
-          this.scheduleSyncWithDelay(5_000);
-        } else {
-          await actionQueueDB.setStates(ids, "PENDING");
-          this.scheduleSyncWithDelay(backoffDelay(1));
-        }
-        return;
-      }
-
-      if (!res.ok) {
-        await actionQueueDB.setStates(ids, "PENDING");
-        for (const id of ids) await actionQueueDB.incrementAttempts(id);
-        const allPending = await actionQueueDB.getPending();
-        for (const a of allPending) {
-          if (a.attempts >= MAX_ATTEMPTS) {
-            await actionQueueDB.setState(a.id, "CONFLICT", { conflict: "Max retry attempts exceeded" });
-            this.emitConflict("generic", `Action ${a.type} failed after ${MAX_ATTEMPTS} attempts`);
-          }
-        }
-        this.scheduleSyncWithDelay(backoffDelay(1));
-        return;
-      }
-
-      const body = await res.json() as {
-        batch_id: string;
-        last_successfully_processed_index: number;
-        mappings: Record<string, number>;
-        results: Array<{ actionId: string; type: string; status: string; conflict?: string; order_index?: number }>;
-        conflicts: { actionId: string; type: string; detail: string }[];
-      };
-
-      const { mappings, results, last_successfully_processed_index } = body;
-
-      await syncStateDB.saveConfirmedIndex(batchId, last_successfully_processed_index).catch(() => {});
-      await syncStateDB.clearPendingBatch().catch(() => {});
-
-      await actionQueueDB.applyMappings(mappings);
-
-      for (const result of results ?? []) {
-        if (result.status === "conflict") {
-          await actionQueueDB.setState(result.actionId, "CONFLICT", { conflict: result.conflict });
-          this.emitConflict(inferConflictKind(result.type), result.conflict);
-        } else if (result.status === "duplicate") {
-          if (result.conflict) {
-            this.emitConflict(inferConflictKind(result.type), result.conflict);
-          }
-        }
-      }
-
-      await actionQueueDB.clearConfirmed();
-      await this.emitQueueCount();
-      this.emit("online");
-    } catch {
-      const allActions = await actionQueueDB.getAll();
-      for (const a of allActions) {
-        if (a.state === "SYNCING") {
-          await actionQueueDB.setState(a.id, "PENDING");
-          await actionQueueDB.incrementAttempts(a.id);
-        }
-      }
-      this.scheduleSyncWithDelay(backoffDelay(1));
+      await syncEngine.runSync(effectiveStoreId);
     } finally {
-      this.isSyncing = false;
+      await this.emitQueueCount();
+      this.emit(navigator.onLine ? "online" : "offline");
     }
   }
 

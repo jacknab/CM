@@ -40,6 +40,8 @@ import { broadcastNotification } from "../notifications";
 const router = Router();
 
 const STATION_HELD_DAYS = 7;
+/** When every station is held: one whose tablet has not checked in for this long can be taken by a new tablet. */
+const STATION_AWAY_MIN = 30;
 const CODE_TTL_SEC = 600;
 const ID_RE = /^[A-Za-z0-9_.:-]{8,200}$/;
 
@@ -151,10 +153,113 @@ router.post("/api/registers/my-station", isAuthenticated, async (req: Request, r
         return res.json({ registerId: o.id, name: o.name, multiStation: true });
       }
     }
+    // Every station is held. A tablet checks in every 5 minutes while /nail is open, so a station whose tablet has
+    // not for 30 minutes is free to take: the one away longest goes to this tablet (store 2, 2026-11-02: a POS tablet
+    // came back with a new id after an app restart and got no station — no Station button, hub refused — because
+    // three stations were still held by tablets last seen days before). Conditional on the old claim, so two
+    // tablets can't take the same one.
+    const away = claims
+      .filter((c) => optionById.has(c.register_id) && new Date(c.claimed_at).getTime() < Date.now() - STATION_AWAY_MIN * 60_000)
+      .sort((a, b) => new Date(a.claimed_at).getTime() - new Date(b.claimed_at).getTime());
+    for (const c of away) {
+      const r = await pool.query(
+        `UPDATE register_claims SET device_id = $3, claimed_at = now()
+          WHERE store_id = $1 AND register_id = $2 AND device_id = $4 AND claimed_at < now() - ($5 || ' minutes')::interval
+          RETURNING register_id`,
+        [storeId, c.register_id, deviceId, c.device_id, String(STATION_AWAY_MIN)],
+      );
+      if (r.rows.length) {
+        const o = optionById.get(c.register_id)!;
+        console.log(`[stations] store ${storeId}: a POS tablet took ${o.name} (its tablet away since ${c.claimed_at})`);
+        announcePairingChange(storeId, o.id);
+        return res.json({ registerId: o.id, name: o.name, multiStation: true });
+      }
+    }
     return res.json({ registerId: null, name: null, multiStation: true, allTaken: true });
   } catch (err) {
     console.error("[POST /api/registers/my-station]", (err as Error)?.message);
     return res.status(500).json({ message: "Failed to resolve this tablet's station" });
+  }
+});
+
+// The /nail Manager menu's "Station": every station with who holds it, so a manager can put this tablet on the one
+// it belongs to (after a reset or reinstall the tablet comes back as a new one and is given whichever is free).
+router.get("/api/registers/stations", isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(404).json({ message: "Store not found" });
+    const deviceId = String(req.query.deviceId ?? "").trim();
+    const rows = (await pool.query(
+      `SELECT r.id, r.name, r.is_default, c.device_id, c.claimed_at
+         FROM registers r LEFT JOIN register_claims c ON c.store_id = r.store_id AND c.register_id = r.id
+        WHERE r.store_id = $1 AND r.is_active = true ORDER BY r.sort_order, r.id`,
+      [storeId],
+    )).rows as { id: number; name: string; is_default: boolean; device_id: string | null; claimed_at: string | null }[];
+    const heldSince = Date.now() - STATION_HELD_DAYS * 86_400_000;
+    // Which tablet the salon hub is on now (the server's election, routes.ts /api/nail/hub/heartbeat).
+    const hubRow = (await pool.query(`SELECT preferences FROM store_settings WHERE store_id = $1`, [storeId])).rows[0];
+    let hub: { registerId: number | null; address: string | null } = { registerId: null, address: null };
+    try {
+      const prefs = typeof hubRow?.preferences === "string" ? JSON.parse(hubRow.preferences) : hubRow?.preferences;
+      if (prefs?.localHub) hub = { registerId: prefs.localHub.hostRegisterId ?? null, address: prefs.localHub.address ?? null };
+    } catch { /* no hub yet */ }
+    return res.json({
+      hub,
+      stations: rows.map((r) => {
+        const held = r.device_id != null && r.claimed_at != null && new Date(r.claimed_at).getTime() >= heldSince;
+        return {
+          id: r.id, name: r.name, isMain: r.is_default,
+          mine: held && r.device_id === deviceId,
+          // When its tablet last checked in (every 5 minutes while /nail is open); null = free.
+          seenAt: held && r.device_id !== deviceId ? r.claimed_at : null,
+        };
+      }),
+    });
+  } catch (err) {
+    console.error("[GET /api/registers/stations]", (err as Error)?.message);
+    return res.status(500).json({ message: "Failed to load the stations" });
+  }
+});
+
+// Puts this tablet on the station the manager chose (Manager menu, behind the manager PIN). It gives up the station
+// it had; a tablet that held the chosen one is moved on its next check-in (to a free one — often the one this tablet
+// just left). Both stations' customer screens are told at once.
+router.post("/api/registers/my-station/choose", isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(404).json({ message: "Store not found" });
+    const deviceId = String(req.body?.deviceId ?? "").trim();
+    if (!ID_RE.test(deviceId)) return res.status(400).json({ message: "deviceId is required" });
+    const registerId = Number(req.body?.registerId);
+    const options = await stationOptions(storeId);
+    const target = options.find((o) => o.id === registerId);
+    if (!target) return res.status(404).json({ message: "That station no longer exists" });
+    const client = await pool.connect();
+    let left: number[] = [];
+    try {
+      await client.query("BEGIN");
+      left = (await client.query(
+        `DELETE FROM register_claims WHERE store_id = $1 AND device_id = $2 AND register_id <> $3 RETURNING register_id`,
+        [storeId, deviceId, registerId],
+      )).rows.map((r: any) => Number(r.register_id));
+      await client.query(
+        `INSERT INTO register_claims (store_id, register_id, device_id, claimed_at) VALUES ($1, $2, $3, now())
+         ON CONFLICT (store_id, register_id) DO UPDATE SET device_id = EXCLUDED.device_id, claimed_at = now()`,
+        [storeId, registerId, deviceId],
+      );
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+    console.log(`[stations] store ${storeId}: a POS tablet was put on ${target.name} by a manager`);
+    for (const id of new Set([registerId, ...left])) announcePairingChange(storeId, id);
+    return res.json({ registerId: target.id, name: target.name, multiStation: options.length >= 2 });
+  } catch (err) {
+    console.error("[POST /api/registers/my-station/choose]", (err as Error)?.message);
+    return res.status(500).json({ message: "Failed to move this tablet to that station" });
   }
 });
 

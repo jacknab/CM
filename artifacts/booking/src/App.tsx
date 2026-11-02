@@ -28,6 +28,7 @@ import DevicePresenceBeacon from "@/components/DevicePresenceBeacon";
 import { RequirePermission } from "@/components/RequirePermission";
 import { PERMISSIONS } from "@shared/permissions";
 import { AccountStatusGate } from "@/components/AccountStatusGate";
+import { BookingSystemGate } from "@/components/BookingSystemGate";
 import SeoManager from "@/components/SeoManager";
 
 const Services = lazy(() => import("@/pages/Services"));
@@ -38,6 +39,7 @@ const CatalogDeals = lazy(() => import("@/pages/catalog/CatalogDeals"));
 const CatalogAddons = lazy(() => import("@/pages/catalog/CatalogAddons"));
 const CatalogProducts = lazy(() => import("@/pages/catalog/CatalogProducts"));
 const NailServices = lazy(() => import("@/pages/catalog/NailServices"));
+const PricingLevels = lazy(() => import("@/pages/catalog/PricingLevels"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const Calendar = lazy(() => import("@/pages/Calendar"));
 const PosCheckout = lazy(() => import("@/pages/PosCheckout"));
@@ -649,6 +651,7 @@ function AppRoutes() {
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
       <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />
+      <Route path="/catalog/pricing-levels" element={<OwnerOnlyRoute><PricingLevels /></OwnerOnlyRoute>} />
       <Route path="/catalog/resources" element={<OwnerOnlyRoute><ResourceSettings /></OwnerOnlyRoute>} />
       <Route path="/catalog/translations" element={<OwnerOnlyRoute><TranslationsPage /></OwnerOnlyRoute>} />
       <Route path="/payments/payouts" element={<OwnerOnlyRoute><PaymentsPayouts /></OwnerOnlyRoute>} />
@@ -797,11 +800,11 @@ function AppRoutes() {
           {/* Inside a Certxa app the full platform's menus are never shown. */}
           {!inApp && <GlobalMobileHeader />}
           <AccountStatusGate>
-            <AppBusinessGate>{routes}</AppBusinessGate>
+            <AppBusinessGate><BookingSystemGate>{routes}</BookingSystemGate></AppBusinessGate>
           </AccountStatusGate>
-          {/* No offline badge on the salon screens: /nail shows its connection in its footer; the kiosk and the
+          {/* No offline badge on the salon screens: /nail and /barber show their connection in the footer; the kiosk and the
               customer screen never show the system's state to clients. */}
-          {location.pathname !== "/calendar" && !/^\/(nail|kiosk|frontdesk)(\/|$)/.test(location.pathname) && <OfflineStatusBanner />}
+          {location.pathname !== "/calendar" && !/^\/(nail|barber|kiosk|frontdesk)(\/|$)/.test(location.pathname) && <OfflineStatusBanner />}
           {!/^\/(kiosk|frontdesk)(\/|$)/.test(location.pathname) && <SyncConflictPanel />}
           {/* Global mobile bottom nav — fixed bottom-0, visible on every authenticated page */}
           {!inApp && <MobileBottomNav />}

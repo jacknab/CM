@@ -5,6 +5,7 @@
 //   3. .env in cwd                       (local dev fallback)
 // `/etc/certxa.env` is authoritative in production and should override any older
 // values already present in process.env when the server starts.
+import { applySalonPage, salonFacts } from "./lib/salonSeo";
 import dotenv from "dotenv";
 import fs from "fs";
 if (fs.existsSync("/etc/certxa.env")) {
@@ -1727,6 +1728,20 @@ async function repairTwilioMessagingServiceInboundWebhook() {
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.setHeader("Pragma", "no-cache");
         res.setHeader("Expires", "0");
+        // A salon's booking page (<slug>.certxa.com, shown at /book/<slug>): its own head, structured data and
+        // readable summary for search and AI answer engines, allowed in results (lib/salonSeo.ts). The booking
+        // steps below it stay out of search results.
+        if (indexTemplate && segments[1] === "book" && segments[2] && (segments.length === 3 || (segments.length === 4 && segments[3] === ""))) {
+          try {
+            const facts = await salonFacts(decodeURIComponent(segments[2]));
+            if (facts) {
+              res.status(200).type("html").send(applySalonPage(indexTemplate, facts));
+              return;
+            }
+          } catch (err) {
+            console.warn("[salonSeo] head failed:", (err as Error)?.message);
+          }
+        }
         // Everything that reaches here is an app screen (the POS, a salon's booking steps, settings…), not a
         // page for search results: the public pages were all answered above. The shell's own robots tag says
         // "index, follow" for the marketing site, which is how /book/<salon> ended up reported as a Soft 404.

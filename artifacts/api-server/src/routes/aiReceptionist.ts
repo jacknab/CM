@@ -60,6 +60,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { isBookingSystemOff } from "../lib/bookingSystem";
 import { addressIsPrivate } from "../lib/publicStore";
 import { isAccountStopped } from "../lib/accountSuspension";
 import type { Express, Request, Response } from "express";
@@ -5488,6 +5489,11 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
       console.log(`[AI Receptionist] Incoming call rejected — receptionist disabled for store ${storeId}`);
       return res.status(200).type("text/xml").send(twimlDisabledBusy());
     }
+    // The salon switched its booking system off (lib/bookingSystem.ts): Autumn is off with it.
+    if (await isBookingSystemOff(storeId)) {
+      console.log(`[AI Receptionist] Incoming call not answered — store ${storeId}'s booking system is off`);
+      return res.status(200).type("text/xml").send(twimlDisabledBusy());
+    }
     // A suspended account: Autumn doesn't answer, the same as when she is switched off (lib/accountSuspension.ts).
     if (await isAccountStopped(storeId)) {
       console.log(`[AI Receptionist] Incoming call not answered — store ${storeId}'s account is suspended`);
@@ -6050,6 +6056,11 @@ When done, say a warm goodbye and end the call naturally.${salon.ownerInstructio
 
     const receptionistEnabled = await getReceptionistEnabled(storeId);
     if (!receptionistEnabled) {
+      return res.status(200).type("text/xml").send(twimlDisabledBusy());
+    }
+    // The salon switched its booking system off (lib/bookingSystem.ts): Autumn is off with it.
+    if (await isBookingSystemOff(storeId)) {
+      console.log(`[AI Receptionist] Incoming call not answered — store ${storeId}'s booking system is off`);
       return res.status(200).type("text/xml").send(twimlDisabledBusy());
     }
     // A suspended account: Autumn doesn't answer (lib/accountSuspension.ts).

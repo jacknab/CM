@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { Ban, CalendarDays, Check, Clock, Hand, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare } from "lucide-react";
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
@@ -29,7 +30,7 @@ interface Props {
 }
 
 const NO_COLOR = "#454c56";
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" });
 
 /**
  * A ticket's card — details plus the action dock. An unassigned waiting ticket must be

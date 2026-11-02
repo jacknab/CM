@@ -1,3 +1,5 @@
+import { isBookingSystemOff } from "../lib/bookingSystem";
+import { salonFacts, salonLlmsTxt, salonRobotsTxt, salonSitemapXml } from "../lib/salonSeo";
 import { type Request, type Response, type NextFunction } from 'express';
 import { isAccountStopped } from "../lib/accountSuspension";
 import { db } from '../db';
@@ -374,6 +376,32 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
             </head><body><div class="box"><h1>${storeName}</h1>
             <p>This business is not currently accepting online bookings.</p>
             </div></body></html>`);
+        }
+
+        // The salon switched its booking system off (lib/bookingSystem.ts): its booking page is closed.
+        if (await isBookingSystemOff(store.id)) {
+          const storeName = String((store as any).name ?? "This business").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+          return res.status(200).send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${storeName}</title>
+            <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#fafafa;color:#1a1a1a;}
+            .box{text-align:center;padding:2rem;max-width:480px;} h1{font-size:2rem;margin-bottom:0.5rem;} p{color:#555;margin:0.5rem 0;}</style>
+            </head><body><div class="box"><h1>${storeName}</h1>
+            <p>We're not taking online bookings right now. Please call or visit us.</p>
+            </div></body></html>`);
+        }
+
+        // The salon's own robots.txt, sitemap.xml and llms.txt (lib/salonSeo.ts) — not Certxa's, which these
+        // subdomains used to serve, telling search and AI engines about Certxa instead of the salon.
+        {
+          const file = (req.path || "").toLowerCase();
+          if (file === "/robots.txt" || file === "/sitemap.xml" || file === "/llms.txt") {
+            const facts = await salonFacts(String(store.bookingSlug ?? subdomain));
+            if (facts) {
+              res.setHeader("Cache-Control", "public, max-age=3600");
+              if (file === "/robots.txt") return res.type("text/plain").send(salonRobotsTxt(facts));
+              if (file === "/sitemap.xml") return res.type("application/xml").send(salonSitemapXml(facts));
+              return res.type("text/markdown; charset=utf-8").send(salonLlmsTxt(facts));
+            }
+          }
         }
 
         // Rewrite the root path so the booking SPA receives the slug while the

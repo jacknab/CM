@@ -918,6 +918,14 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Giao Dịch Thẻ",
   "Transacciones con Tarjeta"
  ],
+ "CARD PAYMENTS ARE OFF · TURN THEM ON IN MANAGER › FRONT DESK SETUP": [
+  "THANH TOÁN THẺ ĐANG TẮT · BẬT LẠI TRONG QUẢN LÝ › CÀI ĐẶT QUẦY",
+  "LOS PAGOS CON TARJETA ESTÁN DESACTIVADOS · ACTÍVALOS EN GERENTE › CONFIGURACIÓN DE RECEPCIÓN"
+ ],
+ "TYPE THE CASH AMOUNT AND PRESS ENTER": [
+  "NHẬP SỐ TIỀN MẶT RỒI BẤM ENTER",
+  "ESCRIBE EL MONTO EN EFECTIVO Y PRESIONA ENTER"
+ ],
  "CARD WILL RECORD PAYMENTS TAKEN ON YOUR OWN TERMINAL": [
   "THẺ SẼ GHI NHẬN THANH TOÁN TRÊN MÁY CỦA BẠN",
   "LA TARJETA REGISTRARÁ PAGOS TOMADOS EN TU PROPIO TERMINAL"
@@ -3374,6 +3382,10 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "OK",
   "OK"
  ],
+ "Tech ID Print": [
+  "In mã thợ",
+  "Imprimir ID del técnico"
+ ],
  "On · Tech ID to use the front desk": [
   "Bật · ID thợ để dùng quầy lễ tân",
   "Encendido · ID de técnico para usar la recepción"
@@ -5706,6 +5718,234 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Mã QR hết hạn sau 5 phút.",
   "El código QR vence en 5 minutos."
  ],
+ "Keypad on lock screen": [
+  "Bàn phím số ở màn hình khóa",
+  "Teclado en la pantalla de bloqueo"
+ ],
+ "Show Keypad": [
+  "Hiện bàn phím số",
+  "Mostrar teclado"
+ ],
+ "Could not make the manager badge.": [
+  "Không tạo được thẻ quản lý.",
+  "No se pudo crear la credencial de gerente."
+ ],
+ "Could not print the manager badge.": [
+  "Không in được thẻ quản lý.",
+  "No se pudo imprimir la credencial de gerente."
+ ],
+ "Print Manager Badge": [
+  "In thẻ quản lý",
+  "Imprimir credencial de gerente"
+ ],
+ "That is not a manager badge.": [
+  "Đây không phải thẻ quản lý.",
+  "Esa no es una credencial de gerente."
+ ],
+ "That manager badge no longer works.": [
+  "Thẻ quản lý này không còn dùng được.",
+  "Esa credencial de gerente ya no funciona."
+ ],
+ "This tablet's Certxa app needs its latest update to print this. Close the app and open it again twice, then try again.": [
+  "Ứng dụng Certxa trên máy này cần bản cập nhật mới nhất để in. Đóng ứng dụng rồi mở lại hai lần, sau đó thử lại.",
+  "La app Certxa de esta tableta necesita su última actualización para imprimir esto. Cierre la app y ábrala de nuevo dos veces, luego intente otra vez."
+ ],
+ "The printer did not answer. Check it is on, then try again.": [
+  "Máy in không phản hồi. Kiểm tra máy in đã bật, rồi thử lại.",
+  "La impresora no respondió. Verifique que esté encendida e intente de nuevo."
+ ],
+ "The printer did not print it.": [
+  "Máy in không in được.",
+  "La impresora no lo imprimió."
+ ],
+ "Could not reach the Certxa app's printer.": [
+  "Không kết nối được máy in của ứng dụng Certxa.",
+  "No se pudo conectar con la impresora de la app Certxa."
+ ],
+ "Updated and saved on the server and this tablet.": [
+  "Đã cập nhật và lưu trên máy chủ và máy này.",
+  "Actualizado y guardado en el servidor y en esta tableta."
+ ],
+ "Updated. No internet, so it is saved on this tablet only.": [
+  "Đã cập nhật. Không có internet nên chỉ lưu trên máy này.",
+  "Actualizado. Sin internet, se guardó solo en esta tableta."
+ ],
+ "Could not update.": [
+  "Không cập nhật được.",
+  "No se pudo actualizar."
+ ],
+ "UPDATING…": [
+  "ĐANG CẬP NHẬT…",
+  "ACTUALIZANDO…"
+ ],
+ "UPDATE": [
+  "CẬP NHẬT",
+  "ACTUALIZAR"
+ ],
+ "No hub address yet. Make sure the main front desk tablet is on, then press Update again.": [
+  "Chưa có địa chỉ hub. Hãy bật máy quầy chính, rồi bấm Cập nhật lại.",
+  "Aún no hay dirección del hub. Encienda la tableta principal de recepción y pulse Actualizar otra vez."
+ ],
+ "The salon hub works only in the Certxa app.": [
+  "Hub của tiệm chỉ hoạt động trong ứng dụng Certxa.",
+  "El hub del salón solo funciona en la app Certxa."
+ ],
+ "None": [
+  "Chưa có",
+  "Ninguna"
+ ],
+ "Change Station": [
+  "Đổi quầy",
+  "Cambiar estación"
+ ],
+ "This tablet's station changed": [
+  "Đã đổi quầy của máy này",
+  "Se cambió la estación de esta tableta"
+ ],
+ "Could not load the stations": [
+  "Không tải được các quầy",
+  "No se pudieron cargar las estaciones"
+ ],
+ "Could not move this tablet to that station.": [
+  "Không chuyển được máy này sang quầy đó.",
+  "No se pudo mover esta tableta a esa estación."
+ ],
+ "This tablet's station": [
+  "Quầy của máy này",
+  "Estación de esta tableta"
+ ],
+ "This tablet uses the station's cash drawer and customer screen. The main station runs the salon hub.": [
+  "Máy này dùng ngăn kéo tiền và màn hình khách của quầy. Quầy chính chạy hub của tiệm.",
+  "Esta tableta usa la caja y la pantalla del cliente de la estación. La estación principal ejecuta el hub del salón."
+ ],
+ "Could not load the stations. Check the internet and try again.": [
+  "Không tải được các quầy. Kiểm tra internet rồi thử lại.",
+  "No se pudieron cargar las estaciones. Revise el internet e intente de nuevo."
+ ],
+ "Moving…": [
+  "Đang chuyển…",
+  "Moviendo…"
+ ],
+ "This tablet": [
+  "Máy này",
+  "Esta tableta"
+ ],
+ "Every front desk station already belongs to another tablet, so this one isn't linked to a customer screen. A manager can put this tablet on its station in the Manager menu (Change Station), or add a station in Settings → POS Stations.": [
+  "Mọi quầy đã thuộc về máy khác nên máy này chưa nối với màn hình khách. Quản lý có thể chọn quầy cho máy này trong menu Quản lý (Đổi quầy), hoặc thêm quầy trong Cài đặt → Quầy POS.",
+  "Todas las estaciones ya pertenecen a otra tableta, así que esta no está vinculada a una pantalla del cliente. Un gerente puede asignarle su estación en el menú Gerente (Cambiar estación) o agregar una en Configuración → Estaciones POS."
+ ],
+ "Could not make this the main station.": [
+  "Không đặt được quầy này làm quầy chính.",
+  "No se pudo hacer esta la estación principal."
+ ],
+ "This tablet is now the main station and runs the salon hub.": [
+  "Máy này giờ là quầy chính và chạy hub của tiệm.",
+  "Esta tableta ahora es la estación principal y ejecuta el hub del salón."
+ ],
+ "Salon hub: not running yet": [
+  "Hub của tiệm: chưa chạy",
+  "Hub del salón: aún no funciona"
+ ],
+ "MAKE THIS TABLET THE MAIN": [
+  "ĐẶT MÁY NÀY LÀM QUẦY CHÍNH",
+  "HACER ESTA TABLETA LA PRINCIPAL"
+ ],
+ "Station Drawer": [
+  "Ngăn kéo tiền của quầy",
+  "Caja de la estación"
+ ],
+ "This POS": [
+  "Quầy này",
+  "Esta caja"
+ ],
+ "Could not change the cash drawer.": [
+  "Không đổi được ngăn kéo tiền.",
+  "No se pudo cambiar la caja."
+ ],
+ "The cash drawer this POS uses. Without one it can't take cash.": [
+  "Ngăn kéo tiền quầy này dùng. Không có thì không nhận tiền mặt được.",
+  "La caja que usa esta estación. Sin una no puede cobrar en efectivo."
+ ],
+ "No cash drawers yet. Add one in Settings › Cash Drawers.": [
+  "Chưa có ngăn kéo tiền. Thêm trong Cài đặt › Ngăn kéo tiền.",
+  "Aún no hay cajas. Agregue una en Configuración › Cajas."
+ ],
+ "No cash drawer": [
+  "Không có ngăn kéo tiền",
+  "Sin caja"
+ ],
+ "Keypad shown.": [
+  "Đã hiện bàn phím số.",
+  "Teclado visible."
+ ],
+ "Keypad hidden. Scan the same QR to show it again.": [
+  "Đã ẩn bàn phím số. Quét lại mã QR này để hiện lại.",
+  "Teclado oculto. Escanee el mismo QR para mostrarlo de nuevo."
+ ],
+ "Keypad hidden. Scan the same KEYPAD QR at the lock screen to show it again.": [
+  "Đã ẩn bàn phím số. Quét lại mã QR KEYPAD ở màn hình khóa để hiện lại.",
+  "Teclado oculto. Escanee el mismo QR KEYPAD en la pantalla de bloqueo para mostrarlo de nuevo."
+ ],
+ "A KEYPAD QR code has been printed. Scan it now to hide the keypad.": [
+  "Đã in mã QR KEYPAD. Quét ngay để ẩn bàn phím số.",
+  "Se imprimió un código QR KEYPAD. Escanéelo ahora para ocultar el teclado."
+ ],
+ "Keep it: scanning the same QR at the lock screen shows the keypad again.": [
+  "Hãy giữ lại: quét mã QR này ở màn hình khóa sẽ hiện lại bàn phím số.",
+  "Guárdelo: al escanear el mismo QR en la pantalla de bloqueo, el teclado vuelve a aparecer."
+ ],
+ "Only cash, a card on the M2 reader, or a card on your own terminal can be taken while the tablet is offline. Gift cards and Tap to Pay need a connection.": [
+  "Khi máy mất mạng chỉ nhận tiền mặt, thẻ qua máy đọc M2, hoặc thẻ qua máy quẹt riêng của tiệm. Thẻ quà tặng và Tap to Pay cần có mạng.",
+  "Sin conexión solo se acepta efectivo, una tarjeta en el lector M2 o una tarjeta en su propia terminal. Las tarjetas de regalo y Tap to Pay necesitan conexión."
+ ],
+ "Printing": [
+  "In",
+  "Impresión"
+ ],
+ "Choose what prints by itself on your receipt printer. You can always print any of these by hand.": [
+  "Chọn những gì máy in hóa đơn tự in. Bạn luôn có thể tự in bất kỳ mục nào.",
+  "Elija qué se imprime solo en su impresora de recibos. Siempre puede imprimir cualquiera a mano."
+ ],
+ "Salon copy of the receipt": [
+  "Bản hóa đơn của tiệm",
+  "Copia del recibo para el salón"
+ ],
+ "Each sale prints a salon copy (signed for a card) and a customer copy.": [
+  "Mỗi lần bán in một bản cho tiệm (ký khi trả thẻ) và một bản cho khách.",
+  "Cada venta imprime una copia para el salón (firmada si es con tarjeta) y una para el cliente."
+ ],
+ "Only the customer copy prints.": [
+  "Chỉ in bản cho khách.",
+  "Solo se imprime la copia del cliente."
+ ],
+ "Day Close report": [
+  "Báo cáo đóng ngày",
+  "Informe de cierre del día"
+ ],
+ "Prints by itself when you close the day.": [
+  "Tự in khi bạn đóng ngày.",
+  "Se imprime solo al cerrar el día."
+ ],
+ "Doesn't print. Tap Print the Z Report after closing the day if you want it.": [
+  "Không tự in. Bấm In báo cáo Z sau khi đóng ngày nếu cần.",
+  "No se imprime. Toque Imprimir el informe Z después de cerrar el día si lo quiere."
+ ],
+ "Check-in slip": [
+  "Phiếu check-in",
+  "Comprobante de llegada"
+ ],
+ "Prints when a client checks in at the kiosk, the customer screen or the front desk.": [
+  "In khi khách check-in ở kiosk, màn hình khách hoặc quầy lễ tân.",
+  "Se imprime cuando un cliente se registra en el kiosco, la pantalla del cliente o la recepción."
+ ],
+ "No slip prints when a client checks in.": [
+  "Không in phiếu khi khách check-in.",
+  "No se imprime comprobante cuando un cliente se registra."
+ ],
+ "Print the Z Report": [
+  "In báo cáo Z",
+  "Imprimir el informe Z"
+ ],
  "Show keypad on lock screen": [
   "Hiện bàn phím số ở màn hình khóa",
   "Mostrar teclado en la pantalla de bloqueo"
@@ -6190,13 +6430,41 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
   "Nút THẺ khi tính tiền sẽ làm gì?",
   "¿Qué debe hacer el botón TARJETA al cobrar?"
  ],
- "Certxa card reader": [
-  "Máy quẹt thẻ Certxa",
-  "Lector de tarjetas Certxa"
+ "Stripe M2 Reader": [
+  "Máy đọc thẻ Stripe M2",
+  "Lector Stripe M2"
  ],
- "The card is charged on the Certxa card reader, and the money is paid out to your bank by Stripe.": [
-  "Thẻ được quẹt trên máy Certxa, và Stripe chuyển tiền về ngân hàng của bạn.",
-  "La tarjeta se cobra en el lector Certxa y Stripe deposita el dinero en su banco."
+ "The card is charged on the Stripe M2 reader, and the money is paid out to your bank by Stripe.": [
+  "Thẻ được quẹt trên máy Stripe M2, và Stripe chuyển tiền về ngân hàng của bạn.",
+  "La tarjeta se cobra en el lector Stripe M2 y Stripe deposita el dinero en su banco."
+ ],
+ "Start accepting card payments through Certxa": [
+  "Bắt đầu nhận thanh toán thẻ qua Certxa",
+  "Empiece a aceptar pagos con tarjeta a través de Certxa"
+ ],
+ "Connect a Stripe account to take cards on the Stripe M2 reader. When it is connected, open this setup again from Manager › Front Desk Setup and choose the reader.": [
+  "Kết nối tài khoản Stripe để nhận thẻ trên máy Stripe M2. Khi đã kết nối, mở lại phần cài đặt này từ Quản lý › Cài đặt quầy và chọn máy đọc thẻ.",
+  "Conecte una cuenta de Stripe para cobrar con tarjeta en el lector Stripe M2. Cuando esté conectada, abra esta configuración otra vez desde Gerente › Configuración de recepción y elija el lector."
+ ],
+ "Set up card payments": [
+  "Cài đặt thanh toán thẻ",
+  "Configurar pagos con tarjeta"
+ ],
+ "We do not accept card payments": [
+  "Chúng tôi không nhận thanh toán thẻ",
+  "No aceptamos pagos con tarjeta"
+ ],
+ "The CARD button is turned off at checkout.": [
+  "Nút THẺ sẽ bị tắt khi tính tiền.",
+  "El botón TARJETA se desactiva al cobrar."
+ ],
+ "No card payments": [
+  "Không nhận thẻ",
+  "Sin pagos con tarjeta"
+ ],
+ "Choose how you take card payments.": [
+  "Hãy chọn cách bạn nhận thanh toán thẻ.",
+  "Elija cómo acepta los pagos con tarjeta."
  ],
  "My own card machine": [
   "Máy quẹt thẻ riêng của tiệm",
@@ -7194,6 +7462,96 @@ export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
   "Takes {0} off the clock and out of the turn order.",
   "Cho {0} ra ca và rời khỏi thứ tự lượt.",
   "Marca la salida de {0} y lo saca del orden de turnos."
+ ],
+ [
+  "Printed {0}'s manager badge. Any older manager badge for {1} no longer works.",
+  "Đã in thẻ quản lý của {0}. Thẻ quản lý cũ của {1} không còn dùng được.",
+  "Se imprimió la credencial de gerente de {0}. Cualquier credencial anterior de {1} ya no funciona."
+ ],
+ [
+  "Could not connect to the hub at {0}.",
+  "Không kết nối được hub tại {0}.",
+  "No se pudo conectar con el hub en {0}."
+ ],
+ [
+  "Network IP: {0}",
+  "IP mạng: {0}",
+  "IP de red: {0}"
+ ],
+ [
+  "Hub IP: {0}",
+  "IP hub: {0}",
+  "IP del hub: {0}"
+ ],
+ [
+  "{0} min ago",
+  "{0} phút trước",
+  "hace {0} min"
+ ],
+ [
+  "{0} h ago",
+  "{0} giờ trước",
+  "hace {0} h"
+ ],
+ [
+  "{0} days ago",
+  "{0} ngày trước",
+  "hace {0} días"
+ ],
+ [
+  "{0} is in use by another tablet (seen {1}). Move this tablet to {2}? The other tablet moves to a free station.",
+  "{0} đang được máy khác dùng (thấy {1}). Chuyển máy này sang {2}? Máy kia sẽ chuyển sang quầy trống.",
+  "{0} está en uso en otra tableta (vista {1}). ¿Mover esta tableta a {2}? La otra pasa a una estación libre."
+ ],
+ [
+  "{0} · Main",
+  "{0} · Chính",
+  "{0} · Principal"
+ ],
+ [
+  "In use · seen {0}",
+  "Đang dùng · thấy {0}",
+  "En uso · vista {0}"
+ ],
+ [
+  "Make {0} the main station? This tablet will run the salon hub that keeps the tablets working together when the internet is down.",
+  "Đặt {0} làm quầy chính? Máy này sẽ chạy hub giúp các máy làm việc cùng nhau khi mất internet.",
+  "¿Hacer {0} la estación principal? Esta tableta ejecutará el hub que mantiene las tabletas trabajando juntas sin internet."
+ ],
+ [
+  "This tablet: {0}",
+  "Máy này: {0}",
+  "Esta tableta: {0}"
+ ],
+ [
+  "Main station: {0}",
+  "Quầy chính: {0}",
+  "Estación principal: {0}"
+ ],
+ [
+  "Salon hub: {0}",
+  "Hub của tiệm: {0}",
+  "Hub del salón: {0}"
+ ],
+ [
+  "Printed {0}'s Tech ID. It signs in at the lock screen and works as the manager PIN. Older badges for {1} no longer work as the manager PIN.",
+  "Đã in Mã thợ của {0}. Thẻ này dùng để đăng nhập ở màn hình khóa và thay mã PIN quản lý. Thẻ cũ của {1} không còn thay mã PIN quản lý được.",
+  "Se imprimió el ID de técnico de {0}. Inicia sesión en la pantalla de bloqueo y sirve como PIN de gerente. Las credenciales anteriores de {1} ya no sirven como PIN de gerente."
+ ],
+ [
+  "Tech ID {0} · Manager",
+  "Mã thợ {0} · Quản lý",
+  "ID de técnico {0} · Gerente"
+ ],
+ [
+  "Tech ID {0}",
+  "Mã thợ {0}",
+  "ID de técnico {0}"
+ ],
+ [
+  "{0} cash drawer",
+  "Ngăn kéo tiền {0}",
+  "Caja de {0}"
  ],
  [
   "Printed {0}'s Tech ID.",

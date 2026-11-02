@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // A salon hub in memory: every message goes to every listener (the native hub relays to the other tablets).
 const bus = vi.hoisted(() => ({ up: true, listeners: new Set<(m: any) => void>() }));
 vi.mock("../local-hub", () => ({
+  confirmOutage: () => Promise.resolve(),
   localHub: {
     send: (m: any) => { if (!bus.up) return false; const copy = JSON.parse(JSON.stringify(m)); queueMicrotask(() => bus.listeners.forEach((fn) => fn(copy))); return true; },
     onMessage: (fn: (m: any) => void) => { bus.listeners.add(fn); return () => { bus.listeners.delete(fn); }; },
@@ -64,6 +65,23 @@ describe("one offline POS for the salon (main POS stands in for the server)", ()
     bus.up = true;
     await station.start(ticket.id);
     expect((await station.localRecords(2)).find((r) => r.id === ticket.id)).toMatchObject({ status: "started" });
+  });
+
+  it("a ticket the station made on its own is paid on the station, and the main POS's tickets are untouched (2026-11-02)", async () => {
+    // The main POS has its own ticket; the station makes one while the main POS is out of reach.
+    const mc = await main.createClient(2, "Ana Diaz", "6025550111");
+    const mainTicket = await main.createTicket({ ...ticketInput(mc.id), clientName: "Ana Diaz" });
+    bus.up = false;
+    const sc = await station.createClient(2, "Mai Tran", "6025550101");
+    const stationTicket = await station.createTicket(ticketInput(sc.id));
+    bus.up = true;
+    expect(stationTicket.id).not.toBe(mainTicket.id);
+    await station.recordCash(2, { id: stationTicket.id, clientName: "Mai Tran" }, { totalPaid: 35, cash: 35, tip: 0, request: {}, idempotencyKey: "nail-test-station-cash-1" });
+    expect((await station.localRecords(2)).find((r) => r.id === stationTicket.id)).toMatchObject({ paid: { cash: 35 } });
+    expect((await main.records(2)).find((r) => r.id === mainTicket.id)).not.toHaveProperty("paid");
+    // Both tickets still show on the station, each only once.
+    const ids = (await station.records(2)).filter((r) => r.kind === "ticket").map((r) => r.id);
+    expect(ids.sort()).toEqual([mainTicket.id, stationTicket.id].sort());
   });
 
   it("the main POS refusing something is said on the station, not done there instead", async () => {

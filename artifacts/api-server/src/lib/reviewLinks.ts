@@ -8,6 +8,7 @@
  * instead, so an unhappy customer never lands on a public review site.
  */
 
+import { isSoloPlanCode } from "@shared/soloPlan";
 import { pool, db } from "../db";
 import { clientMarketingPreferences } from "@shared/schema";
 import { eq } from "drizzle-orm";
@@ -17,7 +18,7 @@ import { resolveStorePlan } from "./featureAccess";
 /** Solo (Certxa Pro app) businesses always use Certxa's own reviews, never Google (owner, 2026-10-30). */
 export async function usesBuiltInReviewsOnly(storeId: number): Promise<boolean> {
   const plan = await resolveStorePlan(storeId).catch(() => null);
-  return plan?.planCode === "solo";
+  return isSoloPlanCode(plan?.planCode);
 }
 
 /**

@@ -617,6 +617,20 @@ describe("phase 5: several tablets in one salon", () => {
     expect(mapped.realId).toBe(server.db.clients[0].id);
   });
 
+  it("two tablets never give two offline tickets the same id (a sale forwarded by id paid the wrong ticket, 2026-11-02)", async () => {
+    const front = new NailOffline(memoryKV()); const back = new NailOffline(memoryKV());
+    const ids = new Set<number>();
+    for (const tablet of [front, back]) {
+      for (let i = 0; i < 3; i++) {
+        const c = await tablet.createClient(2, `Client ${i}`, `60255501${i}0`);
+        ids.add((await tablet.createTicket(ticketInput(c.id, null))).id);
+        ids.add(c.id);
+      }
+    }
+    expect(ids.size).toBe(12);
+    expect([...ids].every((id) => id < 0 && Number.isSafeInteger(id))).toBe(true);
+  });
+
   it("two tablets each make a ticket for different walk-ins: two tickets, nothing doubled on retry", async () => {
     const server = fakeServer();
     const front = new NailOffline(memoryKV()); const back = new NailOffline(memoryKV());

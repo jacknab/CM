@@ -7,6 +7,7 @@ import ClassicTheme from "./public-booking/ClassicTheme";
 import MobileTheme from "./public-booking/MobileTheme";
 import SimpleTheme from "./public-booking/SimpleTheme";
 import OfferPage from "./public-booking/OfferPage";
+import ProBooking from "./public-booking/pro/ProBooking";
 
 export default function PublicBooking() {
   const { slug } = useParams<{ slug?: string }>();
@@ -60,7 +61,7 @@ export default function PublicBooking() {
   const previewTheme = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("previewTheme") : null;
   const theme = previewTheme && ["bloom", "simple", "classic", "mobile"].includes(previewTheme) ? previewTheme : effectiveStore.bookingTheme;
 
-  switch (theme) {
+  const themed = (() => { switch (theme) {
     case "classic":
       return (
         <ClassicTheme
@@ -95,5 +96,12 @@ export default function PublicBooking() {
           preselectedServiceId={preselectedServiceId}
         />
       );
+  } })();
+
+  // Barbershops and hair salons: their own booking page, priced by professional (pricing levels). Every other
+  // business, nail salons included, gets its design exactly as before. ?previewTheme= still shows a design.
+  if (!previewTheme && /barber|hair/i.test(effectiveStore.category ?? "")) {
+    return <ProBooking store={effectiveStore as StoreData} slug={effectiveSlug!} fallback={themed} />;
   }
+  return themed;
 }

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Delete, Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useShake } from "@/hooks/use-shake";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { KEYPAD_CODE, scanKeypadCode } from "@/lib/keypadCode";
 import { ApiError, identifyBarber, type BarberSignIn } from "./barberApi";
 import "./barberGate.css";
 
@@ -8,14 +11,17 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
 /**
  * The lock in front of the barber POS: whoever walks up types their Barber ID (1–2 digits) first, so
- * every assign and checkout is theirs. The screen comes back here after each one.
+ * every assign and checkout is theirs. The screen comes back here after each one. A printed Barber ID or manager
+ * badge (Manager › Tech ID Print) signs in the same way, and the shop's KEYPAD QR hides or shows the keypad.
  */
-export function BarberIdGate({ storeName, timezone, waiting, onSignedIn }: {
+export function BarberIdGate({ storeName, timezone, waiting, keypadVisible = true, onSignedIn }: {
   storeName: string;
   /** The shop's timezone, so the clock reads shop time whatever the tablet is set to. */
   timezone: string;
   /** Clients still waiting for a barber, first in line first. Only the first five are shown. */
   waiting: { key: string; ticketNumber: number | null; name: string }[];
+  /** Off: no number keys, barbers scan their printed Barber ID. */
+  keypadVisible?: boolean;
   onSignedIn: (who: BarberSignIn) => void;
 }) {
   const [digits, setDigits] = useState("");
@@ -34,11 +40,11 @@ export function BarberIdGate({ storeName, timezone, waiting, onSignedIn }: {
   const press = (d: string) => { setMessage(""); setDigits((cur) => (cur.length >= 2 ? cur : cur + d)); };
   const back = () => { setMessage(""); setDigits((cur) => cur.slice(0, -1)); };
 
-  const enter = useCallback(async () => {
-    if (busy || digits.length === 0) return;
+  const signIn = useCallback(async (id: number) => {
+    if (busy) return;
     setBusy(true);
     try {
-      onSignedIn(await identifyBarber(Number(digits)));
+      onSignedIn(await identifyBarber(id));
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : "Couldn't check that ID. Try again.");
       setDigits("");
@@ -46,18 +52,51 @@ export function BarberIdGate({ storeName, timezone, waiting, onSignedIn }: {
     } finally {
       setBusy(false);
     }
-  }, [busy, digits, onSignedIn, shake]);
+  }, [busy, onSignedIn, shake]);
+
+  const enter = useCallback(async () => {
+    if (digits.length === 0) return;
+    await signIn(Number(digits));
+  }, [digits, signIn]);
+
+  const queryClient = useQueryClient();
+  const handleKeypadCode = useCallback(async (code: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const r = await scanKeypadCode(code, queryClient);
+      if (r.ok) { setMessage(r.keypadVisible ? "Keypad shown." : "Keypad hidden. Scan the same QR to show it again."); setDigits(""); }
+      else { setMessage(r.error); shake(); }
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, shake, queryClient]);
+
+  useBarcodeScanner((raw) => {
+    const trimmed = raw.trim();
+    // A Barber ID badge, or a manager badge ("M7-K3Q7XB"): both sign in by the Barber ID.
+    const idMatch = /^TECH:(\d{1,2})$/i.exec(trimmed) ?? /^M(\d{1,2})-[A-Z2-7]{6}$/i.exec(trimmed);
+    if (idMatch) {
+      setDigits(idMatch[1]);
+      void signIn(Number(idMatch[1]));
+      return;
+    }
+    if (KEYPAD_CODE.test(trimmed)) { void handleKeypadCode(trimmed); return; }
+    setMessage("That is not a Barber ID badge."); shake();
+  });
 
   // A keyboard (or a numeric scanner wedge) works too.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      if (!keypadVisible) return;
       if (/^[0-9]$/.test(e.key)) press(e.key);
       else if (e.key === "Backspace") back();
       else if (e.key === "Enter") void enter();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [enter]);
+  }, [enter, keypadVisible]);
 
   return (
     <div className="bg-gate" data-testid="barber-id-gate">
@@ -70,8 +109,9 @@ export function BarberIdGate({ storeName, timezone, waiting, onSignedIn }: {
 
       <div className="bg-gate-body">
        <div className="bg-gate-row">
-        <section className="bg-gate-card bg-gate-pad">
-          <p className="bg-gate-label">Enter your Barber ID</p>
+        <section className={`bg-gate-card bg-gate-pad ${!keypadVisible ? "bg-gate-scan" : ""}`}>
+          <p className="bg-gate-label">{keypadVisible ? "Enter your Barber ID" : "SCAN YOUR ID"}</p>
+          {!keypadVisible && <p className="bg-gate-scan-help">Hold your printed Barber ID under the scanner</p>}
           <div className={`bg-gate-slots ${shakeClass}`} onAnimationEnd={onShakeEnd} data-testid="barber-id-display">
             {[0, 1].map((i) => (
               <span key={i} className="bg-gate-slot" data-filled={digits[i] != null}>
@@ -81,6 +121,8 @@ export function BarberIdGate({ storeName, timezone, waiting, onSignedIn }: {
           </div>
           <p className="bg-gate-msg" role="alert" data-testid="barber-id-message">{message}</p>
 
+          {keypadVisible && (
+            <>
           <div className="bg-gate-keys">
             {KEYS.map((d) => <button key={d} type="button" className="bg-gate-key" disabled={busy} onClick={() => press(d)} data-testid={`barber-id-key-${d}`}>{d}</button>)}
             <span aria-hidden />
@@ -88,6 +130,8 @@ export function BarberIdGate({ storeName, timezone, waiting, onSignedIn }: {
             <button type="button" className="bg-gate-key ghost" disabled={busy || digits.length === 0} onClick={back} aria-label="Delete" data-testid="barber-id-key-back"><Delete className="h-7 w-7" /></button>
           </div>
           <button type="button" className="bg-gate-enter" disabled={busy || digits.length === 0} onClick={() => void enter()} data-testid="barber-id-enter">ENTER</button>
+            </>
+          )}
         </section>
 
         <section className="bg-gate-card bg-gate-wait" data-testid="barber-id-waiting">

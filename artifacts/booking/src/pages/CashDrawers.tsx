@@ -20,7 +20,8 @@ import type { CashDrawerWithStations } from "@/hooks/use-cash-drawers";
  * Settings › Cash Drawers (owner, 2026-10-29). A salon sets up its cash drawer with its starting cash (set once; the
  * drawer is counted at Day Close) and ticks the POS stations that use it — several stations can share one drawer,
  * each station uses one. A POS station without a drawer can't take cash. A salon with no station rows has one
- * built-in station, "Main POS station" (the drawer's mainStation flag). Stations change only after the drawer's Day Close.
+ * built-in station, "Main POS station" (the drawer's mainStation flag). Stations can be added anytime; removals after
+ * cash activity wait until Day Close.
  */
 const MAIN = "main";
 
@@ -206,8 +207,8 @@ export default function CashDrawers() {
           <div className="space-y-6">
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-sm text-slate-600" data-testid="cash-drawers-intro">
               A POS station needs a cash drawer to take cash. Enter the cash the drawer starts each day with, then tick
-              the POS stations that use it — several stations can share one drawer. The drawer is counted at Day
-              Close, and its stations can be changed after its Day Close.
+              every POS station that shares this drawer. Several stations can share one drawer, but each station can
+              use only one drawer. Stations can be added anytime; removals after cash activity require Day Close.
             </div>
 
             {drawerList.map((d) => (

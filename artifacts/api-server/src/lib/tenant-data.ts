@@ -8,6 +8,9 @@
  * The data contract matches the useSiteData hook in template_master.
  */
 
+import { isSoloPlanCode } from "@shared/soloPlan";
+import { resolveStorePlan } from "./featureAccess";
+import type { SoloPlaces } from "./proCraft";
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 
@@ -125,6 +128,8 @@ export interface TenantData {
   galleryPhotos: GalleryPhotoEntry[];
   /** staff_id <-> service_id pairs, scoped to this store via the staff join */
   staffServiceLinks: StaffServiceLink[];
+  /** A Solo-plan professional and where they work (lib/proCraft.ts): described by their craft, not as a salon. */
+  solo?: SoloPlaces | null;
 }
 
 export interface TenantDataWithMeta extends TenantData {
@@ -309,6 +314,16 @@ export async function buildTenantData(
         WHERE s.store_id = ${storeIdNum}`
   );
 
+  // A Solo-plan professional (booth or suite, home studio, house calls), for how search engines describe them.
+  let solo: SoloPlaces | null = null;
+  if (isSoloPlanCode((await resolveStorePlan(storeIdNum).catch(() => null))?.planCode)) {
+    const placeRows = await safeQuery<{ own_place: string | null; house_calls: boolean | null; house_call_radius_miles: number | null }>(
+      sql`SELECT own_place, house_calls, house_call_radius_miles FROM locations WHERE id = ${storeIdNum} LIMIT 1`);
+    const pl = placeRows[0];
+    solo = { ownPlace: pl?.own_place ?? null, houseCalls: pl?.house_calls === true,
+      radiusMiles: pl?.house_call_radius_miles != null && Number(pl.house_call_radius_miles) > 0 ? Number(pl.house_call_radius_miles) : null };
+  }
+
   return {
     website,
     business,
@@ -322,6 +337,7 @@ export async function buildTenantData(
     serviceReviews,
     galleryPhotos,
     staffServiceLinks,
+    solo,
   };
 }
 

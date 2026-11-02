@@ -49,6 +49,7 @@
     "@tiptap/extension-placeholder": "^3.30.3",
     "@tiptap/react": "^3.30.3",
     "@tiptap/starter-kit": "^3.30.3",
+    "@types/bcryptjs": "2.4.6",
     "@types/leaflet": "^1.9.14",
     "@types/lodash.debounce": "^4.0.9",
     "@types/node": "catalog:",
@@ -99,6 +100,7 @@
     "@stripe/react-connect-js": "^3.4.4",
     "@stripe/react-stripe-js": "^6.7.0",
     "@stripe/stripe-js": "^9.9.0",
+    "bcryptjs": "2.4.3",
     "html5-qrcode": "^2.3.8"
   }
 }

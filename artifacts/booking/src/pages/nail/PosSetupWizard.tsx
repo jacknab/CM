@@ -2,11 +2,15 @@
  * Front desk setup — the first time a salon opens the /nail POS (owner, 2026-10-31; plans/pos-setup.md).
  *
  * One question a screen, every answer saved as the owner moves on, through the same settings the rest of
- * Certxa uses: sales tax (POS Settings), the CARD button, cash price, the first cash drawer on the main POS
+ * Certxa uses: sales tax (POS Settings), the CARD button, cash price, the first cash drawer and its POS stations
  * register, tip choices, the turn method, the team's Tech IDs and the lock screen, and the salon's own manager
  * PIN (every salon starts on the shared 2026). Opens again from Manager › POS Setup.
  * Shown full screen in place of the POS until it is finished; it has to be finished before the front desk can be used (owner login).
  */
+import { staffApi } from "@/lib/staffScreenApi";
+import { appPage } from "@/lib/appProfile";
+import { DEFAULT_PRINT_SETTINGS, printSettingsOf, type PrintSettings } from "@shared/printSettings";
+import { printSettingsKey, savePrintSettings } from "@/lib/printSettings";
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Loader2 } from "lucide-react";
@@ -20,14 +24,16 @@ const SETUP_LANGS: { code: NailLang; label: string }[] = [
   { code: "en", label: "English" }, { code: "vi", label: "Tiếng Việt" }, { code: "es", label: "Español" }, { code: "fr", label: "Français" },
 ];
 
-type CardProvider = "stripe" | "own";
+type CardProvider = "stripe" | "own" | "none";
 interface TeamMember { id: number; name: string; role: string | null; techId: number | null; frontDesk: boolean; isOwner: boolean }
+interface SetupRegister { id: number; name: string; isActive: boolean; isDefault: boolean; cashDrawerId: number | null }
+interface SetupDrawer { id: number; name: string; startingCash: number; registerIds: number[]; mainStation: boolean }
 interface SetupStatus {
   completed: boolean; canSetUp: boolean; stripeConnected: boolean; managerPinIsDefault: boolean;
   mainDrawer: { id: number; name: string; startingCash: number } | null; team: TeamMember[];
 }
 
-const STEPS = ["welcome", "tax", "card", "cash", "drawer", "tips", "turns", "team", "pin", "done"] as const;
+const STEPS = ["welcome", "tax", "card", "cash", "drawer", "tips", "printing", "turns", "team", "pin", "done"] as const;
 type Step = (typeof STEPS)[number];
 
 async function send(url: string, method: string, body?: unknown) {
@@ -88,7 +94,11 @@ function MoneyField({ label, value, onChange, prefix, suffix, testId, max }: { l
   );
 }
 
-export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: { storeId: number; onFinished: () => void; onClose: () => void; lang: NailLang; onLang: (l: NailLang) => void }) {
+export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang, barber = false }: {
+  storeId: number; onFinished: () => void; onClose: () => void; lang: NailLang; onLang?: (l: NailLang) => void;
+  /** /barber: a shop's words (shop, barber, Barber ID), and no lock-screen switch — /barber always asks for the Barber ID. */
+  barber?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -99,16 +109,22 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
   // Answers, starting from what the salon has now.
   const [taxRate, setTaxRate] = useState("0");
   const [taxable, setTaxable] = useState({ services: false, addons: false, products: true, giftCards: false });
-  const [card, setCard] = useState<CardProvider>("stripe");
+  // null until chosen: with no Stripe account connected, the Stripe M2 reader isn't offered, so the owner picks.
+  const [card, setCard] = useState<CardProvider | null>(null);
   const [cashPct, setCashPct] = useState("0");
   const [drawerName, setDrawerName] = useState("");
   const [startingCash, setStartingCash] = useState("200");
+  const [registers, setRegisters] = useState<SetupRegister[]>([]);
+  const [drawers, setDrawers] = useState<SetupDrawer[]>([]);
+  const [drawerStations, setDrawerStations] = useState<string[]>([]);
   const [tips, setTips] = useState<string[]>(DEFAULT_TIP_PRESETS.map(String));
   const [turnSaved, setTurnSaved] = useState<Record<string, any>>({});
   const [mode, setMode] = useState<TurnMode>("classic");
   const [dollars, setDollars] = useState("30");
   const [partial, setPartial] = useState(0.5);
   const [lockScreen, setLockScreen] = useState(true);
+  // What prints by itself (shared/printSettings.ts).
+  const [printing, setPrinting] = useState<PrintSettings>(DEFAULT_PRINT_SETTINGS);
   const [pin, setPin] = useState("");
   const [pin2, setPin2] = useState("");
 
@@ -121,26 +137,59 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
       get("/api/card-provider").catch(() => null),
       get("/api/tip-presets").catch(() => null),
       get(`/api/turn/settings?storeId=${storeId}`).catch(() => null),
-      get("/api/nail/screen-settings").catch(() => null),
-    ]).then(([s, pos, cp, tp, turn, screen]) => {
+      get(staffApi("/screen-settings")).catch(() => null),
+      get("/api/registers"),
+      get("/api/cash-drawers"),
+      get("/api/nail/print-settings").catch(() => null),
+    ]).then(([s, pos, cp, tp, turn, screen, registerRows, drawerRows, print]) => {
+      if (print) setPrinting(printSettingsOf({ printing: print }));
       if (!alive) return;
       setStatus(s);
+      const activeRegisters = (registerRows as SetupRegister[]).filter((r) => r.isActive);
+      const cashDrawers = drawerRows as SetupDrawer[];
+      setRegisters(activeRegisters);
+      setDrawers(cashDrawers);
       if (pos) {
         setTaxRate(String(Math.round(Number(pos.salesTaxRate ?? 0) * 100000) / 1000));
         setTaxable({ services: !!pos.taxServicesTaxable, addons: !!pos.taxAddonsTaxable, products: pos.taxProductsTaxable !== false, giftCards: !!pos.taxGiftCardsTaxable });
         setCashPct(String(pos.cashDiscountPercent ?? 0));
       }
-      if (cp?.provider) setCard(cp.provider === "own" ? "own" : "stripe");
+      const savedCard: CardProvider = cp?.provider === "own" || cp?.provider === "none" ? cp.provider : "stripe";
+      setCard(savedCard === "stripe" && !s.stripeConnected ? null : savedCard);
       if (tp) setTips(sanitizeTipPresets(tp.presets).map(String));
       if (turn) {
         const rules = normalizeTurnRules(turn);
         setTurnSaved(turn); setMode(rules.mode); setDollars(String(rules.dollarsPerTurn)); setPartial(rules.partialTurnValue);
       }
       if (screen) setLockScreen(screen.lockScreen !== false);
-      if (s.mainDrawer) { setDrawerName(s.mainDrawer.name); setStartingCash(String(s.mainDrawer.startingCash)); }
+      if (s.mainDrawer) {
+        setDrawerName(s.mainDrawer.name);
+        setStartingCash(String(s.mainDrawer.startingCash));
+        const drawer = cashDrawers.find((d) => d.id === s.mainDrawer.id);
+        if (drawer) {
+          const defaultStation = activeRegisters.find((r) => r.isDefault && r.cashDrawerId == null);
+          const mainStationSelection = drawer.mainStation
+            ? activeRegisters.length === 0 ? ["main"] : defaultStation ? [String(defaultStation.id)] : []
+            : [];
+          setDrawerStations([...drawer.registerIds.map(String), ...mainStationSelection]);
+        }
+      } else if (activeRegisters.length) {
+        const defaultRegister = activeRegisters.find((r) => r.isDefault);
+        if (defaultRegister) setDrawerStations([String(defaultRegister.id)]);
+      } else {
+        setDrawerStations(["main"]);
+      }
     }).catch(() => alive && setLoadError("The front desk setup could not be loaded. Check the connection and try again."));
     return () => { alive = false; };
   }, [storeId]);
+
+  // Card payments › Set up card payments: Certxa's Stripe setup (Payments › Payouts). Inside a Certxa app with no
+  // page of its own for it, the full site opens on its own.
+  const openStripeSetup = () => {
+    const page = appPage("/payments/payouts");
+    if (page) window.location.assign(page);
+    else window.open(`${window.location.origin}/payments/payouts`, "_blank", "noopener");
+  };
 
   const index = STEPS.indexOf(step);
   const go = (to: Step) => { setError(""); setStep(to); };
@@ -163,6 +212,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
         });
         void queryClient.invalidateQueries({ queryKey: ["/api/stores"] });
       } else if (step === "card") {
+        if (!card) throw new Error("Choose how you take card payments.");
         await send("/api/card-provider", "PUT", { provider: card });
         void queryClient.invalidateQueries({ queryKey: ["/api/card-provider"] });
       } else if (step === "cash") {
@@ -173,8 +223,29 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
       } else if (step === "drawer") {
         const amount = Number(startingCash);
         if (startingCash === "" || !Number.isFinite(amount) || amount < 0) throw new Error("Enter how much cash the drawer starts each day with.");
-        const r = await send("/api/nail/pos-setup/drawer", "PUT", { name: drawerName.trim() || "Cash", startingCash: amount });
-        setStatus((s) => (s ? { ...s, mainDrawer: r.mainDrawer } : s));
+        if (drawerStations.length === 0) throw new Error("Choose at least one POS station for this drawer.");
+        const stationSelection = {
+          registerIds: drawerStations.filter((id) => id !== "main").map(Number),
+          mainStation: drawerStations.includes("main"),
+        };
+        const currentDrawer = status?.mainDrawer ?? null;
+        const r = currentDrawer
+          ? await send(`/api/cash-drawers/${currentDrawer.id}`, "PUT", {
+            name: drawerName.trim() || "Cash", targetFloat: amount.toFixed(2), ...stationSelection,
+          })
+          : await send("/api/cash-drawers", "POST", {
+            name: drawerName.trim() || "Cash", targetFloat: amount.toFixed(2), ...stationSelection,
+          });
+        const savedDrawer = {
+          id: Number(r.id),
+          name: r.name,
+          startingCash: Number(r.targetFloat ?? amount),
+        };
+        setStatus((s) => (s ? { ...s, mainDrawer: savedDrawer } : s));
+        setDrawers((existing) => [
+          ...existing.filter((d) => d.id !== savedDrawer.id),
+          { ...r, ...savedDrawer, registerIds: stationSelection.registerIds, mainStation: stationSelection.mainStation },
+        ]);
         void queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers"] });
         void queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers/station"] });
       } else if (step === "tips") {
@@ -182,6 +253,9 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
         if (!entered.length || entered.some((t) => !/^\d{1,3}$/.test(t) || Number(t) < 1 || Number(t) > 100)) throw new Error("Enter tip percentages from 1 to 100.");
         await send("/api/tip-presets", "PUT", { presets: entered.map(Number) });
         void queryClient.invalidateQueries({ queryKey: ["/api/tip-presets"] });
+      } else if (step === "printing") {
+        setPrinting(await savePrintSettings(printing));
+        void queryClient.invalidateQueries({ queryKey: printSettingsKey });
       } else if (step === "turns") {
         if (isDollarMode(mode) && !(dollarsNum >= 1 && dollarsNum <= 1000)) throw new Error("Enter the dollars for one turn.");
         await send(`/api/turn/settings?storeId=${storeId}`, "PUT", {
@@ -190,13 +264,13 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
         void queryClient.invalidateQueries({ queryKey: ["/api/turn/settings", storeId] });
         void queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", storeId] });
       } else if (step === "team") {
-        await send("/api/nail/screen-settings", "PUT", { lockScreen });
+        if (!barber) await send(staffApi("/screen-settings"), "PUT", { lockScreen });
         void queryClient.invalidateQueries({ queryKey: ["/api/nail/screen-settings"] });
       } else if (step === "pin") {
         if (status?.managerPinIsDefault) {
           if (!/^\d{4}$/.test(pin)) throw new Error("The manager PIN is 4 digits.");
           if (pin !== pin2) throw new Error("The two PINs are not the same.");
-          await send("/api/nail/manager-pin", "PUT", { currentPin: "2026", newPin: pin });
+          await send(staffApi("/manager-pin"), "PUT", { currentPin: "2026", newPin: pin });
           setStatus((s) => (s ? { ...s, managerPinIsDefault: false } : s));
           setPin(""); setPin2("");
         }
@@ -232,7 +306,9 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
       <div className="flex flex-col gap-6" data-testid="pos-setup-owner-needed">
         <div>
           <h1 className={h1} style={{ color: ink }}>The owner needs to set up the front desk</h1>
-          <p className={lead} style={{ color: muted }}>Before your salon can use the front desk, the salon owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes.</p>
+          <p className={lead} style={{ color: muted }}>{barber
+            ? "Before your shop can use the front desk, the shop owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes."
+            : "Before your salon can use the front desk, the salon owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes."}</p>
         </div>
         <button type="button" onClick={() => void signInAsOwner()} data-testid="pos-setup-owner-signin"
           className="w-full h-16 rounded-2xl text-white text-[26px] font-bold" style={{ background: brand }}>Sign in as the owner</button>
@@ -242,9 +318,11 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
     body = (
       <div>
         <h1 className={h1} style={{ color: ink }}>Let's set up your front desk</h1>
-        <p className={lead} style={{ color: muted }}>A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings.</p>
+        <p className={lead} style={{ color: muted }}>{barber
+          ? "A few questions about how your shop takes payment. It takes about three minutes, and you can change any answer later in Settings."
+          : "A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings."}</p>
         <ul className="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-2 text-[24px]" style={{ color: ink }}>
-          {["Sales tax", "Card payments", "Cash price", "Cash Drawer", "Tip choices", "Turn rotation", "Tech IDs", "Manager PIN"].map((t) => (
+          {["Sales tax", "Card payments", "Cash price", "Cash Drawer", "Tip choices", "Turn rotation", barber ? "Barber IDs" : "Tech IDs", "Manager PIN"].map((t) => (
             <li key={t} className="flex items-center gap-3"><span className="w-2 h-2 rounded-full" style={{ background: muted }} />{t}</li>
           ))}
         </ul>
@@ -272,15 +350,23 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
           <h1 className={h1} style={{ color: ink }}>Card payments</h1>
           <p className={lead} style={{ color: muted }}>What should the CARD button do at checkout?</p>
         </div>
-        <Choice selected={card === "stripe"} onClick={() => setCard("stripe")} title="Certxa card reader" testId="pos-setup-card-stripe"
-          detail="The card is charged on the Certxa card reader, and the money is paid out to your bank by Stripe." />
+        {/* The Stripe M2 reader is offered only once the account is connected to Stripe through Certxa; until then a
+            card to start that setup takes its place (owner, 2026-11-02). */}
+        {status.stripeConnected ? (
+          <Choice selected={card === "stripe"} onClick={() => setCard("stripe")} title="Stripe M2 Reader" testId="pos-setup-card-stripe"
+            detail="The card is charged on the Stripe M2 reader, and the money is paid out to your bank by Stripe." />
+        ) : (
+          <div className="rounded-2xl border-2 px-5 py-4 flex flex-col gap-3" style={{ borderColor: line, background: "#fff" }} data-testid="pos-setup-card-start">
+            <span className="text-[26px] font-semibold" style={{ color: ink }}>Start accepting card payments through Certxa</span>
+            <span className="text-[22px] leading-snug" style={{ color: muted }}>Connect a Stripe account to take cards on the Stripe M2 reader. When it is connected, open this setup again from Manager › Front Desk Setup and choose the reader.</span>
+            <button type="button" onClick={openStripeSetup} data-testid="pos-setup-card-start-btn"
+              className="self-start h-14 px-6 rounded-xl text-white text-[22px] font-bold" style={{ background: brand }}>Set up card payments</button>
+          </div>
+        )}
         <Choice selected={card === "own"} onClick={() => setCard("own")} title="My own card machine" testId="pos-setup-card-own"
           detail="You run the card on your own terminal. The CARD button only records the payment as card: Certxa charges nothing." />
-        {card === "stripe" && !status.stripeConnected && (
-          <p className="text-[22px] rounded-xl px-4 py-3 border" style={{ color: ink, borderColor: line, background: "#fff" }} data-testid="pos-setup-stripe-note">
-            Your Stripe account isn't connected yet. Connect it in Settings › Payments before taking cards on the reader. Until then, cash still works.
-          </p>
-        )}
+        <Choice selected={card === "none"} onClick={() => setCard("none")} title="We do not accept card payments" testId="pos-setup-card-none"
+          detail="The CARD button is turned off at checkout." />
       </div>
     );
   } else if (step === "cash") {
@@ -306,8 +392,34 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
             className="w-[440px] max-w-[60%] h-14 rounded-xl border px-3 text-[26px] font-semibold placeholder:font-normal placeholder:text-[22px] outline-none focus:ring-2" style={{ borderColor: line, color: ink }} />
         </label>
         <MoneyField label="Cash for change at the start of the day" value={startingCash} onChange={setStartingCash} prefix="$" testId="pos-setup-drawer-cash" max={10000} />
+        <div className="rounded-2xl border px-5 py-4 pos-white" style={{ borderColor: line }} data-testid="pos-setup-drawer-stations">
+          <p className="text-[24px] font-semibold mb-3" style={{ color: ink }}>POS stations that use this drawer</p>
+          <div className="flex flex-col gap-3">
+            {(registers.length ? registers.map((r) => ({ value: String(r.id), label: r.name })) : [{ value: "main", label: "Main POS station" }]).map((station) => {
+              const otherDrawer = drawers.find((d) => d.id !== status.mainDrawer?.id && (
+                station.value === "main" ? d.mainStation : d.registerIds.includes(Number(station.value))
+              ));
+              const selected = drawerStations.includes(station.value);
+              return (
+                <label key={station.value} className="flex items-center gap-3 text-[22px]" style={{ color: otherDrawer ? muted : ink }}>
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={!!otherDrawer}
+                    data-testid={`pos-setup-drawer-station-${station.value}`}
+                    onChange={(e) => setDrawerStations((current) => e.target.checked
+                      ? [...current, station.value]
+                      : current.filter((value) => value !== station.value))}
+                    className="h-6 w-6 accent-blue-600"
+                  />
+                  <span>{station.label}{otherDrawer ? ` · uses ${otherDrawer.name}` : ""}</span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-[20px] mt-3" style={{ color: muted }}>Several POS stations can share this drawer. A station can use only one drawer.</p>
+        </div>
         <p className="text-[22px]" style={{ color: muted }}>
-          <span>{status.mainDrawer ? `Your main front desk uses ${status.mainDrawer.name}.` : "It belongs to your main front desk."}</span>{" "}
           <span>More drawers and registers can be added in Settings › Cash Drawers.</span>
         </p>
       </div>
@@ -336,7 +448,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
       <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Turn rotation</h1>
-          <p className={lead} style={{ color: muted }}>How your salon decides which technician gets the next walk-in.</p>
+          <p className={lead} style={{ color: muted }}>{barber ? "How your shop decides which barber gets the next walk-in." : "How your salon decides which technician gets the next walk-in."}</p>
         </div>
         <div className="grid md:grid-cols-2 gap-3">
           {TURN_MODES.map((m) => (
@@ -364,12 +476,29 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
         )}
       </div>
     );
+  } else if (step === "printing") {
+    body = (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h1 className={h1} style={{ color: ink }}>Printing</h1>
+          <p className={lead} style={{ color: muted }}>Choose what prints by itself on your receipt printer. You can always print any of these by hand.</p>
+        </div>
+        <Toggle on={printing.salonCopy} onChange={(v) => setPrinting((p) => ({ ...p, salonCopy: v }))} title={barber ? "Shop copy of the receipt" : "Salon copy of the receipt"} testId="pos-setup-print-salon-copy"
+          detail={printing.salonCopy ? (barber ? "Each sale prints a shop copy (signed for a card) and a customer copy." : "Each sale prints a salon copy (signed for a card) and a customer copy.") : "Only the customer copy prints."} />
+        <Toggle on={printing.dayClose === "auto"} onChange={(v) => setPrinting((p) => ({ ...p, dayClose: v ? "auto" : "none" }))} title="Day Close report" testId="pos-setup-print-day-close"
+          detail={printing.dayClose === "auto" ? "Prints by itself when you close the day." : "Doesn't print. Tap Print the Z Report after closing the day if you want it."} />
+        <Toggle on={printing.checkinSlip === "auto"} onChange={(v) => setPrinting((p) => ({ ...p, checkinSlip: v ? "auto" : "none" }))} title="Check-in slip" testId="pos-setup-print-checkin"
+          detail={printing.checkinSlip === "auto" ? "Prints when a client checks in at the kiosk, the customer screen or the front desk." : "No slip prints when a client checks in."} />
+      </div>
+    );
   } else if (step === "team") {
     body = (
       <div className="flex flex-col gap-4">
         <div>
-          <h1 className={h1} style={{ color: ink }}>Tech IDs</h1>
-          <p className={lead} style={{ color: muted }}>Everyone signs in to the front desk with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff.</p>
+          <h1 className={h1} style={{ color: ink }}>{barber ? "Barber IDs" : "Tech IDs"}</h1>
+          <p className={lead} style={{ color: muted }}>{barber
+            ? "Everyone signs in to the front desk with their own Barber ID. These are your team's IDs. Add or change team members in Settings › Staff."
+            : "Everyone signs in to the front desk with their own Tech ID. These are your team's IDs. Add or change team members in Settings › Staff."}</p>
         </div>
         <div className="rounded-2xl border pos-white divide-y" style={{ borderColor: line }} data-testid="pos-setup-team">
           {status.team.map((m) => (
@@ -379,9 +508,9 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
             </div>
           ))}
         </div>
-        {owner?.techId != null && <p className="text-[22px]" style={{ color: muted }}>Your own Tech ID is <strong style={{ color: ink }}>{owner.techId}</strong>.</p>}
-        <Toggle on={lockScreen} onChange={setLockScreen} title="Ask for a Tech ID to use the front desk" testId="pos-setup-lockscreen"
-          detail={lockScreen ? "Everything done on the front desk is recorded under who did it." : "Anyone can use the front desk without signing in."} />
+        {owner?.techId != null && <p className="text-[22px]" style={{ color: muted }}>{barber ? "Your own Barber ID is " : "Your own Tech ID is "}<strong style={{ color: ink }}>{owner.techId}</strong>.</p>}
+        {!barber && <Toggle on={lockScreen} onChange={setLockScreen} title="Ask for a Tech ID to use the front desk" testId="pos-setup-lockscreen"
+          detail={lockScreen ? "Everything done on the front desk is recorded under who did it." : "Anyone can use the front desk without signing in."} />}
       </div>
     );
   } else if (step === "pin") {
@@ -391,8 +520,8 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
           <h1 className={h1} style={{ color: ink }}>Manager PIN</h1>
           <p className={lead} style={{ color: muted }}>
             {status.managerPinIsDefault
-              ? "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your salon's own PIN and keep it private."
-              : "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk."}
+              ? (barber ? "The Manager menu needs a 4-digit PIN. Choose your shop's own PIN and keep it private." : "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your salon's own PIN and keep it private.")
+              : (barber ? "Your shop already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk." : "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk.")}
           </p>
         </div>
         {status.managerPinIsDefault && <>
@@ -404,14 +533,17 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
   } else if (step === "done") {
     const pctText = (v: string) => `${Number(v || 0)}%`;
     const taxed = [taxable.services && "Services", taxable.addons && "Add-ons", taxable.products && "Retail products", taxable.giftCards && "Gift cards"].filter(Boolean) as string[];
+    const assignedStations = drawerStations
+      .map((id) => id === "main" ? "Main POS station" : registers.find((r) => String(r.id) === id)?.name)
+      .filter((name): name is string => !!name);
     const rows: [string, string[]][] = [
       ["Sales tax", [pctText(taxRate), ...(taxed.length ? taxed : ["Nothing is taxed"])]],
-      ["CARD button", [card === "own" ? "My own card machine" : "Certxa card reader"]],
+      ["CARD button", [card === "own" ? "My own card machine" : card === "none" ? "No card payments" : "Stripe M2 Reader"]],
       ["Cash price", [Number(cashPct) > 0 ? pctText(cashPct) : "Off"]],
-      ["Cash Drawer", [`${status.mainDrawer?.name ?? drawerName} · $${Number(status.mainDrawer?.startingCash ?? startingCash).toFixed(2)}`]],
+      ["Cash Drawer", [`${status.mainDrawer?.name ?? drawerName} · $${Number(status.mainDrawer?.startingCash ?? startingCash).toFixed(2)}`, ...assignedStations]],
       ["Tip choices", [tips.filter(Boolean).map((t) => `${t}%`).join(", ")]],
       ["Turn rotation", [TURN_PRESETS[mode].label]],
-      ["Tech ID sign-in", [lockScreen ? "On" : "Off"]],
+      ...(barber ? [] : [["Tech ID sign-in", [lockScreen ? "On" : "Off"]] as [string, string[]]]),
       ["Manager PIN", [status.managerPinIsDefault ? "Not set" : "Set"]],
     ];
     body = (
@@ -478,7 +610,8 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
           </div>
         </footer>
       )}
-      <div className="shrink-0 flex items-center justify-center gap-3 flex-wrap px-6 pb-6" data-no-translate data-testid="pos-setup-langs">
+      {/* /barber has no language switch (English only), so no language buttons there. */}
+      {onLang && <div className="shrink-0 flex items-center justify-center gap-3 flex-wrap px-6 pb-6" data-no-translate data-testid="pos-setup-langs">
         {SETUP_LANGS.map(({ code, label }) => (
           <button key={code} type="button" onClick={() => onLang(code)} data-testid={`pos-setup-lang-${code}`}
             className="px-5 py-2.5 rounded-full text-[20px] font-semibold transition-all duration-150 active:scale-95"
@@ -486,7 +619,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang }: {
             {label}
           </button>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }

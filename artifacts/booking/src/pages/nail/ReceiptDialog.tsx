@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { X } from "lucide-react";
 import { receiptSections, sectionLineLabel, type ReceiptLine } from "@/lib/receiptSections";
 import { printSavedReceipt } from "./receiptReprint";
@@ -75,8 +76,8 @@ export function ReceiptDialog({ token, snapshot, onClose }: { token: string | nu
 
   const r = data;
   const date = r ? new Date(r.dateIso) : null;
-  const dateStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }) : "";
-  const timeStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
+  const dateStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("en-US", { timeZone: salonTimeZone(), month: "numeric", day: "numeric", year: "numeric" }) : "";
+  const timeStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleTimeString("en-US", { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
   const paymentLabel = (m: string) => (m || "").charAt(0).toUpperCase() + (m || "").slice(1);
 
   const mono: React.CSSProperties = { fontFamily: "'Courier New', 'Lucida Console', monospace" };

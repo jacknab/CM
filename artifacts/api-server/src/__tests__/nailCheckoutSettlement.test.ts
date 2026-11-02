@@ -19,6 +19,15 @@ describe("nail checkout input constraints", () => {
     // Like a gift card, it cannot be for more than the bill: only cash gives change.
     expect(() => validateNailCheckoutInput({ ...sale(), tenders: [{ method: "card", amount: 30 }] })).toThrow();
   });
+  it("accepts an M2 card taken offline by its reference, never a made-up or repeated one", () => {
+    expect(() => validateNailCheckoutInput({ ...sale(), paymentMethod: "m2:25.00",
+      tenders: [{ method: "m2", amount: 25, offlineRef: "off_m1abc_k2j3h4" }] })).not.toThrow();
+    expect(() => validateNailCheckoutInput({ ...sale(), tenders: [{ method: "m2", amount: 25, offlineRef: "nope" }] })).toThrow("Invalid tender");
+    expect(() => validateNailCheckoutInput({ ...sale(), tenders: [{ method: "tap", amount: 25, offlineRef: "off_m1abc_k2j3h4" }] })).toThrow("Invalid tender");
+    expect(() => validateNailCheckoutInput({ ...sale(), totalPaid: 50,
+      tenders: [{ method: "m2", amount: 25, offlineRef: "off_m1abc_k2j3h4" }, { method: "m2", amount: 25, offlineRef: "off_m1abc_k2j3h4" }] }))
+      .toThrow("Duplicate card charge");
+  });
   it("rejects missing payment", () => expect(() => validateNailCheckoutInput({ ...sale(), tenders: [] }))
     .toThrow("Payment amounts do not settle"));
   it("permits cash change but not gift/card overpayment", () => {

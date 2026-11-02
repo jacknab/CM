@@ -4,6 +4,20 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
+## 2026-11-02 — RESOLVED: local hub dropped the customer screen every 20 s; hub host election never reached the server
+
+- **Where:** `artifacts/booking/src/lib/local-hub.ts` `heal()`; `artifacts/api-server/src/routes.ts` `POST /api/nail/hub/heartbeat`.
+- **Symptom (store 2, offline test 2026-11-01 ~09:45 UTC):** after the cash sale the customer screen never showed the receipt options. Server log: the POS went `serving peers=0` and the screen `connecting` every 20 s, then reconnected ~4 s later; `POST /api/nail/hub/heartbeat 404` every minute.
+- **Cause:** the uncommitted hub-election change was live on the web (09:09 UTC) but the API was never reloaded after its 09:03 build, so the server never sent `hostRegisterId`; `heal()` then saw the main POS as "not the host" and sent `HUB_STOP` + `HUB_SERVE` every 20 s, dropping every tablet. A message the POS sent in that gap was lost.
+- **Fixed 2026-11-02:** the host never stops its own hub in `heal()`/`start()`; checkout messages held while a screen reconnects; the screen asks for the checkout again on reconnect and the POS re-sends a payment that is already settled; leases kept in Redis so `store_settings` (copied to every tablet) is written only on a host change; API reloaded.
+
+## 2026-11-01 — RESOLVED: Billing routes reference an unimported account-status helper
+
+- **Where:** `artifacts/api-server/src/routes/billing.ts:220` and `:1208`.
+- **Symptom:** API-server typecheck reports `TS2304: Cannot find name 'isAccountStopped'` at both call sites. The billing account-status and blocked-notice handlers invoke it, but the file has no import or local declaration for the helper.
+- **Why not fixed now:** unrelated to enabling payroll and commission lookups in the `/manage` assistant.
+- **Resolved:** the import from `../lib/accountSuspension` is in the working tree (seen 2026-11-02).
+
 ## 2026-10-31 — trial-expiration's launch-site switch-off/on does nothing (column doesn't exist)
 
 - **Where:** artifacts/api-server/src/services/trial-expiration.ts `deactivateLaunchSite` / `reactivateLaunchSite`.

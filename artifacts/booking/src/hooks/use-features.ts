@@ -10,6 +10,8 @@ export type FeatureFlags = {
   autoClockOutFloor:  string;
   kioskEnabled:       boolean;
   staffPortalEnabled: boolean;
+  /** Online booking, the calendar, booking settings and Autumn (Advanced Features › Booking System). */
+  bookingSystem:      boolean;
 };
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -21,16 +23,22 @@ const DEFAULT_FLAGS: FeatureFlags = {
   autoClockOutFloor:  "01:00",
   kioskEnabled:       true,
   staffPortalEnabled: true,
+  bookingSystem:      true,
 };
 
-/** Turn System is exclusive to nail-salon business types. */
+/** A nail-salon business type. */
 export function isNailSalonBiz(businessType?: string | null): boolean {
   return /nail/i.test(businessType ?? "");
 }
 
+/** The Turn System is for nail salons and barbershops (barbershops added 2026-11-02). */
+export function turnSystemAllowed(businessType?: string | null): boolean {
+  return isNailSalonBiz(businessType) || /barber/i.test(businessType ?? "");
+}
+
 export function useFeatureFlags(): FeatureFlags {
   const { selectedStore } = useSelectedStore();
-  const nailSalon = isNailSalonBiz(selectedStore?.category);
+  const turnsAllowed = turnSystemAllowed(selectedStore?.category);
 
   const { data } = useQuery<FeatureFlags>({
     queryKey: ["/api/settings/features", selectedStore?.id],
@@ -51,7 +59,7 @@ export function useFeatureFlags(): FeatureFlags {
 
   return {
     ...flags,
-    // Turn System is only available for nail salons regardless of the saved setting
-    turnSystem: nailSalon ? flags.turnSystem : false,
+    // Turn System is only available for nail salons and barbershops, whatever the saved setting
+    turnSystem: turnsAllowed ? flags.turnSystem : false,
   };
 }

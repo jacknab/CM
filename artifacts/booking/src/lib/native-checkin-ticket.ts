@@ -1,3 +1,6 @@
+import { salonNowForPrint } from "@/lib/salonClock";
+import { printSettings } from "@/lib/printSettings";
+
 /** Ask this Android tablet's native printer to print a check-in slip. */
 export function printNativeCheckinTicket(ticket: {
   clientName: string;
@@ -7,6 +10,8 @@ export function printNativeCheckinTicket(ticket: {
   /** What the client chose (services, then "+ add-on" lines) — printed so the slip can go to the tech. */
   services?: string[];
 }): Promise<boolean> {
+  // The salon chose no check-in slips (front desk setup → Printing): treated as done, so nothing else prints one instead.
+  if (printSettings().checkinSlip === "none") return Promise.resolve(true);
   const bridge = (window as any).ReactNativeWebView;
   if (!bridge?.postMessage || !(window as any).CERTXA_NATIVE_APP) return Promise.resolve(false);
 
@@ -30,7 +35,7 @@ export function printNativeCheckinTicket(ticket: {
         type: "PRINT_CHECKIN_TICKET", requestId,
         qrValue: ticket.qrValue,
         todayCount: ticket.todayCount ?? ticket.ticketNumber,
-        ticket: { clientName: ticket.clientName, ticketNumber: ticket.ticketNumber, date: new Date().toISOString(), services: ticket.services ?? [] },
+        ticket: { clientName: ticket.clientName, ticketNumber: ticket.ticketNumber, date: salonNowForPrint(), services: ticket.services ?? [] },
       }));
     } catch (err) {
       console.warn("[check-in ticket print] native bridge failed:", err);

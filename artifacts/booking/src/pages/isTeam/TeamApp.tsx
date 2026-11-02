@@ -14,6 +14,7 @@ import BillingInvestigationPage from "./BillingInvestigationPage";
 import VisitorsPage from "./VisitorsPage";
 import SignupsPage from "./SignupsPage";
 import SalesLeadsPage from "./SalesLeadsPage";
+import OfflineReadinessPage from "./OfflineReadinessPage";
 
 function TeamShell() {
   return (
@@ -31,6 +32,7 @@ function TeamShell() {
             <Route path="sales-leads" element={<SalesLeadsPage />} />
             <Route path="tickets" element={<TicketsPage />} />
             <Route path="live-chat" element={<LiveChatPage />} />
+            <Route path="offline-readiness" element={<OfflineReadinessPage />} />
             <Route path="account-timeline" element={<AccountTimelinePage />} />
             <Route path="account-timeline/:accountId" element={<AccountTimelinePage />} />
             <Route path="visitors" element={<VisitorsPage />} />

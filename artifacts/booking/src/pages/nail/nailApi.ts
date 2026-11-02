@@ -1,4 +1,5 @@
 /** Typed calls for the nail-salon staff screen. Everything goes through the Certxa API. */
+import { staffApi } from "@/lib/staffScreenApi";
 import type { NailConfigView, NailPick } from "./ticketDraft";
 import { reportUnauthorized } from "@/lib/resumeSignIn";
 import { EMPTY_PICK, normalizeNailConfig, toNailBody } from "./ticketDraft";
@@ -648,7 +649,7 @@ async function offlineAssignProblem(storeId: number, serviceId: number, staffId:
 /** How long services really take against the time planned, per technician and per service, over the last `days`. */
 export interface ServiceTimeRow { id: number; name: string; count: number; actual: number; planned: number; total_actual?: number }
 export const fetchServiceTimes = (days: number) =>
-  call<{ days: number; byTech: ServiceTimeRow[]; byService: ServiceTimeRow[] }>(`/api/nail/service-times?days=${days}`);
+  call<{ days: number; byTech: ServiceTimeRow[]; byService: ServiceTimeRow[] }>(staffApi(`/service-times?days=${days}`));
 
 /** DONE: the technician has finished their service. They are free again and back in line; the ticket stays
  *  open until it is paid, and a ticket of the same visit waiting for it goes to the next technician. Needs the server. */
@@ -1136,13 +1137,14 @@ export async function completeTicket(id: number, data: FinalizeData, who?: { sto
   const request = {
     ...data,
     tenders: data.tenders.map((t) => ({ method: t.method, amount: t.amount,
-      ...(t.code ? { code: t.code } : {}), ...(t.paymentIntentId ? { paymentIntentId: t.paymentIntentId } : {}) })),
+      ...(t.code ? { code: t.code } : {}), ...(t.paymentIntentId ? { paymentIntentId: t.paymentIntentId } : {}),
+      ...(t.offlineRef ? { offlineRef: t.offlineRef } : {}) })),
   };
   const onDevice = async () => {
     const problem = offlineSaleProblem(data);
     if (problem) throw new ApiError(problem, 0);
     if (!who) throw new Error(NEEDS_CONNECTION);
-    const cash = data.tenders.reduce((sum, t) => sum + t.amount, 0);
+    const cash = data.tenders.filter((t) => t.method === "cash").reduce((sum, t) => sum + t.amount, 0);
     // Worked out before the sale is saved: once paid, the ticket leaves this tablet's board.
     const turns = await turnsEarnedOnDevice(who.storeId, id, data);
     await nailOffline.recordCash(who.storeId, { id, clientName: who.clientName }, { totalPaid: data.totalPaid, cash: Math.round(cash * 100) / 100, tip: data.tip, request, idempotencyKey: data.idempotencyKey });

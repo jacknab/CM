@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 vi.mock("./local-hub", () => {
   const listeners = new Set<(m: any) => void>();
   return {
+    confirmOutage: () => Promise.resolve(),
     localHub: {
       send: (m: any) => { queueMicrotask(() => listeners.forEach((fn) => fn(JSON.parse(JSON.stringify(m))))); return true; },
       onMessage: (fn: (m: any) => void) => { listeners.add(fn); return () => listeners.delete(fn); },

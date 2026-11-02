@@ -1,3 +1,4 @@
+import { isSoloPlanCode } from "@shared/soloPlan";
 import { useMemo, useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import { ChevronLeft, ArrowUpRight, AlertTriangle, Trash2, X } from "lucide-react";
@@ -56,10 +57,10 @@ export default function SettingsShell() {
       buildSettingsNav(pick)
         .map((tab) => ({
           ...tab,
-          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(it.requiresSoloPlan && planCode !== "solo") && !(proAccount && isHiddenForProAccount(it.to))),
+          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(it.requiresBooking && !features.bookingSystem) && !(it.requiresSoloPlan && !isSoloPlanCode(planCode)) && !(proAccount && isHiddenForProAccount(it.to))),
         }))
         .filter((tab) => tab.items.length > 0),
-    [pick, features.pos, proAccount, planCode],
+    [pick, features.pos, features.bookingSystem, proAccount, planCode],
   );
 
   const allItems = useMemo(() => tabs.flatMap((tab) => tab.items), [tabs]);

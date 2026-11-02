@@ -432,7 +432,7 @@ function asciiOnly(s: string): number[] {
 /** Print a single copy of the receipt (used for the REPRINT/duplicate-copy button — not the
  *  two-copy sequence a successful payment triggers, see printReceiptCopies() below). Throws
  *  with a human-readable reason if it cannot. */
-export async function printReceipt(data: ReceiptData, copy: 'salon' | 'customer' = 'customer'): Promise<void> {
+async function printReceiptNow(data: ReceiptData, copy: 'salon' | 'customer' = 'customer'): Promise<void> {
   const printer = await resolvePrinter();
   const mod  = await getActivePrinterModule(printer);
   const text = buildReceiptText(data, copy);
@@ -451,7 +451,7 @@ export async function printReceipt(data: ReceiptData, copy: 'salon' | 'customer'
  * instead, purely so the two jobs' writes don't land on the wire at the same time — not an
  * attempt to fake a "waited for completion" guarantee that doesn't exist underneath this library.
  */
-export async function printReceiptCopies(data: ReceiptData): Promise<void> {
+async function printReceiptCopiesNow(data: ReceiptData): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   await printTagged(printer, mod, buildReceiptText(data, 'salon'));
@@ -473,7 +473,7 @@ const stripDataUriPrefix = (b64: string) => b64.replace(/^data:image\/\w+;base64
  * since this printer library can only print bold/aligned text or raster images, nothing in
  * between (no inverted/white-on-black text, no native QR command).
  */
-export async function printCheckinTicket(data: CheckinTicketData, numberBarBase64: string, qrBase64: string,
+async function printCheckinTicketNow(data: CheckinTicketData, numberBarBase64: string, qrBase64: string,
   codes?: { qrValue: string; todayCount: number }): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
@@ -490,7 +490,7 @@ export async function printCheckinTicket(data: CheckinTicketData, numberBarBase6
 }
 
 /** Print a scanner badge containing only the technician QR and their name. */
-export async function printTechId(tech: { id: number; name: string }, qrBase64: string): Promise<void> {
+async function printTechIdNow(tech: { id: number; name: string }, qrBase64: string): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   await mod.printImageBase64(stripDataUriPrefix(qrBase64), { imageWidth: CHECKIN_IMAGE_PRINT_WIDTH });
@@ -505,7 +505,7 @@ export async function printTechId(tech: { id: number; name: string }, qrBase64: 
  *  the printer's emphasized (bold) mode — the same size, darker on printers that print thin (owner, 2026-10-24).
  *  The library has no plain-bold tag: its <B> is double width and height. A <b> line keeps that larger size here,
  *  as before (the salon's name, Total Pay). */
-export async function printText(text: string): Promise<void> {
+async function printTextNow(text: string): Promise<void> {
   if (!text.trim()) throw new Error('Nothing to print');
   const printer = await resolvePrinter();
   await getActivePrinterModule(printer); // connects (and for USB, opens) the printer
@@ -560,7 +560,7 @@ function toBase64(bytes: number[]): string {
 
 /** Print the Day Close / Z Report — a single copy (it's a register document, not something
  *  handed to a customer, so there's no salon/customer split like printReceiptCopies()). */
-export async function printZReport(data: ZReportPrintData): Promise<void> {
+async function printZReportNow(data: ZReportPrintData): Promise<void> {
   const printer = await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   const text = buildZReportText(data);
@@ -575,7 +575,7 @@ export async function printZReport(data: ZReportPrintData): Promise<void> {
  *  onboarding wizard's own test-print button, before the user has confirmed setup by tapping
  *  Continue) — omit it to test-print the already-saved printer, as the Settings "Test Print"
  *  button does. */
-export async function printTestPage(storeName: string, device?: PrinterDevice): Promise<void> {
+async function printTestPageNow(storeName: string, device?: PrinterDevice): Promise<void> {
   const printer = device ?? await resolvePrinter();
   const mod = await getActivePrinterModule(printer);
   const lines = [
@@ -627,7 +627,7 @@ export async function printSrp275iiiComparison(storeName: string, device?: Print
  * plugged into the printer's RJ11 port). Throws with a human-readable reason if the printer
  * cannot be reached, so the caller never reports an open drawer that did not open.
  */
-export async function openCashDrawer(): Promise<void> {
+async function openCashDrawerNow(): Promise<void> {
   const printer = await resolvePrinter();
   let native: any;
   if (printer.type === 'usb') {
@@ -660,3 +660,25 @@ export async function openCashDrawer(): Promise<void> {
     setTimeout(() => (failure ? reject(new Error(failure)) : resolve()), 250);
   });
 }
+
+
+// ── One print job at a time (owner, 2026-11-02) ──────────────────────────────
+// Every job opens a fresh connection to the printer (getActivePrinterModule), which closes the one before it. Two jobs
+// at once — a card sale's salon copy and the customer's copy asked for in the same second — cut the first one off,
+// and only the customer copy came out. Jobs now wait for the one before them.
+let printerQueue: Promise<unknown> = Promise.resolve();
+function oneAtATime<A extends unknown[], R>(job: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
+  return (...args: A) => {
+    const run = printerQueue.then(() => job(...args), () => job(...args));
+    printerQueue = run.catch(() => undefined);
+    return run;
+  };
+}
+export const printReceipt = oneAtATime(printReceiptNow);
+export const printReceiptCopies = oneAtATime(printReceiptCopiesNow);
+export const printCheckinTicket = oneAtATime(printCheckinTicketNow);
+export const printTechId = oneAtATime(printTechIdNow);
+export const printText = oneAtATime(printTextNow);
+export const printZReport = oneAtATime(printZReportNow);
+export const printTestPage = oneAtATime(printTestPageNow);
+export const openCashDrawer = oneAtATime(openCashDrawerNow);

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Check, Loader2, X } from "lucide-react";
 import { fetchTurn, type TurnTech } from "./barberApi";
+import { techLabel } from "./techName";
 
 interface Props {
   storeId: number;
@@ -12,23 +13,31 @@ interface Props {
   excludeStaffId?: number | null;
   busy: boolean;
   error: string | null;
+  /** The salon asks why when the client goes to someone other than the next technician. */
+  needsReason?: boolean;
   /** `staffId` null = whoever TURN says is next. */
-  onConfirm: (staffId: number | null) => void;
+  onConfirm: (staffId: number | null, reason?: string) => void;
   onClose: () => void;
 }
 
+/** A ticket cannot be given to someone who is not clocked in or who does not perform the service. */
+const cannotTake = (t: TurnTech) => t.clockedIn === false || !!t.exclusionReasons?.includes("service_not_supported");
+
 function statusOf(t: TurnTech): string {
   if (t.eligible) return "Available";
+  // The two reasons a ticket cannot go to someone at all come first, whatever else they are doing.
+  if (t.clockedIn === false) return "Not clocked in";
+  if (t.exclusionReasons?.includes("service_not_supported")) return "Doesn't perform this service";
   // currentStatus "busy" covers two different things: an actual started service, or a tech merely
   // locked/assigned to a checked-in client who hasn't started yet (see TechCards.tsx's statusOf()
   // for the same distinction on the Techs board). `inService` disambiguates which one this is.
   if (t.currentStatus === "busy") return t.inService ? "With a client" : "Assigned — not started yet";
   if (t.currentStatus === "on_break") return "On break";
-  if (t.clockedIn === false) return "Not clocked in";
   return t.exclusionReasons?.[0] ?? "Unavailable";
 }
 
-export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeStaffId, busy, error, onConfirm, onClose }: Props) {
+export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeStaffId, busy, error, needsReason, onConfirm, onClose }: Props) {
+  const [reason, setReason] = useState("");
   const { data, isLoading, isError } = useQuery({
     queryKey: ["/api/turn/eligibility", storeId, "barber-assign", serviceId],
     queryFn: () => fetchTurn(storeId, serviceId),
@@ -48,8 +57,8 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
   const confirmLabel = busy
     ? "WORKING…"
     : chosen
-      ? queueing ? `LINE UP BEHIND ${chosen.name.toUpperCase()}` : mode === "assign" ? `ASSIGN ${chosen.name.toUpperCase()}` : `MOVE TO ${chosen.name.toUpperCase()}`
-      : nextUp && assigning ? `ASSIGN NEXT UP · ${nextUp.name.toUpperCase()}` : "CHOOSE A TECHNICIAN";
+      ? queueing ? `LINE UP BEHIND ${techLabel(chosen.name, chosen.id).toUpperCase()}` : mode === "assign" ? `ASSIGN ${techLabel(chosen.name, chosen.id).toUpperCase()}` : `MOVE TO ${techLabel(chosen.name, chosen.id).toUpperCase()}`
+      : nextUp && assigning ? `ASSIGN NEXT UP · ${techLabel(nextUp.name, nextUp.id).toUpperCase()}` : "CHOOSE A BARBER";
   const canConfirm = !busy && (!!chosen || (assigning && !!nextUp));
 
   return (
@@ -75,10 +84,10 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
           {techs.map((t) => {
             const isSel = selected === t.id;
             return (
-              <button key={t.id} type="button" onClick={() => setSelected(isSel ? null : t.id)} data-testid={`barber-tech-${t.id}`}
-                className={`assign-create-item ${isSel ? "assign-create-item-sel" : ""}`}>
+              <button key={t.id} type="button" disabled={cannotTake(t)} onClick={() => setSelected(isSel ? null : t.id)} data-testid={`barber-tech-${t.id}`}
+                className={`assign-create-item ${isSel ? "assign-create-item-sel" : ""}`} style={cannotTake(t) ? { opacity: 0.45 } : undefined}>
                 <span className="assign-create-dot" style={{ background: t.color || "#454c56" }} />
-                <span className="assign-create-name">{t.name}</span>
+                <span className="assign-create-name">{techLabel(t.name, t.id)}</span>
                 {assigning && nextUp?.id === t.id && <span className="assign-create-next">NEXT UP</span>}
                 <span className="assign-create-status">{statusOf(t)}</span>
                 {isSel && <Check size={15} style={{ color: "#0d9bd1" }} />}
@@ -87,9 +96,15 @@ export function AssignTechSheet({ storeId, serviceId, clientName, mode, excludeS
           })}
         </div>
         {error && <p className="assign-create-error" data-testid="barber-assign-error">{error}</p>}
+        {needsReason && (
+          <div style={{ padding: "10px 22px" }}>
+            <input className="gift-input" style={{ width: "100%", height: 46, fontSize: 15, fontWeight: 500, letterSpacing: 0, textTransform: "none" }} value={reason} maxLength={200} autoFocus
+              onChange={(event) => setReason(event.target.value)} placeholder="Reason" aria-label="Reason for choosing this barber" data-testid="barber-assign-reason" />
+          </div>
+        )}
         <div className="assign-create-footer">
           <button type="button" className="assign-create-skip" onClick={onClose}>Cancel</button>
-          <button type="button" disabled={!canConfirm} onClick={() => onConfirm(chosen?.id ?? nextUp?.id ?? null)} data-testid="barber-assign-confirm"
+          <button type="button" disabled={!canConfirm || (!!needsReason && !reason.trim())} onClick={() => onConfirm(chosen?.id ?? nextUp?.id ?? null, reason.trim() || undefined)} data-testid="barber-assign-confirm"
             className={`assign-create-btn ${canConfirm ? "assign-create-btn-ready" : ""}`}>
             {confirmLabel}
           </button>

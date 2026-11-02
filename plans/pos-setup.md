@@ -1,7 +1,7 @@
 # POS setup (first-time setup of the /nail POS)
 
 Owner request 2026-10-31: an onboarding flow for the POS covering every POS question (taxes first), and a step
-that sets up the first cash drawer on the main POS register. Built and live the same day.
+that sets up the first cash drawer and selects the POS stations that use it. Built and live the same day.
 
 ## Audit: what the POS depends on, and what a new salon had on day one
 
@@ -10,7 +10,7 @@ that sets up the first cash drawer on the main POS register. Built and live the 
 | Sales tax rate + taxable (services, add-ons, retail, gift cards) | Settings › POS Settings (`locations`) | 0% — no tax charged |
 | CARD button: Certxa reader (Stripe M2) or own provider | POS Settings › CARD button (`preferences.cardProvider`) | Certxa reader, even with no Stripe account |
 | Cash price (% off for cash) | POS Settings (`locations.cash_discount_percent`) | Off |
-| Cash drawer on the main POS register | Settings › Cash Drawers | None — the POS refused cash ("no cash drawer on this station") |
+| Cash drawer and its assigned POS stations | Settings › Cash Drawers | None — the POS refused cash ("no cash drawer on this station") |
 | Tip choices | POS Settings › Tip presets (`preferences.tipPresets`) | 15/18/20/25 |
 | Turn method | Settings › Turn System, /nail Manager › Turn Rotation | Counted Turns |
 | Tech IDs | given out on first sign-in; the owner had none until 10-31 | not shown anywhere at setup |
@@ -23,7 +23,7 @@ gift cards, loyalty.
 
 ## The flow (`artifacts/booking/src/pages/nail/PosSetupWizard.tsx`)
 
-Welcome → Sales tax → Card payments → Cash price → First cash drawer → Tip choices → Turn rotation → Tech IDs + lock
+Welcome → Sales tax → Card payments → Cash price → First cash drawer + POS station assignment → Tip choices → Turn rotation → Tech IDs + lock
 screen → Manager PIN → Summary ("Your POS is ready"). Each answer is saved on Next through the existing settings
 endpoints; nothing is new except:
 

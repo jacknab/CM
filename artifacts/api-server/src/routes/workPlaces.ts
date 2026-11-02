@@ -10,6 +10,7 @@
  * lib/publicStore.ts applies it everywhere public. Booking approval (auto / manual) is saved here too.
  * Kept out of PATCH /api/stores/:id, which accepts any store field without these checks.
  */
+import { isSoloPlanCode } from "@shared/soloPlan";
 import { Router } from "express";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
@@ -23,7 +24,7 @@ const router = Router();
 /** Whether a business can use these settings: the Solo plan only. */
 export async function storeHasWorkPlaces(storeId: number): Promise<boolean> {
   const plan = await resolveStorePlan(storeId).catch(() => null);
-  return plan?.planCode === "solo";
+  return isSoloPlanCode(plan?.planCode);
 }
 
 export const WORK_PLACE_FIELDS = {

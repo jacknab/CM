@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useSelectedStore } from "@/hooks/use-store";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 export type AppNotification = {
   id: string;
   ts: number;
@@ -86,6 +87,7 @@ export function useNotifications(options?: UseNotificationsOptions) {
     const url = `${protocol}://${window.location.host}/ws/notifications?storeId=${storeId}`;
 
     const ws = new WebSocket(url);
+    keepSocketAlive(ws);
     wsRef.current = ws;
 
     ws.onopen = () => {

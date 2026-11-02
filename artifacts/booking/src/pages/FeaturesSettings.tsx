@@ -8,7 +8,7 @@ import { useSelectedStore } from "@/hooks/use-store";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Loader2, Lock } from "lucide-react";
-import { isNailSalonBiz } from "@/hooks/use-features";
+import { turnSystemAllowed } from "@/hooks/use-features";
 
 type FeatureFlags = {
   turnSystem:         boolean;
@@ -19,6 +19,7 @@ type FeatureFlags = {
   autoClockOutFloor:  string;
   kioskEnabled:       boolean;
   staffPortalEnabled: boolean;
+  bookingSystem:      boolean;
 };
 
 const DEFAULT_FLAGS: FeatureFlags = {
@@ -30,6 +31,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   autoClockOutFloor:  "01:00",
   kioskEnabled:       true,
   staffPortalEnabled: true,
+  bookingSystem:      true,
 };
 
 const FLOOR_OPTIONS = [
@@ -45,7 +47,7 @@ export default function FeaturesSettings() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const inShell = useInSettingsShell();
-  const isNailSalon = isNailSalonBiz(selectedStore?.category);
+  const turnsAllowed = turnSystemAllowed(selectedStore?.category);
 
   const { data: features, isLoading } = useQuery<FeatureFlags>({
     queryKey: ["/api/settings/features", selectedStore?.id],
@@ -116,13 +118,40 @@ export default function FeaturesSettings() {
 
       <div className="space-y-6">
 
+        {/* ── Booking System (owner, 2026-11-02): one switch for online booking, the calendar, booking settings and
+             Autumn. Off: no new bookings anywhere; appointments already booked still happen. ── */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3 px-1">Booking</p>
+          <Card data-testid="feature-booking-system">
+            <CardContent className="p-5">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <Checkbox
+                  checked={current.bookingSystem !== false}
+                  onCheckedChange={(checked) => {
+                    if (checked !== true && !window.confirm("Turn the booking system off? Online booking, the calendar, booking settings and Autumn AI switch off, and booking buttons are hidden on your website. Appointments already booked still happen.")) return;
+                    toggle("bookingSystem", checked === true);
+                  }}
+                  disabled={mutation.isPending}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="block text-sm font-medium mb-0.5">Booking System</span>
+                  <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">
+                    Online booking, the calendar, booking rules and settings, and Autumn AI. When off, clients can't book online, booking buttons are hidden on your website, Autumn doesn't answer calls, and the calendar and booking settings are hidden. Appointments already booked still happen and their reminders still go out.
+                  </span>
+                </span>
+              </label>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* ── Queue & Scheduling ── */}
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3 px-1">Queue & Scheduling</p>
           <div className="space-y-3">
 
             {/* Turn System */}
-            {isNailSalon ? (
+            {turnsAllowed ? (
               <Card>
                 <CardContent className="p-5">
                   <label className="flex items-start gap-3 cursor-pointer">
@@ -151,7 +180,7 @@ export default function FeaturesSettings() {
                     <span>
                       <span className="block text-sm font-medium mb-0.5">Turn System</span>
                       <span className="block text-xs text-muted-foreground leading-relaxed">
-                        The Turn System is available exclusively for Nail Salon businesses. It manages a rotating walk-in queue so staff take clients in fair order.
+                        It manages a rotating walk-in queue so staff take clients in fair order.
                       </span>
                     </span>
                   </div>

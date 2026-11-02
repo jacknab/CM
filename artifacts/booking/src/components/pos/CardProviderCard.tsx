@@ -5,8 +5,10 @@ import { useToast } from "@/hooks/use-toast";
 import type { CardProvider } from "@/hooks/use-card-provider";
 
 const OPTIONS: { value: CardProvider; label: string; detail: string }[] = [
-  { value: "stripe", label: "Stripe", detail: "The CARD button charges the card on the Certxa card reader." },
+  { value: "stripe", label: "Stripe", detail: "The CARD button charges the card on the Stripe M2 reader." },
   { value: "own", label: "Own Provider", detail: "You take the card on your own terminal. The CARD button only records the payment as card: nothing is charged by Certxa and nothing is shown on the customer screen." },
+  // Chosen in the front desk setup (2026-11-02): the salon takes no cards.
+  { value: "none", label: "No card payments", detail: "The salon does not accept card payments. The CARD button is off." },
 ];
 
 /** POS Settings → what the CARD button at checkout does. */

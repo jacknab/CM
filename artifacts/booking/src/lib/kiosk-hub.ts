@@ -1,8 +1,8 @@
-import { localHub } from "./local-hub";
+import { confirmOutage, localHub } from "./local-hub";
 
 /**
- * The kiosk (and the customer screen) asking the main POS tablet over the salon's own Wi-Fi
- * (lib/local-hub.ts) when the internet is down. The POS answers from what it holds, the way it works offline
+ * The kiosk (and the customer screen) asking the elected hub host over the salon's own Wi-Fi
+ * (lib/local-hub.ts) when the internet is down. The hub host answers from what it holds, the way it works offline
  * itself: a lookup also says whether the client is already on a ticket or has a booking today (and marks that
  * booking arrived); a check-in makes the same ticket the online kiosk makes — services, add-ons, nail options,
  * the technician asked for or the next in turn — sent to the server when the connection is back.
@@ -29,7 +29,8 @@ export interface KioskCheckinRequest {
 export interface KioskCheckinAnswer { success: boolean; ticketNumber?: number | null; clientName?: string; staffName?: string | null; error?: string }
 export interface KioskWaitAnswer { hasAvailableStaff: boolean; estimatedWaitMinutes: number | null }
 
-const ANSWER_MS = 6_000;
+/** The host first checks the server itself (up to PEER_CHECK_MS), then answers from its own data. */
+const ANSWER_MS = 9_000;
 
 function ask<T>(type: string, body: Record<string, unknown>): Promise<T | null> {
   const requestId = `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -45,7 +46,7 @@ function ask<T>(type: string, body: Record<string, unknown>): Promise<T | null> 
 export const hubKioskLookup = (phone: string) => ask<KioskLookupAnswer>("hub_kiosk_lookup", { phone });
 export const hubKioskCheckin = (req: KioskCheckinRequest) => ask<KioskCheckinAnswer>("hub_kiosk_checkin", { ...req });
 export const hubKioskWait = () => ask<KioskWaitAnswer>("hub_kiosk_wait", {});
-/** Another POS station, offline: the next ticket number, from the main POS (the one tablet that gives them out). */
+/** Another POS station, offline: the next ticket number, from the hub host (the one tablet that gives them out). */
 export const hubTicketNumber = () => ask<{ ticketNumber: number | null }>("hub_ticket_number", {}).then((a) =>
   a && Number.isInteger(a.ticketNumber) && (a.ticketNumber as number) > 0 ? (a.ticketNumber as number) : null);
 
@@ -62,6 +63,10 @@ export function serveKioskOverHub(handlers: {
 }): () => void {
   return localHub.onMessage((m: any) => {
     if (typeof m?.requestId !== "string") return;
+    if (!["hub_kiosk_lookup", "hub_kiosk_checkin", "hub_ticket_number", "hub_kiosk_wait"].includes(m.type)) return;
+    void confirmOutage().catch(() => {}).then(() => answer(m));
+  });
+  function answer(m: any) {
     const reply = (type: string, answer: object) => localHub.send({ type, requestId: m.requestId, ...answer });
     if (m.type === "hub_kiosk_lookup") {
       void handlers.lookup(String(m.phone ?? "")).catch(() => ({ found: false }))
@@ -82,13 +87,5 @@ export function serveKioskOverHub(handlers: {
       void handlers.wait().catch(() => ({ hasAvailableStaff: true, estimatedWaitMinutes: null }))
         .then((answer) => reply("hub_kiosk_wait_result", answer));
     }
-  });
-}
-
-/**
- * Tell the customer screen / kiosk to wake up (come back to the welcome screen).
- * Fire-and-forget: no reply needed. Goes through the salon hub when the internet is down.
- */
-export function wakeKioskScreen(registerId: number | null | undefined): boolean {
-  return localHub.send({ type: "kiosk_wake", registerId: registerId ?? 0 });
+  }
 }

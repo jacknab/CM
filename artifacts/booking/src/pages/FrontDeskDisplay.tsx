@@ -1,4 +1,4 @@
-/**
+1/**
  * FrontDeskDisplay — customer-facing tablet screen for the front desk / POS.
  *
  * A trimmed clone of the self-service check-in kiosk (`KioskCheckIn.tsx`).
@@ -22,6 +22,9 @@
  * Route: /frontdesk/:slug   (slug === locations.bookingSlug, same as /kiosk/:slug)
  */
 // Bundled (not in public/) so it is kept for offline with the rest of the app (sw.js keeps /assets/ only).
+import { startDeviceHealth } from "@/lib/deviceHealth";
+import { setPrintSettings } from "@/lib/printSettings";
+import { salonNowForPrint, setSalonTimeZone } from "@/lib/salonClock";
 import checkInBanner from "@/assets/frontdesk-check-in-banner.jpg";
 import { forRegister, localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -242,7 +245,63 @@ function CardTapAnimation({ variant }: { variant: AwaitMode }) {
   );
 }
 
-export default function FrontDeskDisplay() {
+/**
+ * The customer screen's pairing code, small in the bottom-left corner (owner, 2026-11-02; the app build is in the
+ * bottom-right, AppBuildCorner): typed on any POS station it pairs this screen with that station at any time —
+ * pairing again replaces the old link (routes/stationPairing.ts), and this page then moves to the new station.
+ * Only in a salon with more than one station; a fresh code before each one runs out (10 minutes).
+ */
+function PairCodeCorner({ slug }: { slug: string | undefined }) {
+  const [code, setCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const next = (sec: number) => { timer = setTimeout(() => { void load(); }, sec * 1000); };
+    const load = async () => {
+      try {
+        const p = await kioskFetch(slug, `/api/public/frontdesk/${slug}/pairing?screenId=${encodeURIComponent(getStationDeviceId())}`, { cache: "no-store" });
+        const pd = p.ok ? await p.json() : null;
+        if (cancelled) return;
+        if (!pd?.multiStation) { setCode(null); next(600); return; }
+        const r = await kioskFetch(slug, `/api/public/frontdesk/${slug}/pair-code`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ screenId: getStationDeviceId() }),
+        });
+        const d = r.ok ? await r.json() : null;
+        if (cancelled) return;
+        setCode(typeof d?.code === "string" ? d.code : null);
+        next(d?.code ? Math.max(60, (Number(d.expiresInSec) || 600) - 60) : 60);
+      } catch {
+        // No connection: an old code may be gone from the server, so none is shown until it is back.
+        if (!cancelled) { setCode(null); next(60); }
+      }
+    };
+    void load();
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
+  }, [slug]);
+  if (!code) return null;
+  return (
+    <div
+      aria-hidden="true"
+      data-testid="frontdesk-corner-pair-code"
+      style={{ position: "fixed", left: 6, bottom: 3, zIndex: 9999, pointerEvents: "none", fontSize: 10, lineHeight: "12px", letterSpacing: 0.2, color: "#9ca3af" }}
+    >
+      {code.split("").join(" ")}
+    </div>
+  );
+}
+
+export default function FrontDeskDisplayPage() {
+  const { slug } = useParams<{ slug: string }>();
+  return (
+    <>
+      <FrontDeskDisplay />
+      <PairCodeCorner slug={slug} />
+    </>
+  );
+}
+
+function FrontDeskDisplay() {
   const { slug, registerId: registerIdParam } = useParams<{ slug: string; registerId?: string }>();
   const [screen, setScreen]           = useState<Screen>("idle");
   const [storeId, setStoreId]         = useState<number | null>(null);
@@ -402,6 +461,9 @@ export default function FrontDeskDisplay() {
       loyaltyPointsPerDollar: Number(d.loyalty?.pointsPerDollar) > 0 ? Number(d.loyalty.pointsPerDollar) : null,
       timezone: d.timezone ?? null,
     });
+    setSalonTimeZone(d.timezone);
+    // Whether a check-in slip prints (front desk setup → Printing).
+    if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
     if (initial) {
       // The customer screen stands inside the salon: never a "closed" screen.
       setScreen("idle");
@@ -515,38 +577,34 @@ export default function FrontDeskDisplay() {
   const registerIdRef = useRef(registerId);
   const hubSinkRef = useRef<((e: MessageEvent) => void) | null>(null);
   registerIdRef.current = registerId;
+  // This screen's offline-mode health, reported every 2 minutes (lib/deviceHealth.ts; support's Devices tab).
+  useEffect(() => {
+    if (!storeId) return;
+    return startDeviceHealth({ role: "screen", storeId, registerId: registerIdRef.current || null, slug: slug ?? null, usesOfflineQueue: false });
+  }, [storeId, slug]);
   useEffect(() => {
     if (!storeId) return;
     void localHub.start(storeId, "screen");
     return localHub.onMessage((message) => {
       if (!forRegister(message, registerIdRef.current)) return;
-      if (message.type === "kiosk_wake") {
-        setScreen("idle");
-        setPhone("");
-        setClientInfo(null);
-        setTodayAppointment(null);
-        setNewClientName("");
-        setError("");
-        return;
-      }
-      if (message.type === "kiosk_wake") {
-        setScreen("idle");
-        setPhone("");
-        setClientInfo(null);
-        setTodayAppointment(null);
-        setNewClientName("");
-        setError("");
-        return;
-      }
+      // Sent every 30 s by POS tablets loaded before 2026-11-02 "to keep the screen awake" (the app already keeps it
+      // on). It used to send this screen back to its welcome page, wiping a phone number a client was typing.
+      if (message.type === "kiosk_wake") return;
       hubSinkRef.current?.(new MessageEvent("message", { data: JSON.stringify(message) }));
     });
   }, [storeId]);
+  // Back on the hub after a drop: whatever the POS sent meanwhile (a cash sale finishing, the order changing) was
+  // missed. Ask it for the checkout again — it answers with the order, and with the payment when it is paid.
+  useEffect(() => localHub.onStatusChange((status) => {
+    if (status === "connected") localHub.send({ type: "kiosk_checkout_sync_request", registerId: registerIdRef.current });
+  }), []);
 
   // ── Notifications WebSocket (unauthenticated, keyed by storeId) ───────────
   const sendWs = useCallback((type: string, payload: Record<string, unknown> = {}) => {
     const ws = wsRef.current;
-    // No connection to the server: the salon's local hub carries it to the POS tablet instead.
-    if (!ws || ws.readyState !== WebSocket.OPEN) { localHub.send({ type, registerId: registerIdRef.current, ...payload }); return; }
+    // No connection to the server: the salon's local hub carries it to the POS tablet instead. Offline counts too: a
+    // socket can still say "open" for a while after the internet goes, and what is sent on it then is lost.
+    if (!ws || ws.readyState !== WebSocket.OPEN || syncEngine.isOffline()) { localHub.send({ type, registerId: registerIdRef.current, ...payload }); return; }
     ws.send(JSON.stringify({ type, ...payload }));
   }, []);
 
@@ -1754,7 +1812,7 @@ export default function FrontDeskDisplay() {
             type: "PRINT_RECEIPT", requestId, copy: "customer", paymentIntentId: charge?.paymentIntentId ?? null,
             receipt: buildNativeReceiptPayload({
               storeName: storeConfig?.name ?? "", storeAddress: storeConfig?.address, storePhone: storeConfig?.phone,
-              ticketNumber: c?.ticketNumber ?? posApptId, dateIso: new Date().toISOString(),
+              ticketNumber: c?.ticketNumber ?? posApptId, dateIso: salonNowForPrint(),
               clientName: c?.customerName || undefined, staffName: c?.staffName,
               items: c?.items ?? [], subtotal, discount, tax, tip, grandTotal,
               tenders, changeDue: Math.max(0, Math.round((paidSum - grandTotal) * 100) / 100),

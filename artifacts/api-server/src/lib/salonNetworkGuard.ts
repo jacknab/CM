@@ -18,8 +18,10 @@ export function getClientIp(req: Request): string {
  * traffic instead of requiring a manual "lock to this network" step.
  */
 export async function reportCalendarNetwork(storeId: number, deviceId: string, ip: string): Promise<void> {
-  if (!deviceId || !ip) return;
+  if (!deviceId || !ip || deviceId === POS_ANCHOR) return;
   const [existing] = await db.select().from(storeNetworkTrust).where(eq(storeNetworkTrust.storeId, storeId));
+  // The salon's POS tablets keep it once they report (reportPosNetwork): /calendar no longer changes it.
+  if (existing?.anchorDeviceId === POS_ANCHOR) return;
   if (!existing) {
     await db.insert(storeNetworkTrust)
       .values({ storeId, anchorDeviceId: deviceId, trustedIp: ip })
@@ -32,6 +34,28 @@ export async function reportCalendarNetwork(storeId: number, deviceId: string, i
       .where(eq(storeNetworkTrust.id, existing.id));
   }
   // Different device than the anchor: ignored on purpose.
+}
+
+/** The anchor once the salon's own POS tablets set the IP (reportPosNetwork). */
+const POS_ANCHOR = "pos-stations";
+
+/**
+ * The salon's internet IP as its POS tablets see it (owner, 2026-11-02): reported by every POS station in the Certxa
+ * app with its hub heartbeat (every minute), so it is the salon's real address and follows it when the ISP changes
+ * it. It takes over from the /calendar device that first set it (store 2: the owner's own computer at home, Oct 26,
+ * which no tablet could ever correct). Written only when it changes.
+ */
+export async function reportPosNetwork(storeId: number, ip: string): Promise<void> {
+  if (!ip) return;
+  const [existing] = await db.select().from(storeNetworkTrust).where(eq(storeNetworkTrust.storeId, storeId));
+  if (!existing) {
+    await db.insert(storeNetworkTrust).values({ storeId, anchorDeviceId: POS_ANCHOR, trustedIp: ip }).onConflictDoNothing();
+    return;
+  }
+  if (existing.anchorDeviceId === POS_ANCHOR && existing.trustedIp === ip) return;
+  await db.update(storeNetworkTrust)
+    .set({ anchorDeviceId: POS_ANCHOR, trustedIp: ip, updatedAt: new Date() })
+    .where(eq(storeNetworkTrust.id, existing.id));
 }
 
 /**

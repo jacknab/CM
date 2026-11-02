@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { X } from "lucide-react";
+import { receiptSections, sectionLineLabel, type ReceiptLine } from "@/lib/receiptSections";
+import { printSavedReceipt } from "./receiptReprint";
 
 interface CardDetails {
   brand?: string;
@@ -17,7 +20,7 @@ interface ReceiptSnapshot {
   dateIso: string;
   clientName?: string;
   staffName?: string;
-  items: { label: string; price: number }[];
+  items: ReceiptLine[];
   subtotal: number;
   discount: number;
   tax?: number;
@@ -27,7 +30,7 @@ interface ReceiptSnapshot {
   cardDetails?: CardDetails;
 }
 
-const money = (n: number) => `$${(Number(n) || 0).toFixed(2)}`;
+const money = (n: number) => `${Number(n) < 0 ? "-" : ""}$${Math.abs(Number(n) || 0).toFixed(2)}`;
 const DASH = "-".repeat(40);
 
 const BRAND_LABEL: Record<string, string> = {
@@ -39,30 +42,42 @@ const ENTRY_LABEL: Record<string, string> = { chip: "INSERT", contactless: "TAP"
 const fmtEntry = (m: string) => ENTRY_LABEL[m.toLowerCase()] ?? m.toUpperCase();
 
 /**
- * The Barber POS's own in-app view of a paid ticket's receipt — reached by re-scanning that
- * ticket's QR, or "# Enter ID"-ing it, once it's paid (see NailHome.tsx's applyLookupResult).
+ * The Nail POS's own in-app view of a paid ticket's receipt — reached by re-scanning that
+ * ticket's QR, or "# Enter ID"-ing it, once it's paid (see BarberHome.tsx's applyLookupResult).
  * Same data/endpoint as the public /receipt/:token page texted to clients (and the same
  * receipt_snapshot every paid ticket gets — see CheckoutMode.tsx), just shown in a dialog here
  * so staff don't lose their place on the board. Styled like the physical thermal receipt this
  * data would otherwise only ever be seen as, rather than an ordinary app screen.
  */
-export function ReceiptDialog({ token, onClose }: { token: string; onClose: () => void }) {
-  const [data, setData] = useState<ReceiptSnapshot | null>(null);
+/** `snapshot`: a receipt this tablet already holds (the ticket archive, offline) — shown without asking the server. */
+export function ReceiptDialog({ token, snapshot, onClose }: { token: string | null; snapshot?: unknown; onClose: () => void }) {
+  const [data, setData] = useState<ReceiptSnapshot | null>((snapshot as ReceiptSnapshot | undefined) ?? null);
   const [error, setError] = useState(false);
+  // Print it again on the receipt printer (owner, 2026-10-24: for when the paper ran out).
+  const [printing, setPrinting] = useState(false);
+  const [printNote, setPrintNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const print = async () => {
+    if (!data || printing) return;
+    setPrinting(true); setPrintNote(null);
+    const err = await printSavedReceipt(data);
+    setPrinting(false);
+    setPrintNote(err ? { ok: false, text: err } : { ok: true, text: "Receipt printed" });
+  };
 
   useEffect(() => {
+    if (snapshot || !token) return;
     let cancelled = false;
     fetch(`/api/public/receipt/${token}`)
       .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [token]);
+  }, [token, snapshot]);
 
   const r = data;
   const date = r ? new Date(r.dateIso) : null;
-  const dateStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" }) : "";
-  const timeStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
+  const dateStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleDateString("en-US", { timeZone: salonTimeZone(), month: "numeric", day: "numeric", year: "numeric" }) : "";
+  const timeStr = date && !Number.isNaN(date.getTime()) ? date.toLocaleTimeString("en-US", { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit", second: "2-digit" }) : "";
   const paymentLabel = (m: string) => (m || "").charAt(0).toUpperCase() + (m || "").slice(1);
 
   const mono: React.CSSProperties = { fontFamily: "'Courier New', 'Lucida Console', monospace" };
@@ -95,10 +110,16 @@ export function ReceiptDialog({ token, onClose }: { token: string; onClose: () =
               <div>Txn: #{r.ticketNumber}</div>
               <div style={{ whiteSpace: "pre", opacity: 0.5, margin: "8px 0" }}>{DASH}</div>
 
-              {r.items.map((it, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: "space-between", opacity: it.label.startsWith("+") ? 0.75 : 1 }}>
-                  <span>{it.label}</span>
-                  <span>{money(it.price)}</span>
+              {receiptSections(r.items).map((sec, si) => (
+                <div key={si}>
+                  {/* Group Pay: each ticket under its technician's name. */}
+                  {sec.title && <div style={{ whiteSpace: "pre", overflow: "hidden" }}>{`--- -- ${sec.title} ${"-".repeat(40)}`}</div>}
+                  {sec.lines.map((it, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", opacity: !sec.title && it.label.startsWith("+") ? 0.75 : 1 }}>
+                      <span>{sec.title ? sectionLineLabel(it) : it.label}</span>
+                      <span>{money(it.price)}</span>
+                    </div>
+                  ))}
                 </div>
               ))}
               <div style={{ whiteSpace: "pre", opacity: 0.5, margin: "8px 0" }}>{DASH}</div>
@@ -106,7 +127,7 @@ export function ReceiptDialog({ token, onClose }: { token: string; onClose: () =
               {r.tenders.length > 0 && (
                 <>
                   {r.tenders.map((t, i) => (
-                    <div key={i}>{paymentLabel(t.method)}</div>
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between" }}><span>{paymentLabel(t.method)}</span><span>{money(t.amount)}</span></div>
                   ))}
                   {r.cardDetails?.brand && (
                     <div>{fmtBrand(r.cardDetails.brand)}{r.cardDetails.last4 ? ` ****${r.cardDetails.last4}` : ""}</div>
@@ -126,6 +147,12 @@ export function ReceiptDialog({ token, onClose }: { token: string; onClose: () =
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}><span>TOTAL:</span><span>{money(r.total)}</span></div>
               <div style={{ display: "flex", justifyContent: "space-between" }}><span>Amount Paid:</span><span>{money(r.tenders.reduce((s, t) => s + t.amount, 0) || r.total)}</span></div>
               <div style={{ whiteSpace: "pre", opacity: 0.5, marginTop: 8 }}>{DASH}</div>
+            </div>
+          )}
+          {r && (
+            <div className="receipt-reprint">
+              {printNote && <p className={printNote.ok ? "ok" : "err"} data-testid="barber-receipt-reprint-note">{printNote.text}</p>}
+              <button type="button" onClick={() => void print()} disabled={printing} data-testid="barber-receipt-reprint">{printing ? "Printing…" : "Print receipt"}</button>
             </div>
           )}
         </div>

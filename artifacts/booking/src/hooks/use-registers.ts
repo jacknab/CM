@@ -134,6 +134,20 @@ export function useDeleteRegister() {
   });
 }
 
+/** Make a station the salon's main one: its tablet runs the salon hub (Settings → POS Stations). */
+export function useMakeMainRegister() {
+  const queryClient = useQueryClient();
+  const { selectedStore } = useSelectedStore();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("PUT", `/api/registers/${id}/make-main`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/registers?storeId=${selectedStore?.id}`] });
+    },
+  });
+}
+
 /**
  * Which checkout station (register) this POS tablet is.
  *
@@ -147,6 +161,7 @@ export function useDeleteRegister() {
  * select/reset do nothing.
  */
 export function useActiveRegisterId(storeId: number | undefined) {
+  const queryClient = useQueryClient();
   const { data: registerList } = useRegisters(storeId);
   const activeRegisters = (registerList ?? []).filter((r) => r.isActive);
   const isMultiStation = activeRegisters.length > 0;
@@ -175,9 +190,26 @@ export function useActiveRegisterId(storeId: number | undefined) {
     if (isMultiStation && station?.registerId != null) setLocalRegisterId(station.registerId);
   }, [isMultiStation, station?.registerId]);
 
-  const selectRegister = useCallback(async (_id?: number, _opts?: { takeover?: boolean }): Promise<{ ok: boolean; error?: string }> => (
-    { ok: false, error: "Stations are assigned automatically." }
-  ), []);
+  // A manager puts this tablet on a chosen station (the /nail Manager menu): after a reset or reinstall the tablet
+  // comes back as a new one and is given whichever station is free, not necessarily its own.
+  const myStationKey = ["/api/registers/my-station", storeId, deviceId, activeRegisters.map((r) => r.id).join(",")];
+  const selectRegister = useCallback(async (id?: number, _opts?: { takeover?: boolean }): Promise<{ ok: boolean; error?: string }> => {
+    if (id == null) return { ok: false, error: "Choose a station." };
+    try {
+      const res = await fetch("/api/registers/my-station/choose", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId, registerId: id }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, error: d?.message || "Could not move this tablet to that station." };
+      queryClient.setQueryData(myStationKey, { registerId: d.registerId, name: d.name, multiStation: d.multiStation });
+      queryClient.invalidateQueries({ queryKey: ["/api/registers/stations"] });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "No connection. Try again when the internet is back." };
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceId, queryClient, myStationKey.join("|")]);
   const resetRegister = useCallback(async () => {}, []);
 
   return {

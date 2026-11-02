@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { syncEngine } from "@/lib/sync-engine";
+import { nailOffline, newIdempotencyKey } from "@/lib/nail-offline";
 import { ArrowUp, Delete } from "lucide-react";
 
 const ROW1 = ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"];
@@ -64,10 +66,21 @@ export function NameEntry({ phone, name, onName, busy, onDone }: {
 
 /** Saves the client exactly like the calendar does: POST /api/customers { name, phone (10 digits), storeId }. */
 export async function createClient(storeId: number, name: string, phone: string): Promise<number> {
-  const res = await fetch("/api/customers", {
-    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: name.trim(), phone, storeId }),
-  });
+  // One key for this client however the request ends up travelling: now, or later from the offline queue.
+  const key = newIdempotencyKey("client.create");
+  // No server: the client is saved on this device (a negative id until the server has them) and queued.
+  const onDevice = async () => (await nailOffline.createClient(storeId, name, phone, key)).id;
+  if (syncEngine.isOffline()) return onDevice();
+  let res: Response;
+  try {
+    res = await fetch("/api/customers", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": key },
+      body: JSON.stringify({ name: name.trim(), phone, storeId }),
+    });
+  } catch {
+    syncEngine.noteUnreachable();
+    return onDevice();
+  }
   const c = await res.json().catch(() => null);
   if (!res.ok || !c?.id) throw new Error("save failed");
   return Number(c.id);

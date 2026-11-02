@@ -1,7 +1,12 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { QueueTab } from "./QueueTab";
+import { describe, expect, it, vi } from "vitest";
+
+// The salon's feature switches (the Booking System hides the Appointments tile).
+const flags = vi.hoisted(() => ({ bookingSystem: true }));
+vi.mock("@/hooks/use-features", () => ({ useFeatureFlags: () => flags }));
+
+import { Glance, QueueTab } from "./QueueTab";
 import type { BoardMarker, BoardTicket } from "./nailApi";
 
 const marker = (id: number): BoardMarker => ({
@@ -52,5 +57,18 @@ describe("waiting queue fixed grid", () => {
     const html = render(Array.from({ length: 20 }, (_, i) => marker(i + 1)), [ticket(500, 0, "started")]);
     expect((html.match(/>UP NEXT</g) ?? []).length).toBe(1);
     expect((html.match(/data-testid="nail-queue-spotlight-action"/g) ?? []).length).toBe(1);
+  });
+});
+
+describe("the glance strip with the booking system switched off", () => {
+  it("has no Appointments tile (the upcoming list); the rest stay", () => {
+    const strip = () => renderToStaticMarkup(createElement(Glance, { waitLabel: "5 min", checkedIn: 1, inService: 2, clockedInTechs: 3,
+      glance: { appointments: 4, walkIns: 5, noShows: 0, completed: 6, avgTicket: 40 } as any }));
+    flags.bookingSystem = true;
+    expect(strip()).toContain("Appointments");
+    flags.bookingSystem = false;
+    expect(strip()).not.toContain("Appointments");
+    expect(strip()).toContain("Walk-ins");
+    flags.bookingSystem = true;
   });
 });

@@ -36,7 +36,10 @@ import {
   cancelTerminalPaymentIntent,
   retrieveTerminalPaymentIntent,
   isConnectConfigured,
+  PLATFORM_CONNECTION_FEE_CENTS,
 } from "../lib/stripeConnect";
+import { pushOwnerMessage } from "../lib/ownerPush";
+import { OFFLINE_CARD_REF } from "../lib/nailCheckoutSettlement";
 import {
   parseTerminalContext,
   terminalContextMetadata,
@@ -1111,6 +1114,29 @@ async function getOrCreateTerminalLocation(storeId: number, providerAccountId: s
   return location.id;
 }
 
+/**
+ * Stripe's offline mode on the salon's reader location (owner, 2026-11-02): with it on, the M2 can take a card while the
+ * internet is down — the Certxa app saves it and sends it to Stripe later. Set through the location's own
+ * Configuration on the salon's connected account. Checked once per location per server start.
+ */
+const offlineReadyLocations = new Set<string>();
+async function ensureOfflineMode(locationId: string, providerAccountId: string): Promise<void> {
+  if (offlineReadyLocations.has(locationId)) return;
+  const stripe = getStripe();
+  const opts = { stripeAccount: providerAccountId };
+  const location: any = await stripe.terminal.locations.retrieve(locationId, {}, opts);
+  const configId: string | null = location?.configuration_overrides ?? null;
+  if (configId) {
+    const config: any = await stripe.terminal.configurations.retrieve(configId, {}, opts);
+    if (!config?.offline?.enabled) await stripe.terminal.configurations.update(configId, { offline: { enabled: true } } as any, opts);
+  } else {
+    const config = await stripe.terminal.configurations.create({ name: "Certxa (offline payments on)", offline: { enabled: true } } as any, opts);
+    await stripe.terminal.locations.update(locationId, { configuration_overrides: config.id } as any, opts);
+    console.log(`[terminal/location] offline payments turned on for ${locationId}`);
+  }
+  offlineReadyLocations.add(locationId);
+}
+
 // ─── GET /api/payments/terminal/location ─────────────────────────────────────
 // Returns a Stripe Terminal location ID for this store, creating one if needed.
 // Used by the native Android POS app when connecting a Bluetooth or Tap-to-Pay reader.
@@ -1126,10 +1152,79 @@ router.get("/terminal/location", async (req: Request, res: Response) => {
     }
 
     const locationId = await getOrCreateTerminalLocation(storeId, account.providerAccountId);
-    return res.json({ locationId });
+    await ensureOfflineMode(locationId, account.providerAccountId).catch((e) => console.warn("[terminal/location] offline mode:", e?.message));
+    // storeId + the platform fee: the app keeps these to create a card payment itself when the internet is down.
+    return res.json({ locationId, storeId, applicationFeeCents: PLATFORM_CONNECTION_FEE_CENTS });
   } catch (err: any) {
     console.error("[terminal/location]", err?.message);
     return res.status(err?.status ?? 500).json({ error: err?.message ?? "Failed to get terminal location" });
+  }
+});
+
+// ─── POST /api/payments/terminal/offline-forwarded ───────────────────────────
+// The Certxa app sent a card payment it took offline to Stripe (onDidForwardPaymentIntent). It is charged here and
+// joined to its /nail sale (offline_card_payments); a card the bank refused is flagged and the owner told.
+router.post("/terminal/offline-forwarded", async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+    const offlineRef = String(req.body?.offlineRef ?? "");
+    if (!OFFLINE_CARD_REF.test(offlineRef)) return res.status(400).json({ error: "offlineRef is required" });
+    const paymentIntentId = typeof req.body?.paymentIntentId === "string" && /^pi_[a-zA-Z0-9]+$/.test(req.body.paymentIntentId) ? req.body.paymentIntentId : null;
+    const reportedError = typeof req.body?.error === "string" ? req.body.error.slice(0, 300) : null;
+    const account = await getPaymentAccount(storeId);
+    if (!account || account.status === "disconnected") return res.status(400).json({ error: "Store has no connected Stripe account" });
+
+    let status: "paid" | "declined" | "waiting" = "declined";
+    let amount: number | null = null;
+    let error = reportedError;
+    if (paymentIntentId) {
+      let pi = await retrieveTerminalPaymentIntent(account.providerAccountId, paymentIntentId);
+      if (pi.metadata?.offline_ref !== offlineRef || pi.metadata?.store_id !== String(storeId)) {
+        return res.status(403).json({ error: "Payment does not belong to this store" });
+      }
+      if (pi.status === "requires_capture") pi = await captureTerminalPaymentIntent(account.providerAccountId, pi.id);
+      amount = pi.amount;
+      status = pi.status === "succeeded" ? "paid" : pi.status === "processing" ? "waiting" : "declined";
+      if (status === "declined") error = error ?? pi.last_payment_error?.message ?? `Payment is ${pi.status}`;
+    }
+    const before: any = (await pool.query(`SELECT status FROM offline_card_payments WHERE offline_ref = $1`, [offlineRef])).rows[0];
+    const row: any = (await pool.query(
+      `INSERT INTO offline_card_payments (store_id, offline_ref, payment_intent_id, status, error, amount_cents, forwarded_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
+       ON CONFLICT (offline_ref) DO UPDATE SET payment_intent_id = COALESCE(EXCLUDED.payment_intent_id, offline_card_payments.payment_intent_id),
+         status = EXCLUDED.status, error = EXCLUDED.error, amount_cents = COALESCE(offline_card_payments.amount_cents, EXCLUDED.amount_cents), forwarded_at = now()
+       WHERE offline_card_payments.store_id = EXCLUDED.store_id
+       RETURNING appointment_id, amount_cents, idempotency_key, recorded_at`,
+      [storeId, offlineRef, paymentIntentId, status, error, amount],
+    )).rows[0];
+    if (!row) return res.status(403).json({ error: "Payment does not belong to this store" });
+    // The sale is already saved: its card payment is now the real Stripe one.
+    if (status === "paid" && paymentIntentId && row.recorded_at && row.appointment_id) {
+      await pool.query(
+        `INSERT INTO nail_checkout_card_intents (payment_intent_id, store_id, appointment_id, amount_cents, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (payment_intent_id) DO NOTHING`,
+        [paymentIntentId, storeId, row.appointment_id, row.amount_cents ?? amount, row.idempotency_key ?? "offline"],
+      );
+    }
+    if (status === "declined" && before?.status !== "declined") {
+      const ticket: any = row.appointment_id
+        ? (await pool.query(`SELECT a.ticket_number, c.first_name, c.last_name FROM appointments a LEFT JOIN clients c ON c.id = a.customer_id
+             WHERE a.id = $1 AND a.store_id = $2`, [row.appointment_id, storeId])).rows[0]
+        : null;
+      const dollars = `$${(((row.amount_cents ?? amount) || 0) / 100).toFixed(2)}`;
+      const who = ticket ? [ticket.ticket_number != null ? `ticket #${ticket.ticket_number}` : null, [ticket.first_name, ticket.last_name].filter(Boolean).join(" ") || null].filter(Boolean).join(", ") : null;
+      console.warn(`[terminal/offline-forwarded] store ${storeId}: offline card ${offlineRef} declined (${error ?? "no reason"})`);
+      void pushOwnerMessage(storeId, {
+        title: "A card taken offline was declined",
+        body: `${dollars}${who ? ` (${who})` : ""} was not paid: the bank refused the card once the internet was back. Collect it another way.`,
+        data: { type: "offline_card_declined", appointmentId: row.appointment_id ?? null },
+      }).catch(() => {});
+    }
+    return res.json({ ok: true, status });
+  } catch (err: any) {
+    console.error("[terminal/offline-forwarded]", err?.message);
+    return res.status(500).json({ error: err?.message ?? "Failed to record the offline card payment" });
   }
 });
 

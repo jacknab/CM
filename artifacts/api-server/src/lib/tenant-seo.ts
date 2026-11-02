@@ -1,3 +1,4 @@
+import { craftFor, craftTitle, placesSentence, soloKeywords } from "./proCraft";
 import type { BusinessData, HoursEntry, TenantData } from "./tenant-data";
 
 export interface TenantSeoOverrides {
@@ -90,13 +91,21 @@ function to24h(time: string): string {
   return time;
 }
 
+/** "(720) 243-6886" for a US number; anything else as it was typed. */
+export function displayPhone(phone: string | null | undefined): string | null {
+  const digits = String(phone ?? "").replace(/\D/g, "");
+  const ten = digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (ten.length === 10) return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+  return phone?.trim() || null;
+}
+
 function trimText(value: string, max: number): string {
   if (value.length <= max) return value;
   const shortened = value.slice(0, max - 1).replace(/\s+\S*$/, "").trim();
   return `${shortened}…`;
 }
 
-function toE164(phone: string | null | undefined): string | undefined {
+export function toE164(phone: string | null | undefined): string | undefined {
   if (!phone) return undefined;
   const compact = phone.replace(/\s/g, "");
   if (/^\+[1-9]\d{1,14}$/.test(compact)) return compact;
@@ -158,7 +167,7 @@ export function buildBusinessJsonLd(
 
   return {
     "@context": "https://schema.org",
-    "@type": schemaType(business.category),
+    "@type": data.solo ? "HealthAndBeautyBusiness" : schemaType(business.category),
     "@id": `${canonical.replace(/\/$/, "")}#business`,
     name: business.name,
     url: canonical,
@@ -266,26 +275,38 @@ export function buildTenantSeo(
 ): TenantSeoMeta {
   const business = data.business;
   const name = business?.name || data.website.name || "Salon";
-  const type = categoryLabel(business?.category);
+  // A Solo-plan pro isn't a salon: "Nails", "Buzzcuts", "Haircuts" (lib/proCraft.ts).
+  const craft = data.solo ? craftFor(business?.category) : null;
+  const type = craft ? craftTitle(craft) : categoryLabel(business?.category);
   const city = business?.city || "";
   const location = [city, business?.state].filter(Boolean).join(", ");
   const topServices = data.services.slice(0, 3).map((service) => service.name).filter(Boolean);
-  const servicePhrase = topServices.length ? ` ${topServices.join(", ")}.` : "";
+  const serviceList = topServices.length > 1 ? `${topServices.slice(0, -1).join(", ")}, and ${topServices[topServices.length - 1]}` : topServices[0] ?? "";
+  const phone = displayPhone(business?.phone);
 
+  // The salon's name first, as in "Nail Saints | Nail Salon in Lakewood, CO" (owner, 2026-11-02).
   const fallbackTitle = trimText(
-    location ? `${type} in ${location} | ${name}` : `${type} | ${name}`,
+    location ? `${name} | ${type} in ${location}` : `${name} | ${type}`,
     60,
   );
+  // "Toby's offers Gel Manicure, Pedicure, and Acrylic Fill in Denver, CO. Book online or call (720) 243-6886."
+  // (Used to read "… Book Basic Manicure, Spa Manicure, Deluxe Manicure. online, view services …".)
+  const soloPlaces = data.solo ? placesSentence(data.solo) : "";
   const fallbackDescription = trimText(
-    `${name} is a ${type.toLowerCase()}${location ? ` in ${location}` : ""}. Book${servicePhrase || " your appointment"} online, view services, hours, and directions.`,
+    craft
+      // "Toby’s nails in Denver, CO: Basic Manicure, …. Home studio and house calls. Book online or call …"
+      ? `${/['’]s$/i.test(name.trim()) ? `${name} ${craft.work}` : `${name} — ${craft.work}`}${location ? ` in ${location}` : ""}${serviceList ? `: ${serviceList}` : ""}.${soloPlaces ? ` ${soloPlaces}` : ""} Book online${phone ? ` or call ${phone}` : ""}.`
+      : `${serviceList ? `${name} offers ${serviceList}` : `${name} is a ${type.toLowerCase()}`}${location ? ` in ${location}` : ""}. Book online${phone ? ` or call ${phone}` : ""}.`,
     160,
   );
-  const fallbackKeywords = [
-    type.toLowerCase(),
-    city,
-    "book online",
-    ...data.services.slice(0, 8).map((service) => service.name.toLowerCase()),
-  ].filter(Boolean).join(", ");
+  const fallbackKeywords = (craft && data.solo
+    ? [...soloKeywords(craft, city || null, data.solo), "book online", ...data.services.slice(0, 8).map((service) => service.name.toLowerCase())]
+    : [
+      type.toLowerCase(),
+      city,
+      "book online",
+      ...data.services.slice(0, 8).map((service) => service.name.toLowerCase()),
+    ]).filter(Boolean).join(", ");
   const ogImage = data.galleryPhotos.find((photo) => photo.image_url)?.image_url ?? null;
   const latitude = business?.latitude == null ? NaN : Number(business.latitude);
   const longitude = business?.longitude == null ? NaN : Number(business.longitude);

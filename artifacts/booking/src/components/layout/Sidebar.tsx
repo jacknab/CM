@@ -71,6 +71,10 @@ type TopNavItem = {
   eliteOnly?: boolean;
   /** Only for nail-salon businesses (the same check the /nail screen makes). */
   nailOnly?: boolean;
+  /** Only for barbershops (the same check the /barber screen makes). */
+  barberOnly?: boolean;
+  /** Hidden when the booking system is switched off (Advanced Features › Booking System). */
+  requiresBooking?: boolean;
 };
 
 type SubNavItem = { label: string; icon: typeof LayoutDashboard; to: string };
@@ -92,6 +96,7 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
       icon: Calendar,
       to: "/calendar",
       matches: ["/calendar", "/appointments", "/booking/new"],
+      requiresBooking: true,
     },
     {
       label: pick({ en: "Clients", vi: "Khách hàng", es: "Clientes", fr: "Clients" }),
@@ -116,6 +121,14 @@ function buildTopNav(pick: Pick4): TopNavItem[] {
       matches: ["/nail"],
       nailOnly: true,
       // Technician logins have no salon of their own: /nail sends them back to the calendar.
+      hideForStaff: true,
+    },
+    {
+      label: pick({ en: "Barber POS", vi: "POS tiệm cắt tóc", es: "POS de barbería", fr: "PDV barbier" }),
+      icon: Monitor,
+      to: "/barber",
+      matches: ["/barber"],
+      barberOnly: true,
       hideForStaff: true,
     },
     {
@@ -147,6 +160,7 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
     { label: pick({ en: "Deals",      vi: "Ưu đãi",         es: "Ofertas",       fr: "Offres" }),        icon: BadgePercent,  to: "/catalog/deals" },
     { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
     { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
+    { label: pick({ en: "Pricing Levels", vi: "Mức giá", es: "Niveles de precio", fr: "Niveaux de prix" }), icon: BadgePercent, to: "/catalog/pricing-levels" },
     { label: pick({ en: "Products",   vi: "Sản phẩm",       es: "Productos",     fr: "Produits" }),     icon: ShoppingCart,  to: "/catalog/products" },
     { label: pick({ en: "Resources",  vi: "Tài nguyên",     es: "Recursos",     fr: "Ressources" }),   icon: Armchair,      to: "/catalog/resources" },
   ];
@@ -370,8 +384,13 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
   // ── Localized nav definitions (rebuilt whenever the language changes) ──────
   const TOP_NAV          = buildTopNav(pick);
   const INSIGHTS_SUBNAV  = buildInsightsSubnav(pick);
-  const CATALOG_SUBNAV   = buildCatalogSubnav(pick);
-  const MARKETING_SUBNAV = buildMarketingSubnav(pick);
+  // Nail Config (nail sizes, shapes, art) means nothing to a barbershop: not in its Catalog menu.
+  // Pricing Levels is for barbershops and hair salons only.
+  const CATALOG_SUBNAV   = buildCatalogSubnav(pick)
+    .filter((s) => s.to !== "/catalog/nail-services" || !/barber/i.test((selectedStore as any)?.category ?? ""))
+    .filter((s) => s.to !== "/catalog/pricing-levels" || /barber|hair/i.test((selectedStore as any)?.category ?? ""));
+  // Autumn (AI Receptionist) is part of the booking system: hidden when it is switched off.
+  const MARKETING_SUBNAV = buildMarketingSubnav(pick).filter((s) => features.bookingSystem || s.to !== "/manage/ai-receptionist");
   const FINANCE_SUBNAV   = buildFinanceSubnav(pick, !!features.pos);
   const TEAM_SUBNAV      = buildTeamSubnav(pick);
 
@@ -484,6 +503,8 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     if (isSolo  && item.hideForSolo)  return false;
     if (item.eliteOnly && !isElite)   return false;
     if (item.nailOnly && !isNailSalonBiz((selectedStore as any)?.category)) return false;
+    if (item.barberOnly && !/barber/i.test((selectedStore as any)?.category ?? "")) return false;
+    if (item.requiresBooking && !features.bookingSystem) return false;
     if (item.permission && !can(item.permission)) return false;
     return true;
   });
@@ -778,8 +799,9 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
       <div className="flex-shrink-0 border-t border-gray-100 px-2 py-2 bg-white">
 
 
-        {/* Nail POS (nail salons only) — drawn here, right above Support; the main list only draws its own routes */}
-        {visibleItems.filter((i) => i.nailOnly).map((item) => (
+        {/* Nail POS (nail salons only) / Barber POS (barbershops only) — drawn here, right above Support; the main list
+            only draws its own routes */}
+        {visibleItems.filter((i) => i.nailOnly || i.barberOnly).map((item) => (
           <NavItem
             key={item.to}
             icon={item.icon}

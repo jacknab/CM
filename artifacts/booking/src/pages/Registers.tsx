@@ -12,6 +12,7 @@ import {
   useDeleteRegister,
   useRegisterClaims,
   useReleaseRegisterClaim,
+  useMakeMainRegister,
   type RegisterClaimInfo,
 } from "@/hooks/use-registers";
 import type { Register } from "@shared/schema";
@@ -39,6 +40,8 @@ function StationRow({
   claim,
   onRelease,
   releasePending,
+  onMakeMain,
+  makeMainPending,
 }: {
   name: string;
   url: string;
@@ -48,6 +51,9 @@ function StationRow({
   claim?: RegisterClaimInfo | null;
   onRelease?: () => void;
   releasePending?: boolean;
+  /** Make this the main station: its tablet runs the salon hub. */
+  onMakeMain?: () => void;
+  makeMainPending?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [confirmRelease, setConfirmRelease] = useState(false);
@@ -67,10 +73,15 @@ function StationRow({
           <h3 className="font-semibold text-slate-700">{name}</h3>
           {isDefault && (
             <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
-              Original station
+              Main
             </span>
           )}
         </div>
+        {!isDefault && onMakeMain && (
+          <Button variant="outline" size="sm" className="ml-auto h-8 rounded-lg text-xs" onClick={onMakeMain} disabled={makeMainPending}>
+            {makeMainPending ? "Saving…" : "Make main"}
+          </Button>
+        )}
         {onDelete && (
           <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
             onClick={onDelete} disabled={deletePending} title="Remove register">
@@ -158,6 +169,7 @@ export default function Registers() {
   const { data: claimList } = useRegisterClaims(selectedStore?.id, claimsEnabled);
   const claimByRegisterId = new Map((claimList ?? []).map((c) => [c.registerId, c]));
   const releaseClaim = useReleaseRegisterClaim();
+  const makeMain = useMakeMainRegister();
 
   // The server assigns the actual name ("POS #2", "POS #3", …) — this is only
   // a preview for the button label, computed the same way it does. The
@@ -252,6 +264,10 @@ export default function Registers() {
                 claim={claimByRegisterId.get(r.id) ?? null}
                 onRelease={() => releaseClaim.mutate(r.id)}
                 releasePending={releaseClaim.isPending && releaseClaim.variables === r.id}
+                onMakeMain={r.isActive ? () => {
+                  if (window.confirm(`Make ${r.name} the main station? The tablet on ${r.name} will run the salon hub that links the tablets when the internet is down.`)) makeMain.mutate(r.id);
+                } : undefined}
+                makeMainPending={makeMain.isPending && makeMain.variables === r.id}
               />
             ))}
 

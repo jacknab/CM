@@ -5,8 +5,10 @@
  * choice is the TURN queue, checkout is the POS tab itself (CheckoutMode). This
  * file only owns the screen state and wires the pieces together.
  */
+import { startDeviceHealth } from "@/lib/deviceHealth";
+import { usePrintSettings } from "@/lib/printSettings";
+import { salonTimeZone } from "@/lib/salonClock";
 import { appPage } from "@/lib/appProfile";
-import { wakeKioskScreen } from "@/lib/kiosk-hub";
 import { localHub, relayCheckoutEvent } from "@/lib/local-hub";
 import { OfflineLimitLock } from "@/components/offline/OfflineLimitLock";
 import { EMPTY_ARRAY } from "@/lib/empty";
@@ -21,6 +23,9 @@ import { ServicedCancelSheet } from "./ServicedCancelSheet";
 import { useNailDomTranslation } from "./nailDomTranslate";
 import { useNailCatalogNames } from "./catalogNames";
 import { SlipTechIdSheet, TechSlipSheet } from "./TechSlipSheet";
+import { TechIdPrintSheet } from "./TechIdPrintSheet";
+import { StationPickerSheet } from "./StationPickerSheet";
+import { StationDrawerSheet } from "./StationDrawerSheet";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { useServices } from "@/hooks/use-services";
@@ -102,7 +107,8 @@ import { BookingPanel, slotStaffNames, type BookingSlot } from "./BookingPanel";
 import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
 import { PairCustomerScreenDialog, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
-import { MoreMenu, type MoreTile } from "./MoreMenu";
+import { MoreMenu } from "./MoreMenu";
+import { staffMenus } from "@/components/staff-screen/staffMenus";
 import { calendarBookingsForBoard, hasNewWaitingEntityForPhone, waitingEntityKeys } from "./boardView";
 import { printNativeCheckinTicket, slipServiceNames } from "@/lib/native-checkin-ticket";
 import type { SalesTaxSettings } from "@shared/nailCheckout";
@@ -113,7 +119,7 @@ const loadCheckoutMode = () => import("./CheckoutMode");
 /** A ticket's date as the server's ticket # lookup writes it ("Tue, Oct 14, 3:05 PM"). */
 const lookupDate = (iso: string) => {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "Unknown date" : d.toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return Number.isNaN(d.getTime()) ? "Unknown date" : d.toLocaleString("en-US", { timeZone: salonTimeZone(), weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 };
 
 // Before this screen's first request: no tap waits on a server that cannot be reached
@@ -174,22 +180,26 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   const { user } = useAuth();
   const features = useFeatureFlags();
   const thermalPrinter = useThermalPrinter();
+  // What prints by itself (front desk setup → Printing): loaded here, read by checkout, Day Close and check-in.
+  usePrintSettings();
   const navigate = useNavigate();
   const {
     registerId, needsPicker: needsRegisterPicker, registers: registerOptions, takenRegisters, selectRegister,
     isMultiStation, currentRegisterName, resetRegister, stationsFull, isMainStation,
   } = useActiveRegisterId(storeId);
-  // POS #1 runs the salon's local hub; any other POS station connects to it, so the POS tablets share one turn
-  // line offline. Remembered on the tablet: after a restart with no internet it still knows which it is.
+  // The main POS is preferred for the local hub; another station takes over if the main tablet goes offline.
+  // The selected host is remembered on the tablet so the salon can still work without internet.
   const hubRoleKey = `certxa.hub.role.${storeId}`;
   const hubRole: "pos" | "station" = (() => {
     if (isMainStation != null) return isMainStation ? "pos" : "station";
     try { return localStorage.getItem(hubRoleKey) === "station" ? "station" : "pos"; } catch { return "pos"; }
   })();
+  const [servesHub, setServesHub] = useState(() => localHub.isSelectedHost());
   useEffect(() => {
     if (isMainStation == null) return;
     try { localStorage.setItem(hubRoleKey, isMainStation ? "pos" : "station"); } catch { /* storage unavailable */ }
   }, [isMainStation, hubRoleKey]);
+  useEffect(() => localHub.onHostChange(setServesHub), []);
   // The Station tile pairs this tablet's customer screen (it used to reset the station).
   const [pairScreenOpen, setPairScreenOpen] = useState(false);
   // Same duties the calendar screen has, so /kiosk and /frontdesk behave identically when this is the screen left open all day.
@@ -198,7 +208,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useAppointmentSSE(storeId);
   const printRef = useRef<((bytes: Uint8Array) => Promise<void>) | null>(null);
   printRef.current = thermalPrinter.isConnected ? thermalPrinter.print : null;
-  const { drawerId, cashAllowed, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
+  const { drawerId, drawer: stationDrawer, cashAllowed, needsPicker: needsDrawerPicker, drawers, selectDrawer } = useActiveDrawerId(storeId);
 
   // ── screen state ──────────────────────────────────────────────────────────
   const [tab, setTab] = useState<NailTab>("queue");
@@ -292,7 +302,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   useEffect(() => () => { if (typingTimer.current) clearTimeout(typingTimer.current); }, []);
   // Every time the Check-In page opens or closes, start from "not typing" — never inherit a stale overlay.
   useEffect(() => { onFrontdeskTyping(false); }, [showCheckIn, onFrontdeskTyping]);
-  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "turns" | "servicetimes">(null);
+  const [sheet, setSheet] = useState<null | "voucher" | "timeclock" | "dayclose" | "clients" | "manager" | "stationpin" | "turns" | "servicetimes">(null);
   // Front desk setup (owner, 2026-10-31): is required: the owner login can't use the front desk until it is
   // finished. Manager › Front Desk Setup opens it again any time (with Close).
   // Not finished yet: look again every minute, so a tablet signed in with a staff login opens once the owner has
@@ -347,10 +357,16 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     refreshSettings();
     queryClient.invalidateQueries({ queryKey: ["/api/nail/screen-settings"] });
     queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-grid"] });
-  }, [refreshSettings, queryClient]);
+    // The main station may have changed (Settings → POS Stations): it decides which tablet runs the salon hub.
+    queryClient.invalidateQueries({ queryKey: [`/api/registers?storeId=${storeId}`] });
+    // A station's cash drawer may have changed (Manager › Station Drawer on another tablet, or Settings).
+    queryClient.invalidateQueries({ queryKey: ["/api/cash-drawers/station"] });
+  }, [refreshSettings, queryClient, storeId]);
   // This is the salon's main screen: inside the Android app it accepts the customer screen and kiosk over
   // the salon's own Wi-Fi, so they keep working with it when the internet is down.
-  useEffect(() => { void localHub.start(storeId, hubRole); }, [storeId, hubRole]);
+  useEffect(() => { void localHub.start(storeId, hubRole, registerId); }, [storeId, hubRole, registerId]);
+  // This tablet's offline-mode health, reported to the server every 2 minutes (lib/deviceHealth.ts; support's Devices tab).
+  useEffect(() => startDeviceHealth({ role: hubRole, storeId, registerId, usesOfflineQueue: true }), [storeId, hubRole, registerId]);
   // The salon's whole account, copied to this tablet and kept in sync, for working with no internet.
   useEffect(() => startSalonMirror(storeId), [storeId]);
   // A waiting client was just given a technician: every POS station says so, over whatever it is showing —
@@ -530,6 +546,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     placeholderData: () => { try { return localStorage.getItem(lockKey) === "off" ? { lockScreen: false, keypadVisible: true } : undefined; } catch { return undefined; } },
   });
   const lockEnabled = screenSettings?.lockScreen !== false;
+  const keypadVisible = screenSettings?.keypadVisible !== false;
   useEffect(() => {
     if (!screenSettings) return;
     try { localStorage.setItem(lockKey, screenSettings.lockScreen ? "on" : "off"); } catch { /* private mode */ }
@@ -539,6 +556,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     onSuccess: (r) => { queryClient.setQueryData(screenKey, r); if (!r.lockScreen) setTech(null); say(r.lockScreen ? "Lock screen is on" : "Lock screen is off — no sign-in needed"); },
     onError: (err: any) => toast({ title: "Couldn't change the lock screen", description: err?.message, variant: "destructive" }),
   });
+  // Off: the lock screen has no number keypad, technicians sign in by scanning their printed Tech ID (Tech ID Print).
+  const saveKeypad = useMutation({
+    mutationFn: (keypadVisible: boolean) => saveScreenSettings({ keypadVisible }),
+    onSuccess: (r) => { queryClient.setQueryData(screenKey, r); say(r.keypadVisible ? "Keypad is on" : "Keypad is off — scan the Tech ID"); },
+    onError: (err: any) => toast({ title: "Couldn't change the keypad", description: err?.message, variant: "destructive" }),
+  });
+  const [techIdPrint, setTechIdPrint] = useState(false);
+  const [stationPicker, setStationPicker] = useState(false);
+  const [stationDrawerOpen, setStationDrawerOpen] = useState(false);
+  // The PIN (or manager badge) that opened the Manager menu, for Tech ID Print's manager badges; dropped when it closes.
+  const managerPinRef = useRef<string | null>(null);
 
   // The key grid a manager arranged for the POS's right panel (null = filled automatically from the catalog).
   const posGridKey = ["/api/nail/pos-grid", storeId];
@@ -624,13 +652,11 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { sharing.stop(); offChange(); offStatus(); };
   }, [storeId, queryClient]);
 
-  // One offline POS for the salon (lib/nail-offline/remoteEngine.ts, owner 2026-10-28): with no internet the main
-  // POS does every station's offline work, so all stations show the same tickets; another station sends its work
-  // there while it is linked to it, and works on its own only when it can't reach it.
-  useEffect(() => (hubRole === "pos"
+  // Whichever tablet is serving the hub handles the other stations' offline work.
+  useEffect(() => (servesHub
     ? serveEngineOverHub(nailOffline)
     : forwardEngineOverHub(nailOffline, { storeId: () => storeId, active: () => syncEngine.isOffline() && localHub.getStatus() === "connected" })),
-  [hubRole, storeId]);
+  [servesHub, storeId]);
 
   // Every past ticket kept on this tablet, so a ticket # can be looked up with no internet (ticketArchive.ts):
   // brought up to date on open, every 15 minutes, and when the connection comes back.
@@ -642,8 +668,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { clearInterval(timer); offStatus(); };
   }, [storeId]);
 
-  // Only POS #1 answers (one check-in, not one per POS tablet).
-  useEffect(() => hubRole !== "pos" ? undefined : serveKioskOverHub({
+  // Only the elected hub host answers customer-screen and kiosk requests.
+  useEffect(() => !servesHub ? undefined : serveKioskOverHub({
     lookup: async (phone) => {
       const digits = phone.replace(/\D/g, "").slice(-10);
       if (digits.length !== 10) return { found: false };
@@ -714,13 +740,12 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     wait: () => waitOnDevice(storeId),
     // The one tablet that gives out ticket numbers while the internet is down.
     ticketNumber: () => nailOffline.issueTicketNumber(storeId),
-  }), [storeId, timezone, queryClient, hubRole]);
-  // Another POS station takes its offline ticket numbers from the main POS, so no two tickets share one
-  // (they are printed, so they can't be fixed later). The main POS gives them out itself.
+  }), [storeId, timezone, queryClient, servesHub]);
+  // Only the elected hub host gives out offline ticket numbers, so two stations cannot print the same number.
   useEffect(() => {
-    nailOffline.setTicketNumberSource(hubRole === "station" ? () => hubTicketNumber() : null);
+    nailOffline.setTicketNumberSource(servesHub ? null : () => hubTicketNumber());
     return () => nailOffline.setTicketNumberSource(null);
-  }, [hubRole]);
+  }, [servesHub]);
   const { data: linkedAddons } = useAddonsForService(service?.id ?? null);
   const suggestedAddons = useMemo(() => {
     const linked = ((linkedAddons ?? []) as any[]).filter((a) => a.isActive !== false);
@@ -1342,7 +1367,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       if (shouldPay) void openTicketForCheckout(r.appointmentId);
       else setTab("queue");
       say(r.staffName
-        ? `Ticket #${r.ticketNumber} · ${techLabel(r.staffName)} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
+        ? `Ticket #${r.ticketNumber} · ${techLabel(r.staffName)} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
         : `Ticket #${r.ticketNumber} is waiting · no technician free yet`);
       if (shouldPay) resetDraft();
       // Show who each service went to for ten seconds before the keypad returns.
@@ -1607,6 +1632,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   }, [queryClient, storeId]);
 
   const handleScan = useCallback(async (raw: string) => {
+    // Tech ID and manager badges and setting confirmations belong to the lock screen and the manager PIN pad.
+    if (/^(TECH:|QR:|KP:|M\d{1,2}-)/i.test(raw.trim())) return;
     // No connection: a booking's slip (BK:<id>) opens from the board on this tablet; a check-in slip's code
     // needs the server, but its ticket number is printed on it.
     // A slip the kiosk printed through this tablet with no internet carries its ticket number.
@@ -1696,16 +1723,6 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     return () => { void send("kiosk_checkout_phone_cancel"); };
   }, [showBook, dualScreen, registerId]);
 
-  // ── Wake the customer screen when the POS is active ────────────────────────────────────
-  useEffect(() => {
-    if (!dualScreen || !registerId) return;
-    // Wake the customer screen every 30 seconds to keep it from sleeping
-    const interval = setInterval(() => {
-      wakeKioskScreen(registerId);
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [dualScreen, registerId]);
-
   // ── the calendar's other tools, from the More menu ────────────────────────
   const timeclockEnabled = features.timeclock !== false;
   // Offline mode runs from cached files — wiping them there would break it, so no Hard Refresh while offline.
@@ -1719,48 +1736,44 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
     : queued.attention > 0 ? { label: nailText("needsAttention"), ok: false }
     : queued.pending > 0 ? { label: nailText("sending"), ok: true }
     : { label: nailText("connected"), ok: true };
-  const moreTiles: MoreTile[] = [
-    { key: "book", label: "Book Appointment", icon: CalendarPlus, run: () => { setFrontdeskPhone(""); setShowBook(true); } },
-    { key: "clients", label: "Client Lookup", icon: Search, run: () => setSheet("clients") },
-    { key: "voucher", label: "Redeem Voucher", icon: Gift, run: () => setSheet("voucher") },
-    ...(timeclockEnabled ? [{ key: "timeclock", label: "In / Out", icon: Clock, run: () => setSheet("timeclock") }] : []),
-    // Inside a Certxa app with no retail screen of its own, Retail Sale is left out (shared/appProfiles.ts).
-    ...(posEnabled && appPage("/pos") ? [{ key: "retail", label: "Retail Sale", icon: ShoppingBag, run: () => navigate(appPage("/pos")!) }] : []),
-    // The signed-in technician's own slip; with nobody (or the front desk) signed in, it asks for a Tech ID.
-    { key: "myslip", label: "My Slip", icon: Receipt, run: () => { if (tech && !tech.frontDesk) setSlipFor({ id: tech.id, name: tech.name }); else setSlipAsk(true); } },
-    // This tablet's language for the staff screens; each tap goes to the next one.
-    { key: "language", label: "Language", sub: LANG_NAMES[lang], icon: Languages, keepOpen: true,
-      run: () => setLang(LANG_ORDER[(LANG_ORDER.indexOf(lang) + 1) % LANG_ORDER.length]) },
-    // Opens the Manager tab (managerTiles below) once the manager PIN is entered.
-    { key: "manager", label: "Manager", icon: KeyRound, run: () => setSheet("manager") },
-    ...(isMultiStation && currentRegisterName ? [{
-      key: "station", icon: CreditCard, label: "Station", sub: currentRegisterName,
-      run: () => setPairScreenOpen(true),
-    }] : []),
-    ...(offline ? [] : [{
-      key: "refresh", label: "Hard Refresh", sub: "Fix a page that won't load", icon: RefreshCw, run: () => { void hardRefresh(); },
-    }]),
-  ];
-
-  // The Manager tab of the More popup — everything here is behind the manager PIN.
-  const managerTiles: MoreTile[] = [
-    { key: "settings", label: "Settings", icon: Settings, run: () => navigate(appPage("/settings")!) },
-    { key: "possetup", label: "Front Desk Setup", sub: "Tax, card, drawer, tips", icon: ClipboardList, run: () => { setShowMore(false); setSetupOpen(true); } },
-    ...(posEnabled ? [{ key: "register", label: "Cash Drawer", sub: openDrawerSession ? "Open" : "Closed", icon: Wallet, run: () => setShowOpenRegister(true) }] : []),
-    { key: "messages", label: "Messages", icon: Bell, run: () => navigate(appPage("/sms-inbox")!) },
-    { key: "keygrid", label: "Key Grid", sub: "Arrange the front desk keys", icon: LayoutGrid, run: () => setGridEditor("open") },
-    { key: "turnrotation", label: "Turn Rotation", sub: "How turns are counted", icon: RotateCcw, run: () => setSheet("turns") },
-    { key: "servicetimes", label: "Service Times", sub: "Actual vs planned", icon: Clock, run: () => setSheet("servicetimes") },
-    { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: () => { setShowMore(false); setPinChange(true); } },
-    { key: "lockscreen", label: "Lock Screen", sub: saveLock.isPending ? "Saving…" : lockEnabled ? "On · Tech ID to use the front desk" : "Off · no sign-in", icon: Lock, keepOpen: true,
-      run: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); } },
-    ...(thermalPrinter.isAvailable ? [{
-      key: "printer", icon: Printer, label: "Printer",
-      sub: thermalPrinter.isConnected ? `${thermalPrinter.deviceName?.split(" ")[0] ?? "Printer"} · connected` : thermalPrinter.status === "connecting" ? "Connecting…" : thermalPrinter.status === "error" ? "Error · retry" : "Tap to connect",
-      run: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
-    }] : []),
-    { key: "reports", label: "Reports", icon: BarChart3, run: () => navigate(appPage("/reports")!) },
-  ];
+  // The More and Manager menus: the same tiles, in the same order, on every wrapper (components/staff-screen/staffMenus.ts).
+  const { more: moreTiles, manager: managerTiles } = staffMenus({
+    idName: "Tech ID",
+    bookingSystem: features.bookingSystem, timeclock: timeclockEnabled, pos: posEnabled, turnSystem: features.turnSystem !== false,
+    retailPage: appPage("/pos"), languageName: LANG_NAMES[lang],
+    multiStation: isMultiStation, stationName: currentRegisterName, registerId, stationDrawerName: stationDrawer?.name ?? null,
+    offline, drawerOpen: !!openDrawerSession, lockScreen: { on: lockEnabled, saving: saveLock.isPending },
+    printer: { available: thermalPrinter.isAvailable, connected: thermalPrinter.isConnected, deviceName: thermalPrinter.deviceName ?? null, status: thermalPrinter.status },
+    run: {
+      book: () => { setFrontdeskPhone(""); setShowBook(true); },
+      clients: () => setSheet("clients"),
+      voucher: () => setSheet("voucher"),
+      timeclock: () => setSheet("timeclock"),
+      retail: () => navigate(appPage("/pos")!),
+      // The signed-in technician's own slip; with nobody (or the front desk) signed in, it asks for a Tech ID.
+      mySlip: () => { if (tech && !tech.frontDesk) setSlipFor({ id: tech.id, name: tech.name }); else setSlipAsk(true); },
+      // This tablet's language for the staff screens; each tap goes to the next one.
+      language: () => setLang(LANG_ORDER[(LANG_ORDER.indexOf(lang) + 1) % LANG_ORDER.length]),
+      manager: () => setSheet("manager"),
+      // The customer screen's pairing code is typed here; a tablet with no station is sent to the station list.
+      station: () => { if (currentRegisterName) setPairScreenOpen(true); else { setShowMore(false); setSheet("stationpin"); } },
+      refresh: () => { void hardRefresh(); },
+      settings: () => navigate(appPage("/settings")!),
+      posSetup: () => { setShowMore(false); setSetupOpen(true); },
+      cashDrawer: () => setShowOpenRegister(true),
+      messages: () => navigate(appPage("/sms-inbox")!),
+      keyGrid: () => setGridEditor("open"),
+      turnRotation: () => setSheet("turns"),
+      serviceTimes: () => setSheet("servicetimes"),
+      managerPin: () => { setShowMore(false); setPinChange(true); },
+      lockScreen: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); },
+      printer: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
+      changeStation: () => { setShowMore(false); setStationPicker(true); },
+      stationDrawer: () => { setShowMore(false); setStationDrawerOpen(true); },
+      idPrint: () => { setShowMore(false); setTechIdPrint(true); },
+      reports: () => navigate(appPage("/reports")!),
+    },
+  });
 
   // ── Check-In sheet: put the /frontdesk tablet on its check-in screen while it's open ──
   useEffect(() => {
@@ -2186,8 +2199,8 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
               appointmentId: appointment?.id,
               ticketNumber,
               bookingCode: qrValue,
-              timeStr: checkedInAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-              dateStr: checkedInAt.toLocaleDateString(),
+              timeStr: checkedInAt.toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" }),
+              dateStr: checkedInAt.toLocaleDateString("en-US", { timeZone: salonTimeZone() }),
             }));
           } : undefined}
         />
@@ -2212,8 +2225,29 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
       {gridEditor === "open" && (
         <GridEditor groups={posGroups} addons={activeAddons} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
       )}
+      {stationDrawerOpen && (
+        <StationDrawerSheet storeId={storeId} registerId={registerId} stationName={currentRegisterName ?? "This POS"} onClose={() => setStationDrawerOpen(false)} />
+      )}
+      {stationPicker && (
+        <StationPickerSheet
+          onChoose={async (id) => { const r = await selectRegister(id); if (r.ok) say("This tablet's station changed"); return r; }}
+          onClose={() => setStationPicker(false)}
+        />
+      )}
+      {techIdPrint && (
+        <TechIdPrintSheet
+          techs={(turnStaffList as any[] | undefined) ?? []}
+          keypadVisible={keypadVisible}
+          savingKeypad={saveKeypad.isPending}
+          onKeypadVisibleChange={(visible) => saveKeypad.mutate(visible)}
+          thermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
+          managerPin={managerPinRef.current}
+          onClose={() => { setTechIdPrint(false); managerPinRef.current = null; }}
+        />
+      )}
       {pinChange && <ChangeManagerPinSheet onClose={() => setPinChange(false)} onDone={() => { setPinChange(false); say("Manager PIN changed"); }} />}
-      {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setShowMore("manager"); }} />}
+      {sheet === "stationpin" && <ManagerPinSheet title="Change Station" onClose={() => setSheet(null)} onSuccess={() => { setSheet(null); setStationPicker(true); }} />}
+      {sheet === "manager" && <ManagerPinSheet onClose={() => setSheet(null)} onSuccess={(pin) => { managerPinRef.current = pin; setSheet(null); setShowMore("manager"); }} />}
       {posEnabled && (
         <DayCloseModal open={sheet === "dayclose" || autoDayClose} required={autoDayClose && sheet !== "dayclose"}
           onClose={() => {
@@ -2302,7 +2336,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           onFinished={() => { setSetupOpen(false); void queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-setup"] }); }}
           onClose={() => setSetupOpen(false)} lang={lang} onLang={setLang} />
       )}
-      {!showSetup && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
+      {!showSetup && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <TechIdGate storeName={storeName} timezone={timezone} turnQueue={turnQueueForGate} keypadVisible={keypadVisible} onOpenTurnPage={() => setShowTurnPage(true)} onSignedIn={onTechSignedIn} />}
       {showTurnPage && (
         <TurnPageModal
           currentDate={getNowInTimezone(timezone)}

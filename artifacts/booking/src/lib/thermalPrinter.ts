@@ -182,11 +182,11 @@ export function buildCheckinTicket(d: CheckinTicketData): Uint8Array {
 }
 
 /** A technician badge: only its scanner QR and the technician's name. */
-export function buildTechIdSlip(tech: { id: number; name: string }): Uint8Array {
+export function buildTechIdSlip(tech: { id: number; name: string }, qrValue = `TECH:${tech.id}`): Uint8Array {
   const p = new P();
   return p.reset()
     .center()
-    .qr(`TECH:${tech.id}`, 7)
+    .qr(qrValue, 7)
     .lf(2)
     .bold(true).size(true, true)
     .text(tech.name.trim().slice(0, 20))
@@ -256,7 +256,8 @@ export function buildQrConfirmationSlip(data: { storeName: string; token: string
     .bold(true).text("CONFIRM SETTING CHANGE").lf().bold(false)
     .text(`Setting: ${data.setting}`).lf()
     .lf()
-    .text("Scan this QR code to confirm").lf()
+    .text("Scan at the lock screen:").lf()
+    .text("hides the keypad, or shows it again").lf()
     .lf()
     .qr(data.token, 6)
     .lf(2)

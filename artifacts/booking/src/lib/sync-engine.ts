@@ -4,7 +4,7 @@ import { actionQueueDB, type ActionType, type SyncAction } from "./action-queue-
 import { appointmentsCacheDB } from "./appointments-cache-db";
 import { getDeviceId } from "./device-id";
 import { clientPhoneCacheDB } from "./client-phone-cache-db";
-import { nailOffline, browserTransport, nailOfflineStore } from "./nail-offline";
+import { nailOffline, browserTransport, nailOfflineStore, doorUrl } from "./nail-offline";
 import { reportUnauthorized } from "./resumeSignIn";
 
 export type SyncStatus = "online" | "offline" | "syncing";
@@ -101,6 +101,7 @@ class SyncEngine {
   private isSyncing = false;
   private onlineHandlers: Set<OnlineHandler> = new Set();
   private lastKnownStoreId: number | undefined;
+  private recoveredInFlight = false;
 
   constructor() {
     window.addEventListener("online", () => { this.reachable = true; this.handleOnline(); });
@@ -175,10 +176,10 @@ class SyncEngine {
     return this.isOffline() && offlineLimitReached(this.lastContactAt, now);
   }
 
-  /** Ask the server once, now, whether it can be reached. */
-  async checkNow(): Promise<boolean> {
+  /** Ask the server once, now, whether it can be reached (giving it `timeoutMs` to answer). */
+  async checkNow(timeoutMs = 5_000): Promise<boolean> {
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5_000);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const res = await fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal });
       if (!res.ok) { if (res.status >= 502 && res.status <= 504) this.noteUnreachable(); return false; }
@@ -194,9 +195,11 @@ class SyncEngine {
   }
 
   /**
-   * While the server answers, ask it every 15 s whether it still does. With the salon's Wi-Fi up and the
+   * While the server answers, ask it every 10 s whether it still does. With the salon's Wi-Fi up and the
    * internet down nothing else notices until someone taps and waits; this way the screen is already working
-   * from the device by then. One small request per tablet; started by the salon screens.
+   * from the device by then. One small request per tablet; started by the salon screens. The first tablet to
+   * notice tells the others over the salon hub, and they check at once (lib/local-hub.ts) — the salon used to
+   * work offline only once its last tablet had noticed by itself.
    */
   private watching = false;
   watchReachability() {
@@ -205,13 +208,13 @@ class SyncEngine {
     setInterval(() => {
       if (!this.reachable || document.visibilityState === "hidden") return;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 5_000);
+      const timer = setTimeout(() => ctrl.abort(), 4_000);
       fetch(`/api/sync/heartbeat?t=${Date.now()}`, { cache: "no-store", signal: ctrl.signal })
         // nginx answering 502–504 = the app is down behind it (a restart, or the VPS still booting).
         .then((res) => { if (res.ok) this.noteContact(); else if (res.status >= 502 && res.status <= 504) this.noteUnreachable(); })
         .catch(() => this.noteUnreachable())
         .finally(() => clearTimeout(timer));
-    }, 15_000);
+    }, 10_000);
   }
 
   /** True when the server cannot be reached — no network, or a network with no way out. */
@@ -350,6 +353,12 @@ class SyncEngine {
     const effectiveStoreId = storeId ?? this.lastKnownStoreId;
 
     try {
+      // Actions left mid-send when the app last closed go back in line (only this engine sends them).
+      if (!this.recoveredInFlight) {
+        this.recoveredInFlight = true;
+        await actionQueueDB.recoverInFlight().catch(() => 0);
+      }
+
       // ── Phase 1: waitlist pendingOps ────────────────────────────────────
       const ops = await offlineDB.getAllPendingOps();
 
@@ -792,7 +801,7 @@ class SyncEngine {
 
       case "TURN_ADJUST": {
         const { storeId: _store, ...body } = payload as any;
-        const res = await fetch("/api/nail/turn-adjust", { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
+        const res = await fetch(doorUrl("/api/nail/turn-adjust", Number(_store) || null), { method: "POST", headers, credentials: "include", body: JSON.stringify(body) });
         // The PIN is no longer the salon's (changed meanwhile), the technician is gone, or the rules no longer
         // allow it: the manager has to look again — shown as a conflict, not retried.
         if (res.status === 400 || res.status === 403 || res.status === 404) {

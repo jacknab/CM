@@ -229,3 +229,46 @@ export async function mirrorSummary(): Promise<{ rows: number; syncedAt: string 
     return null;
   }
 }
+
+
+// ── Offline health (owner, 2026-11-02; phase 4) ───────────────────────────────────────────────────────────────────
+
+/** SQLite's own check of the file and its size, for the tablet's health report. */
+export function checkDatabase(): Promise<{ ok: boolean; result: string; sizeBytes: number | null }> {
+  return oneAtATime(async () => {
+    try {
+      const db = await open();
+      const check = await db.getFirstAsync<{ quick_check: string }>('PRAGMA quick_check(1)');
+      const pages = await db.getFirstAsync<{ page_count: number }>('PRAGMA page_count');
+      const size = await db.getFirstAsync<{ page_size: number }>('PRAGMA page_size');
+      const result = String(check?.quick_check ?? 'unknown');
+      return { ok: result === 'ok', result, sizeBytes: pages && size ? pages.page_count * size.page_size : null };
+    } catch (err: any) {
+      return { ok: false, result: String(err?.message ?? err).slice(0, 200), sizeBytes: null };
+    }
+  });
+}
+
+/**
+ * The server's "reopen the offline database" fix: the connection is closed and opened again with its key (what fixed
+ * the 2026-10-24 "file is not a database" writes was opening it the right way), then checked and written to. Nothing
+ * in it is deleted.
+ */
+export function reopenDatabase(): Promise<{ ok: boolean; detail: string }> {
+  return oneAtATime(async () => {
+    try {
+      const old = opening ? await opening.catch(() => null) : null;
+      opening = null;
+      await old?.closeAsync().catch(() => {});
+      const db = await open();
+      const check = await db.getFirstAsync<{ quick_check: string }>('PRAGMA quick_check(1)');
+      const stamp = String(Date.now());
+      await db.runAsync('INSERT OR REPLACE INTO kv (store, key, value) VALUES (?, ?, ?)', ['meta', 'reopencheck', JSON.stringify(stamp)]);
+      const back = await db.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE store = ? AND key = ?', ['meta', 'reopencheck']);
+      const ok = check?.quick_check === 'ok' && back?.value === JSON.stringify(stamp);
+      return { ok, detail: ok ? 'Offline database reopened, checked and written to' : `Reopened, but the check says: ${check?.quick_check ?? 'no answer'}` };
+    } catch (err: any) {
+      return { ok: false, detail: `Could not reopen the offline database: ${String(err?.message ?? err).slice(0, 180)}` };
+    }
+  });
+}

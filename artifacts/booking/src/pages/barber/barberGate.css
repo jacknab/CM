@@ -47,3 +47,31 @@
 .bg-gate-wait li strong { min-width: 0; font-size: clamp(18px, 2.9vh, 22px); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bg-gate-empty { margin: auto 0; padding: 24px 0; text-align: center; font-size: 17px; color: #8b94a3; }
 
+
+/* ── Background image (owner, 2026-11-02): the same photo behind the lock screen as /nail (nail/techGate.css), with the
+      same dark text on frosted white cards so everything stays readable on it. ── */
+.bg-gate { color: #2e1f25; background: #fbe9e6 url("/airo-assets/images/app/nail-wrapper-background") center / cover no-repeat; }
+.bg-gate-head { border-bottom-color: rgba(120, 60, 72, .12); }
+.bg-gate-clock { color: #3a2830; }
+.bg-gate-card { background: rgba(255, 255, 255, .55); border-color: rgba(255, 255, 255, .75);
+  box-shadow: 0 24px 60px rgba(150, 80, 92, .16), inset 0 1px 0 rgba(255, 255, 255, .8);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.bg-gate-label { color: #8a6a72; }
+.bg-gate-slot { background: rgba(255, 255, 255, .72); border-color: rgba(120, 60, 72, .16); }
+.bg-gate-slot[data-filled="true"] { border-color: rgba(120, 60, 72, .55); }
+.bg-gate-msg { color: #b3263a; }
+.bg-gate-key { background: rgba(255, 255, 255, .72); border-color: rgba(120, 60, 72, .3); }
+.bg-gate-key:active { background: #fff; }
+.bg-gate-key.ghost { background: transparent; border-color: transparent; color: #8a6a72; }
+.bg-gate-enter { color: #fff; background: #3a2830; }
+.bg-gate-wait li { border-top-color: rgba(120, 60, 72, .1); }
+.bg-gate-wait li span { color: #5a4048; background: rgba(255, 255, 255, .72); }
+.bg-gate-wait li em { color: #8a6a72; }
+.bg-gate-wait li[data-status="available"] em { color: #1d7f54; }
+.bg-gate-wait li[data-status="available"]:first-child span { color: #fff; background: #3a2830; }
+.bg-gate-wait li:not([data-status="available"]) strong { color: #9a8288; }
+.bg-gate-empty { color: #8a6a72; }
+
+.bg-gate-scan { min-height: 430px; justify-content: center; }
+.bg-gate-scan .bg-gate-label { font-size: clamp(30px, 4vw, 58px); letter-spacing: .08em; }
+.bg-gate-scan-help { margin: -8px 0 18px; color: #725663; font-size: clamp(15px, 1.7vw, 22px); font-weight: 700; text-align: center; }

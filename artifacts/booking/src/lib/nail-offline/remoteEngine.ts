@@ -1,27 +1,30 @@
 /**
- * One offline POS for the whole salon (owner, 2026-10-28): while the internet is down, the main POS tablet stands in
+ * One offline POS for the whole salon (owner, 2026-10-28): while the internet is down, the elected hub host stands in
  * for the server. Another POS station sends its offline work — clients, check-ins, tickets, starts, cancels, edits,
- * cash sales — over the salon hub (lib/local-hub.ts) to the main POS's engine instead of keeping it itself, and reads
- * the tickets from there. So every station shows the same tickets, and only the main POS sends them to the server
- * when the connection is back.
+ * cash sales — over the salon hub (lib/local-hub.ts) to the host's engine instead of keeping it itself, and reads
+ * the tickets from there.
  *
- * If the main POS can't be reached (switched off, out of range), a station works on its own as before: the change
+ * If the hub host can't be reached (switched off, out of range), a station works on its own as before: the change
  * is kept on that station and sent from there. A record the station already holds itself is changed there.
  * Online nothing is forwarded — the server is the one place then.
  */
-import { localHub } from "../local-hub";
+import { confirmOutage, localHub } from "../local-hub";
 import { NailOffline, type LocalRecord } from "./engine";
 
 const CALL = "hub_engine_call";
 const RESULT = "hub_engine_result";
 const CHANGED = "hub_engine_changed";
-const ANSWER_MS = 6_000;
+const ANSWER_MS = 9_000;
 
-/** Changes the main POS makes for a station. */
+/** Changes the hub host makes for a station. */
 const FORWARDED = ["createClient", "checkIn", "createTicket", "assign", "start", "cancel", "editLocal", "changeServerTicket", "recordCash"] as const;
 /** Changes whose first argument is a record id: a record this station holds itself is changed here. */
 const BY_RECORD = new Set<string>(["assign", "start", "cancel", "editLocal"]);
-/** What the main POS answers. */
+/** recordCash(storeId, { id }, …): a ticket this station holds itself is paid here, not sent to the host (which
+ *  doesn't have it — or, before ids were per tablet, had a different ticket under the same id). */
+const recordOf = (method: string, args: unknown[]) =>
+  BY_RECORD.has(method) ? args[0] : method === "recordCash" ? (args[1] as { id?: unknown } | undefined)?.id : undefined;
+/** What the hub host answers. */
 const SERVED = new Set<string>([...FORWARDED, "records", "findClients"]);
 
 class HubUnavailable extends Error {}
@@ -33,20 +36,22 @@ function ask(method: string, args: unknown[]): Promise<unknown> {
     const finish = (fn: () => void) => { if (done) return; done = true; clearTimeout(timer); off(); fn(); };
     const off = localHub.onMessage((m: any) => {
       if (m?.type !== RESULT || m.requestId !== requestId) return;
-      finish(() => (m.ok ? resolve(m.value ?? undefined) : reject(new Error(String(m.error || "The main POS could not do that")))));
+      finish(() => (m.ok ? resolve(m.value ?? undefined) : reject(new Error(String(m.error || "The hub host could not do that")))));
     });
     const timer = setTimeout(() => finish(() => reject(new HubUnavailable())), ANSWER_MS);
     if (!localHub.send({ type: CALL, requestId, method, args })) finish(() => reject(new HubUnavailable()));
   });
 }
 
-/** On the main POS: do the stations' offline work with this tablet's engine, and tell them when anything changes. */
+/** On the hub host: do the stations' offline work with this tablet's engine, and tell them when anything changes. */
 export function serveEngineOverHub(engine: NailOffline): () => void {
   const off = localHub.onMessage((m: any) => {
     if (m?.type !== CALL || typeof m.requestId !== "string") return;
+    // Device work only, so it is not held up; but a station forwarding means the internet is down — find out now.
+    void confirmOutage().catch(() => {});
     const reply = (answer: object) => localHub.send({ type: RESULT, requestId: m.requestId, ...answer });
     const method = String(m.method);
-    if (!SERVED.has(method)) { reply({ ok: false, error: "Not something the main POS does for a station" }); return; }
+    if (!SERVED.has(method)) { reply({ ok: false, error: "Not something the hub host does for a station" }); return; }
     const fn = (NailOffline.prototype as any)[method] as (...a: unknown[]) => Promise<unknown>;
     void Promise.resolve()
       .then(() => fn.apply(engine, Array.isArray(m.args) ? m.args : []))
@@ -57,13 +62,13 @@ export function serveEngineOverHub(engine: NailOffline): () => void {
 }
 
 /**
- * On another POS station: forward the engine's offline work to the main POS while `active()` (offline, and linked
+ * On another POS station: forward the engine's offline work to the hub host while `active()` (offline, and linked
  * to it). Returns the function that puts the engine back as it was.
  */
 export function forwardEngineOverHub(engine: NailOffline, opts: { active: () => boolean; storeId: () => number | null }): () => void {
   const own = (method: string, args: unknown[]) => ((NailOffline.prototype as any)[method] as (...a: unknown[]) => Promise<unknown>).apply(engine, args);
   const notify = () => (engine as any).changed?.();
-  // The main POS's records, kept until it says something changed (or a change is sent from here).
+  // The host's records, kept until it says something changed (or a change is sent from here).
   let cache: { storeId: number; at: number; records: LocalRecord[] } | null = null;
   const holdsHere = async (id: unknown) => {
     const storeId = opts.storeId();
@@ -73,7 +78,8 @@ export function forwardEngineOverHub(engine: NailOffline, opts: { active: () => 
   const patched: Record<string, unknown> = {};
   for (const method of FORWARDED) {
     patched[method] = async (...args: unknown[]) => {
-      if (!opts.active() || (BY_RECORD.has(method) && await holdsHere(args[0]))) return own(method, args);
+      const record = recordOf(method, args);
+      if (!opts.active() || (record !== undefined && await holdsHere(record))) return own(method, args);
       try {
         const value = await ask(method, args);
         cache = null;

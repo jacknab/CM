@@ -7,7 +7,7 @@ const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "back"];
  * The fallback for a busy salon (lots of techs, lots of clients checked in) when a check-in
  * slip's QR won't scan — staff types the "# 123" ticket number printed next to the client's name
  * instead of hunting through the board. Resolves through the exact same lookup the QR uses (see
- * NailHome.tsx's lookupByNumber / applyLookupResult), so it opens the identical screen a
+ * BarberHome.tsx's lookupByNumber / applyLookupResult), so it opens the identical screen a
  * successful scan would have.
  */
 export function LookupByNumberDialog({ onLookup, onClose }: {

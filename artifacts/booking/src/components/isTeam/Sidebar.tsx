@@ -36,6 +36,7 @@ const BASE_NAV: NavItem[] = [
     children: [
       { label: "Tickets",               to: "/isTeam/tickets" },
       { label: "Live Chat",             to: "/isTeam/live-chat", dot: "green" },
+      { label: "Offline Readiness",     to: "/isTeam/offline-readiness" },
     ],
   },
   { label: "Sales Leads", icon: <PhoneCall size={16} />, to: "/isTeam/sales-leads" },

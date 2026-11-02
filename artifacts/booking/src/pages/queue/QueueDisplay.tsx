@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 interface QueueEntry {
   id: number;
   displayName: string;
@@ -54,6 +55,7 @@ export default function QueueDisplay() {
 
     const connect = () => {
       ws = new WebSocket(`${protocol}//${window.location.host}/ws/notifications?storeId=${storeId}`);
+      keepSocketAlive(ws);
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data as string);

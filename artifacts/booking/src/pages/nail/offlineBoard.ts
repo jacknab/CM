@@ -66,5 +66,9 @@ export function overlayBoard(board: NailBoard | null | undefined, records: Local
   const waiting: BoardMarker[] = walkins
     .filter((w) => w.status === "waiting" && !(w.synced && (w.realId == null || serverMarkerIds.has(w.realId))) && !(w.synced && settledByServer(w)))
     .map((w) => ({ id: w.realId ?? w.id, ticketNumber: w.ticketNumber ?? null, clientId: w.clientId, clientName: w.clientName, phone: w.phone, createdAt: w.createdAt, offline: !w.synced }));
-  return { ...base, tickets, markers: [...base.markers.filter((m) => !ticketed.has(m.id)), ...waiting] };
+  // Never two tickets under one id: the cards and the ticket popup find a ticket by its id, so two would both open
+  // the first (offline ids from before 2026-11-02 could repeat between tablets).
+  const seen = new Set<number>();
+  const unique = tickets.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  return { ...base, tickets: unique, markers: [...base.markers.filter((m) => !ticketed.has(m.id)), ...waiting] };
 }

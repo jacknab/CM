@@ -45,7 +45,7 @@ const num = (v: unknown) => {
   return n;
 };
 
-/** GET /api/services/:id/barber-config → only the enabled options, or null when the service has none. */
+/** GET /api/services/:id/nail-config → only the enabled options, or null when the service has none. */
 export function normalizeNailConfig(raw: any): NailConfigView | null {
   if (!raw || !raw.config || !raw.config.isEnabled) return null;
   const pick = (rows: any[] | undefined, idKey: string): NailOption[] =>
@@ -91,8 +91,16 @@ export interface TicketLine {
   group?: NailGroup;
   /** Set on add-on lines. */
   addonId?: number;
+  /** Add-on lines: the service it goes under — null = the ticket's own service, n = its service line n. */
+  addonLineNo?: number | null;
+  /** A line of another ticket of the visit (another technician's service, or that service's add-on). */
+  ownerTicketId?: number;
   /** Set on keypad "Custom Amount" lines — their id in the draft. */
   customId?: number;
+  /** Set on service lines: the service's id, for removing it from a ticket of several services. */
+  serviceId?: number;
+  /** A service line that can be taken off (the ticket has more than one service). */
+  removable?: boolean;
   note?: string;
 }
 
@@ -163,6 +171,11 @@ export interface DraftCustomLine {
   /** A product sale rung up as a custom line (commissioned at the product rate, not service) — the
    *  only way to mark retail on a ticket that isn't the one currently open at Checkout. */
   isRetail?: boolean;
+  /** Another service of the visit, saved as a line on the ticket: its catalog id and time. */
+  serviceId?: number;
+  duration?: number;
+  /** A Catalog package's price line (the package price less its parts); may be below zero. */
+  packageId?: number;
 }
 
 export function draftTotals(
@@ -172,22 +185,40 @@ export function draftTotals(
   cfg: NailConfigView | null,
   pick: NailPick,
   custom: DraftCustomLine[] = [],
+  /** Same length as addonIds when known (a saved ticket): the service line each add-on goes under (null = the first). */
+  addonLineNos: (number | null)[] = [],
 ): DraftTotals {
   const lines: TicketLine[] = [];
   let dropped: NailGroup[] = [];
+  // An add-on's service line, when that line is a service on this ticket; otherwise it goes under the first service.
+  const lineOf = (n: number): number | null => {
+    const at = addonLineNos.length === addonIds.length ? addonLineNos[n] : null;
+    return at != null && custom[at]?.serviceId ? at : null;
+  };
   if (service) {
     lines.push({ key: `svc-${service.id}`, kind: "service", label: service.name, duration: num(service.duration), price: num(service.price) });
-    for (const id of addonIds) {
+    // The same add-on can be on the ticket more than once (2026-10-29): each copy is its own line. Each service's
+    // add-ons are listed under it: the first service's here, a service line's right after that line.
+    addonIds.forEach((id, n) => {
+      if (lineOf(n) != null) return;
       const a = addons.find((x) => x.id === id);
-      if (a) lines.push({ key: `addon-${a.id}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id });
-    }
+      if (a) lines.push({ key: `addon-${a.id}-${n}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id, addonLineNo: null });
+    });
     const nail = nailAdjustment(cfg, pick);
     lines.push(...nail.lines);
     dropped = nail.dropped;
   }
-  for (const c of custom) {
-    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: 0, price: c.price, customId: c.id });
-  }
+  custom.forEach((c, i) => {
+    // Another service of the visit takes its time; a keypad amount takes none.
+    lines.push({ key: `custom-${c.id}`, kind: "custom", label: c.label, duration: c.serviceId ? Number(c.duration) || 0 : 0, price: c.price, customId: c.id,
+      ...(c.serviceId && !c.packageId ? { serviceId: c.serviceId } : {}) });
+    if (!service) return;
+    addonIds.forEach((id, n) => {
+      if (lineOf(n) !== i) return;
+      const a = addons.find((x) => x.id === id);
+      if (a) lines.push({ key: `addon-${a.id}-${n}`, kind: "addon", label: a.name, duration: num(a.duration), price: num(a.price), addonId: a.id, addonLineNo: i });
+    });
+  });
   return {
     lines,
     duration: lines.reduce((s, l) => s + l.duration, 0),
@@ -236,4 +267,56 @@ export function formatElapsed(fromIso: string, now: number = Date.now()): string
   if (minutes < 60) return `${minutes} min`;
   const h = Math.floor(minutes / 60);
   return `${h} hr ${minutes % 60} min`;
+}
+
+/** A cart row: one line, or several identical ones shown as one with a quantity (like a register). */
+export interface CartRow extends TicketLine {
+  qty: number;
+  /** The lines it stands for, in order. × takes off the last one. */
+  members: TicketLine[];
+}
+
+/**
+ * QTY on a normal register (owner, 2026-10-29): identical items show as ONE line — "3 × Basic Manicure", "2 × Gel
+ * Polish Upgrade" with their total — instead of a line each. Each item is still its own line on the ticket; only the
+ * cart shows them together. The same service next to itself is one line, with all its copies' add-ons under it (each
+ * add-on once, with its quantity). The same keypad amount is one line. Never merged: nail options, package lines,
+ * another technician's ticket with this one.
+ */
+export function groupCartLines(lines: TicketLine[]): CartRow[] {
+  const keyOf = (l: TicketLine): string | null => {
+    if (l.ownerTicketId != null || l.kind === "nail" || l.kind === "addon") return null;
+    if (l.serviceId != null) return `s:${l.serviceId}:${l.price}`;
+    if (l.kind === "custom") return `c:${l.label}:${l.price}`;
+    return null;
+  };
+  // A line and the add-ons listed right after it (its own).
+  const blocks: { head: TicketLine; addons: TicketLine[] }[] = [];
+  for (const l of lines) {
+    const last = blocks[blocks.length - 1];
+    if (l.kind === "addon" && last && last.head.kind !== "addon") { last.addons.push(l); continue; }
+    blocks.push({ head: l, addons: [] });
+  }
+  // Runs of the same line become one.
+  const runs: { heads: TicketLine[]; addons: TicketLine[] }[] = [];
+  for (const b of blocks) {
+    const run = runs[runs.length - 1];
+    const key = keyOf(b.head);
+    if (key && run && keyOf(run.heads[0]) === key) { run.heads.push(b.head); run.addons.push(...b.addons); continue; }
+    runs.push({ heads: [b.head], addons: [...b.addons] });
+  }
+  const row = (members: TicketLine[]): CartRow => members.slice(1).reduce<CartRow>((r, m) => ({
+    ...r, qty: r.qty + 1, price: Math.round((r.price + m.price) * 100) / 100, duration: r.duration + m.duration,
+  }), { ...members[0], qty: 1, members });
+  const rows: CartRow[] = [];
+  for (const run of runs) {
+    rows.push(row(run.heads));
+    const byAddon = new Map<string, TicketLine[]>();
+    for (const a of run.addons) {
+      const k = `${a.addonId ?? a.key}:${a.ownerTicketId ?? ""}`;
+      byAddon.set(k, [...(byAddon.get(k) ?? []), a]);
+    }
+    for (const group of byAddon.values()) rows.push(row(group));
+  }
+  return rows;
 }

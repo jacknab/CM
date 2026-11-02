@@ -1,22 +1,34 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Armchair, Clock, PersonStanding, Ticket, UserCheck, Users, X } from "lucide-react";
+import { useFeatureFlags } from "@/hooks/use-features";
+import { gridZoomRef } from "./gridZoom";
+import { Armchair, CalendarDays, Clock, EyeOff, PersonStanding, Ticket, UserCheck, Users, X } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
-import type { BoardDayBooking, BoardMarker, BoardTicket, SalonGlance, TurnTech } from "./barberApi";
+import type { BoardDayBooking, BoardMarker, BoardTicket, BoardWait, SalonGlance, TurnTech } from "./barberApi";
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { bookingsForDetail, type DetailKind } from "./boardView";
+import { bookingsForDetail, walkInState, type DetailKind } from "./boardView";
+import { techLabel } from "./techName";
+import { urgencyRank, waitReasonText, waitUrgency } from "./urgency";
 
 const money = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 
-const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
-/** The client's whole name as it's on file — every card shows the same thing, waiting or in the chair. */
-const fullName = (n: string | null | undefined) => (n ?? "").trim().replace(/\s+/g, " ") || "Guest";
-const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+/** The client as the queue cards show them: first name and the first letter of the last name ("Toby B."). */
+const fullName = (n: string | null | undefined) => {
+  const parts = (n ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "Guest";
+  return parts.length === 1 ? parts[0] : `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+};
+/** A time of day in the salon's time zone (not the device's), like the day shown next to it. */
+const fmtTime = (ms: number, timeZone?: string) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
 
 /**
  * HH:MM:SS since a moment the SERVER recorded — identical to the Techs tab's timer, kept as its
  * own copy here (rather than a shared import) so this file has no dependency on TechCards.tsx.
  */
-function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs: number; testId?: string }) {
+/** The furthest the in-chair countdown runs past zero (30 minutes); it stops and flashes there. */
+const OVERTIME_CAP_SEC = 30 * 60;
+
+/** Counts up from `since`; with `until`, counts down to it instead, and past it shows the time over ("+00:04:10"). */
+function LiveTimer({ since, until, stoppedAt, offsetMs, testId }: { since: number | null; until?: number | null; /** Stopped: the time from `since` to here, standing still. */ stoppedAt?: number | null; offsetMs: number; testId?: string }) {
   const [now, setNow] = useState(() => Date.now() + offsetMs);
   useEffect(() => {
     const tick = () => setNow(Date.now() + offsetMs);
@@ -25,9 +37,18 @@ function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", tick); };
   }, [offsetMs]);
-  if (since == null) return <span className="tt-timer tt-timer-unknown" data-testid={testId}>--:--:--</span>;
-  const secs = Math.max(0, Math.floor((now - since) / 1000));
   const pad = (n: number) => String(n).padStart(2, "0");
+  if (until != null) {
+    // Past the end it runs below zero in red ("-00:04:10"); at 30 minutes over it stops there and flashes, so
+    // the staff notice a service that has run long.
+    const left = Math.max(Math.floor((until - now) / 1000), -OVERTIME_CAP_SEC);
+    const s = Math.abs(left);
+    const capped = left <= -OVERTIME_CAP_SEC;
+    const text = `${left < 0 ? "-" : ""}${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+    return <span className={`tt-timer ${left < 0 ? "tt-timer-over" : "tt-timer-countdown"} ${capped ? "tt-timer-capped" : ""}`} data-testid={testId} data-seconds={left}>{text}</span>;
+  }
+  if (since == null) return <span className="tt-timer tt-timer-unknown" data-testid={testId}>--:--:--</span>;
+  const secs = Math.max(0, Math.floor(((stoppedAt ?? now) - since) / 1000));
   return <span className="tt-timer" data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
@@ -35,39 +56,64 @@ function LiveTimer({ since, offsetMs, testId }: { since: number | null; offsetMs
 type ClientRow = {
   key: string; state: "waiting" | "service"; since: string; name: string; ticketNumber: number | null; sub: string;
   subKind: "walkin" | "assigned" | "unassigned" | "service"; /** null = no technician yet */ tech: string | null; /** "" = no service yet */ service: string; open: () => void;
-  assign?: () => void; testId: string; markerId?: number; remove?: () => void;
+  assign?: () => void; /** waiting with a technician: start the service */ start?: () => void; testId: string; markerId?: number; remove?: () => void;
+  /** Made or changed on this tablet while offline and not confirmed by the server yet: its place and technician are not final. */
+  provisional?: boolean;
+  /** The visit this ticket belongs to (tickets split off one visit sit together, joined by a yellow bar). */
+  groupId?: number | null;
+  /** The client is in service on this other ticket, so this one can't be assigned or started yet. */
+  blockedBy?: number | null;
+  /** Why it hasn't started, when that needs watching (server): orange, then red (urgency.ts). */
+  wait?: BoardWait;
+  /** In the chair: when the service should be finished (its time plus 15 minutes), for the countdown. */
+  endsAt?: number | null;
+  /** The technician pressed DONE at this time: the clock stops there and the card says COMPLETED. */
+  doneAt?: number | null;
 };
 
-const PER_PAGE = 16;
+const QUEUE_PER_PAGE = 8;
+const DETAIL_PER_PAGE = 16;
+/** Minutes added to a service's time for the in-chair countdown. */
+const SERVICE_PADDING_MIN = 15;
 
-const GLANCE_ICON = { "avg-wait": Clock, "checked-in": Users, "in-service": Armchair, "clocked-in": UserCheck, "walk-ins": PersonStanding, "avg-ticket": Ticket } as const;
+const GLANCE_ICON = { "avg-wait": Clock, "checked-in": Users, "in-service": Armchair, "clocked-in": UserCheck, "walk-ins": PersonStanding, appointments: CalendarDays, "no-shows": EyeOff, "avg-ticket": Ticket } as const;
 
 /** The salon-at-a-glance strip across the top of the Queue tab — the front desk's whole day in eight
  *  numbers. "Waiting" and "In Service" both open the client cards (one page for both); the day tiles
  *  open their lists. */
-export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance, activeView, onView, onTechs }: {
+export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance, activeView, onView, onTechs, timezone }: {
   waitLabel: string; checkedIn: number; inService: number; clockedInTechs: number; glance: SalonGlance | undefined;
+  /** The shop's time zone, for the clock in the middle of the cards. */
+  timezone?: string;
   activeView?: Page["kind"];
   onView?: (view: Page["kind"]) => void;
   onTechs?: () => void;
 }) {
+  // The booking system switched off (Advanced Features › Booking System): no Appointments tile (the upcoming list).
+  const { bookingSystem } = useFeatureFlags();
   const tiles: { id: keyof typeof GLANCE_ICON | "completed"; label: string; value: string; tone: string; view?: Page["kind"]; action?: () => void }[] = [
     { id: "avg-wait", label: "Avg Wait", value: waitLabel, tone: "green" },
     { id: "checked-in", label: "Waiting", value: String(checkedIn), tone: "blue", view: "waiting" },
-    { id: "in-service", label: "In Service", value: String(inService), tone: "indigo", view: "service" },
+    { id: "in-service", label: "In Chair", value: String(inService), tone: "indigo", view: "service" },
     { id: "clocked-in", label: "Barbers", value: String(clockedInTechs), tone: "teal", action: onTechs },
     { id: "walk-ins", label: "Walk-ins", value: glance ? String(glance.walkIns) : "—", tone: "purple", view: "walk-ins" },
+    { id: "appointments", label: "Appointments", value: glance ? String(glance.appointments) : "—", tone: "orange", view: "appointments" },
+    { id: "no-shows", label: "No-shows", value: glance ? String(glance.noShows) : "—", tone: "slate", view: "no-shows" },
     { id: "completed", label: "Completed", value: glance ? String(glance.completed) : "—", tone: "blue", view: "completed" },
     { id: "avg-ticket", label: "Avg Ticket", value: glance?.avgTicket != null ? money(glance.avgTicket) : "—", tone: "mint" },
   ];
+  const shown = tiles.filter((t) => bookingSystem || t.id !== "appointments");
+  // The shop's time in the middle (owner, 2026-11-02): half the cards on each side.
+  const half = Math.ceil(shown.length / 2);
+  const clockAt = half;
   return (
-    <div className="tt-glance" data-testid="barber-queue-glance">
-      <div className="q-glance-row">
-        {tiles.map((t) => {
+    <div className="tt-glance q-glance" data-testid="barber-queue-glance">
+      <div className="q-glance-row" style={{ gridTemplateColumns: `repeat(${half}, minmax(0, 1fr)) minmax(0, 1.5fr) repeat(${shown.length - half}, minmax(0, 1fr))` }}>
+        {shown.flatMap((t, i) => {
           const Icon = t.id === "completed" ? UserCheck : GLANCE_ICON[t.id];
           const clickable = (!!t.view && !!onView) || !!t.action;
           const Tag = clickable ? "button" : "div";
-          return (
+          const card = (
             <Tag
               key={t.id}
               type={clickable ? "button" : undefined}
@@ -81,8 +127,21 @@ export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance
               <div><strong>{t.value}</strong><span>{t.label}</span></div>
             </Tag>
           );
+          return i === clockAt ? [<ShopClock key="clock" timezone={timezone} />, card] : [card];
         })}
       </div>
+    </div>
+  );
+}
+
+/** The shop's time, in the middle of the Queue tab's cards. */
+function ShopClock({ timezone }: { timezone?: string }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 10_000); return () => clearInterval(iv); }, []);
+  const fmt = (o: Intl.DateTimeFormatOptions) => { try { return now.toLocaleString("en-US", { ...o, timeZone: timezone || undefined }); } catch { return now.toLocaleString("en-US", o); } };
+  return (
+    <div className="tt-tile q-glance-clock" data-testid="barber-queue-clock">
+      <div><strong>{fmt({ hour: "numeric", minute: "2-digit" })}</strong><span>{fmt({ weekday: "long", month: "short", day: "numeric" })}</span></div>
     </div>
   );
 }
@@ -90,22 +149,31 @@ export function Glance({ waitLabel, checkedIn, inService, clockedInTechs, glance
 export type QueueView = "waiting" | "service" | DetailKind;
 type Page = { key: string; kind: QueueView; chunkIndex: number };
 const DETAIL_TABS: { kind: DetailKind; label: string }[] = [
+  { kind: "appointments", label: "Appointments" },
+  { kind: "no-shows", label: "No Shows" },
   { kind: "walk-ins", label: "Walk-ins" },
   { kind: "completed", label: "Completed" },
 ];
 
 /**
- * The Barber POS home tab: every client who is here — waiting or in the chair — as one set of cards in
+ * The Nail POS home tab: every client who is here — waiting or in the chair — as one set of cards in
  * ticket-number order, so assigning or starting a ticket never moves it to another tab. Same
- * swipe pattern as the Techs tab's card grid. TURN assigns and starts tickets on its own; the
+ * swipe pattern as the Techs tab's card grid. TURN assigns tickets on its own (START is pressed by staff); the
  * lowest-numbered waiting client is marked UP NEXT.
  */
-export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOffsetMs = 0, assumedIn = EMPTY_ARRAY, initialView, onTicket, onAssignTicket, onMarker, onMarkerRemove, onTicketTap, onTechs }: {
+export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timezone, glance, appointmentsLoading = false, appointmentsError = false, clockOffsetMs = 0, assumedIn = EMPTY_ARRAY, initialView, onTicket, onAssignTicket, onStartTicket, onMarker, onMarkerAssign, onMarkerRemove, onTicketTap, onTechs }: {
   techs: TurnTech[];
   tickets: BoardTicket[];
   markers: BoardMarker[];
   dayBookings: BoardDayBooking[];
+  /** Booked visits still to come (today's not arrived yet, then the coming days') — the Appointments list.
+   *  Until it has loaded (or with no connection) the list falls back to today's from the board. */
+  upcoming?: BoardDayBooking[];
+  /** The salon's time zone, for the day each upcoming visit is on. */
+  timezone?: string;
   glance: SalonGlance | undefined;
+  appointmentsLoading?: boolean;
+  appointmentsError?: boolean;
   clockOffsetMs?: number;
   /** Techs just clocked in from the Techs tab this session — same optimistic list TechCards uses,
    *  so the stats tiles here don't lag a beat behind while the server catches up. */
@@ -116,9 +184,13 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
   onTicket: (t: BoardTicket) => void;
   /** An unassigned ticket in the spotlight: open technician assignment directly. */
   onAssignTicket: (t: BoardTicket) => void;
+  /** A waiting ticket that has its technician: start the service. */
+  onStartTicket?: (t: BoardTicket) => void;
   /** A walk-in with no ticket yet: start their ticket. */
   onMarker: (m: BoardMarker) => void;
   onMarkerRemove?: (m: BoardMarker) => void;
+  /** A waiting client nobody has taken: the signed-in barber takes them (no ticket yet). */
+  onMarkerAssign?: (m: BoardMarker) => void;
   /** An in-service tech's card was tapped — opens the ticket they are working on. */
   onTicketTap?: (ticket: BoardTicket) => void;
   /** The Technicians metric opens the dedicated clocked-in technicians tab. */
@@ -144,44 +216,90 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
     const fromMarkers = markers.map<ClientRow>((m) => ({
       // The marker already has the number printed with its check-in QR code, even though its
       // appointment/ticket record has not been created yet.
-      // A client a barber has taken is in the chair, though their ticket is only made at checkout.
-      key: `m${m.id}`, state: m.staffId != null ? "service" : "waiting", since: m.createdAt, name: fullName(m.clientName), ticketNumber: m.ticketNumber, service: "",
-      sub: m.staffId != null ? "IN SERVICE" : "WALK-IN", subKind: m.staffId != null ? "service" : "walkin", tech: m.staffName ?? null,
-      open: () => onMarker(m), testId: `barber-queue-wait-marker-${m.id}`, markerId: m.id,
-      remove: onMarkerRemove && m.staffId == null ? () => onMarkerRemove(m) : undefined,
+      // A front-desk check-in may already carry what the client came for (a category, not a service yet)
+      // and the technician the turn system handed them to.
+      key: `m${m.id}`, state: "waiting", since: m.createdAt, name: fullName(m.clientName), ticketNumber: m.ticketNumber, service: "",
+      sub: m.requestedCategory ? m.requestedCategory.toUpperCase() : "WALK-IN",
+      subKind: m.staffName ? "assigned" : "walkin", tech: m.staffName ? techLabel(m.staffName, m.staffId) : null,
+      open: () => onMarker(m), assign: m.staffId == null && onMarkerAssign ? () => onMarkerAssign(m) : undefined,
+      testId: `barber-queue-wait-marker-${m.id}`, markerId: m.id, provisional: m.offline === true,
+      remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined, wait: m.wait,
     }));
+    // One service at a time: a client in a chair (started, DONE not pressed) holds back their other tickets.
+    const inChairByClient = new Map<number, number>();
+    for (const t of tickets) if (t.status === "started" && !t.doneAt && t.client.id != null) inChairByClient.set(t.client.id, t.ticketNumber ?? 0);
     const fromTickets = tickets.map<ClientRow>((t) => {
-      const service = `${t.service.name}${t.addons.length > 0 ? ` +${t.addons.length}` : ""}`;
+      // Only the service's name (owner, 2026-10-29): no "+2" for add-ons — and the name alone is what gets translated.
+      const service = t.service.name;
+      const groupId = t.groupId ?? null;
       if (t.status === "started") {
-        return {
+        // The chair timer counts down the service's time plus 15 minutes; DONE stops it.
+        const endsAt = !t.doneAt && t.startedAt ? +new Date(t.startedAt) + ((Number(t.duration) || 0) + SERVICE_PADDING_MIN) * 60_000 : null;
+        return { groupId, endsAt, doneAt: t.doneAt ? +new Date(t.doneAt) : null,
           key: `t${t.id}`, state: "service", since: t.startedAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
-          service, sub: "IN SERVICE", subKind: "service", tech: t.staff?.name ?? null,
-          open: () => (onTicketTap ?? onTicket)(t), testId: `barber-queue-service-${t.id}`,
+          // DONE: the service is finished and the technician is free; the visit waits to be paid.
+          service, sub: t.doneAt ? "DONE · READY TO PAY" : "IN CHAIR", subKind: "service", tech: t.staff ? techLabel(t.staff.name, t.staff.id) : null,
+          open: () => (onTicketTap ?? onTicket)(t), testId: `barber-queue-service-${t.id}`, provisional: t.offline === true,
+          wait: t.wait,
         };
       }
+      const blockedBy = t.client.id != null && inChairByClient.has(t.client.id) ? inChairByClient.get(t.client.id)! : null;
       return {
         key: `t${t.id}`, state: "waiting", since: t.checkedInAt ?? t.date, name: fullName(t.client.name), ticketNumber: t.ticketNumber ?? null,
-        service, sub: t.staff ? `WITH ${firstName(t.staff.name).toUpperCase()}` : "UNASSIGNED",
-        subKind: t.staff ? "assigned" : "unassigned", tech: t.staff?.name ?? null,
-        open: () => onTicket(t), assign: t.staff ? undefined : () => onAssignTicket(t), testId: `barber-queue-wait-${t.id}`,
+        // A visit's second ticket waits for its first to be done before anyone is given it; and nothing starts
+        // for a client who is in a chair on another ticket.
+        // A visit's tickets share one number (2026-10-28), so a second ticket says it waits for the visit's first service.
+        service, sub: t.ringingUp ? "RINGING UP" : blockedBy != null ? `IN CHAIR ON #${blockedBy}` : t.staff ? `WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : t.waitsForTicket != null ? "AFTER FIRST SERVICE" : "UNASSIGNED",
+        subKind: t.staff ? "assigned" : "unassigned", tech: t.staff ? techLabel(t.staff.name, t.staff.id) : null,
+        provisional: t.offline === true, groupId, blockedBy, wait: blockedBy == null ? t.wait : undefined,
+        open: () => onTicket(t), assign: t.staff || blockedBy != null || t.ringingUp ? undefined : () => onAssignTicket(t),
+        start: t.staff && onStartTicket && blockedBy == null ? () => onStartTicket(t) : undefined, testId: `barber-queue-wait-${t.id}`,
       };
     });
+    // A visit's tickets sit together, where its first ticket is.
+    const anchor = new Map<number, number>();
+    for (const r of fromTickets) if (r.groupId != null && r.ticketNumber != null) anchor.set(r.groupId, Math.min(anchor.get(r.groupId) ?? Infinity, r.ticketNumber));
+    const place = (r: ClientRow) => (r.groupId != null && anchor.has(r.groupId) ? anchor.get(r.groupId)! : r.ticketNumber);
     return [...fromMarkers, ...fromTickets].sort((a, b) => {
+      const pa = place(a), pb = place(b);
+      if (pa != null && pb != null && pa !== pb) return pa - pb;
       if (a.ticketNumber != null && b.ticketNumber != null) return a.ticketNumber - b.ticketNumber;
       if (a.ticketNumber != null) return -1;
       if (b.ticketNumber != null) return 1;
       return +new Date(a.since) - +new Date(b.since);
     });
-  }, [tickets, markers, onMarker, onMarkerRemove, onTicket, onTicketTap, onAssignTicket]);
+  }, [tickets, markers, onMarker, onMarkerAssign, onMarkerRemove, onTicket, onTicketTap, onAssignTicket, onStartTicket]);
+  // Urgent cards first (owner, 2026-10-29): red, then orange, the longest wait first. Every other card keeps its place
+  // in ticket-number order, and an urgent card goes back there once it's started.
+  const urgencyOf = (r: ClientRow) => waitUrgency(r.wait, now);
+  const boardRows = useMemo(() => {
+    const urgent = clientRows.filter((r) => urgencyOf(r) != null)
+      .sort((a, b) => urgencyRank(urgencyOf(a)) - urgencyRank(urgencyOf(b)) || Date.parse(a.wait!.since) - Date.parse(b.wait!.since));
+    return urgent.length ? [...urgent, ...clientRows.filter((r) => urgencyOf(r) == null)] : clientRows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientRows, now]);
   const waitingCount = clientRows.filter((r) => r.state === "waiting").length;
   const inServiceCount = clientRows.length - waitingCount;
   // Up next = the lowest-numbered client still waiting, wherever their card sits.
-  const upNextKey = clientRows.find((r) => r.state === "waiting")?.key ?? null;
+  const upNextKey = clientRows.find((r) => r.state === "waiting" && r.blockedBy == null)?.key ?? null;
+  // Visits with more than one ticket on screen: those cards carry the yellow bar that joins them.
+  // Where each linked card sits in its visit: the bar is on the side that faces the next card of the same
+  // visit (the first card's right edge, the last card's left edge, both for one in the middle).
+  const linkSide = useMemo(() => {
+    const byGroup = new Map<number, string[]>();
+    for (const r of clientRows) if (r.groupId != null) byGroup.set(r.groupId, [...(byGroup.get(r.groupId) ?? []), r.key]);
+    const side = new Map<string, "first" | "middle" | "last">();
+    for (const keys of byGroup.values()) {
+      if (keys.length < 2) continue;
+      keys.forEach((k, i) => side.set(k, i === 0 ? "first" : i === keys.length - 1 ? "last" : "middle"));
+    }
+    return side;
+  }, [clientRows]);
 
   // "Avg Wait" tile — same estimate the Techs tab shows, worked out from the board + turn data this
   // screen already has (see shared/waitEstimate.ts).
   const waitLabel = useMemo(() => {
-    const started = tickets.filter((t) => t.status === "started");
+    const started = tickets.filter((t) => t.status === "started" && !t.doneAt);
     const waitingTickets = tickets.filter((t) => t.status === "confirmed");
     const known = [...started, ...waitingTickets].map((t) => t.duration).filter((d) => d > 0);
     const defaultServiceMin = known.length ? Math.round(known.reduce((a, b) => a + b, 0) / known.length) : DEFAULT_SERVICE_MIN;
@@ -191,7 +309,10 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
       return {
         id: t.id, clockedIn: isIn, paused: !!t.paused || t.currentStatus === "on_break",
         busy: !!current || t.currentStatus === "busy",
-        remainingMin: current ? (+new Date(current.startedAt ?? current.date) + current.duration * 60_000 - now) / 60_000 : null,
+        // Held for a waiting ticket that has not been started: that ticket is already in the line below with its
+        // own length, so the technician must not also be counted as mid-way through an unknown service.
+        remainingMin: current ? (+new Date(current.startedAt ?? current.date) + current.duration * 60_000 - now) / 60_000
+          : waitingTickets.some((x) => x.staff?.id === t.id) ? 0 : null,
         pausedForMin: t.paused && t.stateSince ? (now - +new Date(t.stateSince)) / 60_000 : null,
       };
     });
@@ -213,12 +334,12 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
   const gesture = useRef<{ x: number; y: number; id: number; horizontal: boolean; at: number } | null>(null);
   const justSwiped = useRef(false);
   const stageRef = useRef<HTMLDivElement>(null);
-  // A fixed 4 × 4 card grid; more clients than fit go on the next swipeable page.
+  // A fixed 4 × 2 card grid; more clients than fit go on the next swipeable page.
   const clientChunks = useMemo<ClientRow[][]>(() => {
     const chunks: ClientRow[][] = [];
-    for (let i = 0; i < clientRows.length; i += PER_PAGE) chunks.push(clientRows.slice(i, i + PER_PAGE));
+    for (let i = 0; i < boardRows.length; i += QUEUE_PER_PAGE) chunks.push(boardRows.slice(i, i + QUEUE_PER_PAGE));
     return chunks.length ? chunks : [[]];
-  }, [clientRows]);
+  }, [boardRows]);
   const pages = useMemo<Page[]>(() => [
     ...clientChunks.map((_, i): Page => ({ key: `waiting-${i}`, kind: "waiting", chunkIndex: i })),
     ...DETAIL_TABS.map(({ kind }): Page => ({ key: kind, kind, chunkIndex: 0 })),
@@ -269,60 +390,93 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
     setDragX(0);
   };
 
-  // Same 16 fixed slots on every page, including silhouettes when there are fewer clients.
+  // Keep the remaining slots visible as silhouettes, beside and below real clients.
   const renderClients = (rows: ClientRow[]) => (
-    <div className="q-detail-ghost-grid q-wait-grid" data-testid="barber-queue-wait-grid">
+    <div className="q-detail-ghost-grid q-wait-grid" ref={gridZoomRef} data-testid="barber-queue-wait-grid">
       {rows.map((r) => {
         const upNext = r.key === upNextKey;
         const inChair = r.state === "service";
+        const urgency = urgencyOf(r);
         return (
-          <div key={r.key} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
-            {r.remove && (
-              <button type="button" className="q-card-remove" aria-label={`Remove ${r.name} from the waiting list`} data-testid={`${r.testId}-remove`}
-                onClick={(e) => { e.stopPropagation(); if (window.confirm(`Take ${r.name} off the waiting list?`)) r.remove?.(); }}>
-                <X size={14} />
-              </button>
-            )}
+          <div key={r.key} data-urgency={urgency ?? undefined} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${urgency ? `q-urgent q-urgent-${urgency}` : ""} ${linkSide.has(r.key) ? `q-visit-linked q-visit-${linkSide.get(r.key)}` : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
+            {/* Cancelling a check-in is in the client's popup (tap the card), not a small X here. */}
             <div className="q-booking-client q-booking-client-top q-unified-head">
-              {r.ticketNumber != null && <span>#{r.ticketNumber}</span>}
-              <strong>{r.name}</strong>
-              <em className="q-unified-pill" data-kind={r.subKind}>{upNext ? "UP NEXT" : r.sub}</em>
+              {/* A ticket made offline shows its ticket number like any other; NOT SENT only when it has none yet. */}
+              {/* Long names step down in size so they stay whole and readable (two lines at most). */}
+              <strong data-len={r.name.length > 20 ? "xlong" : r.name.length > 12 ? "long" : undefined}>{r.name}</strong>
+              <em className="q-unified-pill" data-kind={urgency ? `urgent-${urgency}` : r.subKind} data-testid={urgency ? `${r.testId}-why` : undefined}>{urgency && r.wait ? waitReasonText(r.wait, r.tech) : upNext ? "UP NEXT" : r.sub}</em>
             </div>
             <div className="q-unified-main">
               <div className="q-unified-clock">
                 <Clock size={25} strokeWidth={1.8} />
-                <div><small>{inChair ? "IN CHAIR" : "WAITING"}</small><LiveTimer since={+new Date(r.since)} offsetMs={clockOffsetMs} testId={`${r.testId}-timer`} /></div>
+                {r.blockedBy != null ? (
+                  // The client is in another chair on a linked ticket: this one is on standby, no waiting clock.
+                  <div data-testid={`${r.testId}-standby`}><small>AFTER #{r.blockedBy}</small><b className="q-standby">STANDBY</b></div>
+                ) : (
+                  // A barbershop doesn't know the service (or its length) until checkout: the chair time counts up.
+                  <div><small>{inChair ? (r.doneAt != null ? "COMPLETED" : "IN CHAIR") : "WAITING"}</small>
+                    <LiveTimer since={+new Date(r.since)} until={null} stoppedAt={inChair ? r.doneAt : null}
+                      offsetMs={clockOffsetMs} testId={`${r.testId}-timer`} /></div>
+                )}
               </div>
               {upNext ? (
                 <div className="q-unified-side q-wait-actions">
-                  <button type="button" onClick={(e) => { e.stopPropagation(); r.open(); }} data-testid="barber-queue-spotlight-action">{r.markerId != null ? "Assign" : "Ticket"}</button>
-                  {r.assign && <button type="button" onClick={(e) => { e.stopPropagation(); r.assign?.(); }} data-testid="barber-queue-spotlight-assign">Assign</button>}
+                  {/* One button only, ever (owner, 2026-10-29): the next step — Start, else Assign, else open the
+                      ticket. Tapping the card still opens it. */}
+                  {r.start ? <button type="button" onClick={(e) => { e.stopPropagation(); r.start?.(); }} data-testid={`${r.testId}-start`}>Start</button>
+                    : r.assign ? <button type="button" onClick={(e) => { e.stopPropagation(); r.assign?.(); }} data-testid="barber-queue-spotlight-assign">Assign</button>
+                    : <button type="button" onClick={(e) => { e.stopPropagation(); r.open(); }} data-testid="barber-queue-spotlight-action">{r.markerId != null ? "Create" : "Ticket"}</button>}
                 </div>
-              ) : <div className="q-unified-side"><small>{inChair ? "STARTED" : "CHECKED IN"}</small><b>{fmtTime(+new Date(r.since))}</b></div>}
+              ) : r.start ? (
+                <div className="q-unified-side q-wait-actions">
+                  <button type="button" onClick={(e) => { e.stopPropagation(); r.start?.(); }} data-testid={`${r.testId}-start`}>Start</button>
+                </div>
+              // In the chair: no start time (the chair timer already shows it). Waiting: when they checked in.
+              ) : inChair ? null : <div className="q-unified-side"><small>CHECKED IN</small><b>{fmtTime(+new Date(r.since), timezone || undefined)}</b></div>}
             </div>
-            <div className="q-unified-footer">
-              <div><small>Current Service</small>{r.service ? <b>{r.service}</b> : <b className="q-missing" aria-label="No service yet">___</b>}</div>
-              <div><small>Barber</small>{r.tech ? <b>{r.tech}</b> : <b className="q-missing" aria-label="No barber yet">___</b>}</div>
+            {/* No service on a barbershop card: the ticket (and its service) is made at checkout. */}
+            {/* Bottom row: the ticket number on the left, the barber on the right. */}
+            <div className="q-unified-footer q-footer-ticket-barber">
+              <div><small>Ticket</small>{r.ticketNumber != null ? <b className="q-footer-ticket" data-testid={`${r.testId}-ticket`}>#{r.ticketNumber}</b> : r.provisional ? <b data-testid="barber-queue-not-sent">NOT SENT</b> : <b>—</b>}</div>
+              <div className="q-footer-barber"><small>Barber</small>{r.tech ? <b>{r.tech}</b> : <b className="q-missing" aria-label="No barber yet">___</b>}</div>
             </div>
           </div>
         );
       })}
-      {Array.from({ length: Math.max(0, PER_PAGE - rows.length) }, (_, i) => <div key={`ghost-${i}`} className="q-detail-ghost-card" aria-hidden="true" />)}
+      {Array.from({ length: Math.max(0, QUEUE_PER_PAGE - rows.length) }, (_, i) => <div key={`ghost-${i}`} className="q-detail-ghost-card" aria-hidden="true" />)}
     </div>
   );
 
-  // The day's walk-in, no-show and completed lists — 16 a screen, more on the next.
+  // The day's appointment / no-show / walk-in / completed lists — 16 a screen, more on the next.
   const [detailPage, setDetailPage] = useState(0);
+  // "TODAY", "TOMORROW", else "SAT, OCT 18" — in the salon's time zone.
+  // The time each list is about: when a walk-in arrived, when a completed visit finished ("—" when that was
+  // never recorded), otherwise the booked time.
+  const detailTime = (booking: BoardDayBooking, kind: DetailKind) => {
+    const iso = kind === "walk-ins" ? booking.arrivedAt ?? booking.date : kind === "completed" ? booking.completedAt : booking.date;
+    return iso ? fmtTime(+new Date(iso), timezone || undefined) : "—";
+  };
+  const visitDay = (iso: string) => {
+    const tz = timezone || undefined;
+    const key = (ms: number) => new Date(ms).toLocaleDateString("en-CA", { timeZone: tz });
+    const day = key(+new Date(iso));
+    if (day === key(now)) return "TODAY";
+    if (day === key(now + 86_400_000)) return "TOMORROW";
+    return new Date(iso).toLocaleDateString("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" }).toUpperCase();
+  };
   const renderDetailGhosts = (kind: DetailKind) => {
     const detail = DETAIL_TABS.find((tab) => tab.kind === kind)!;
-    const count = kind === "walk-ins" ? glance?.walkIns
+    const count = kind === "appointments" ? (upcoming ? upcoming.length : glance?.appointments)
+      : kind === "no-shows" ? glance?.noShows
+      : kind === "walk-ins" ? glance?.walkIns
       : glance?.completed;
-    // Keep accepting the legacy hyphenated no-show status for older records.
-    const all = bookingsForDetail(dayBookings, kind);
-    const screens = Math.max(1, Math.ceil(all.length / PER_PAGE));
+    // No-shows are real appointments that were missed, not an empty-state metric. Keep accepting
+    // the legacy hyphenated status as well so older records remain visible on the board.
+    const all = kind === "appointments" && upcoming ? upcoming : bookingsForDetail(dayBookings, kind);
+    const screens = Math.max(1, Math.ceil(all.length / DETAIL_PER_PAGE));
     const current = Math.min(detailPage, screens - 1);
-    const bookings = all.slice(current * PER_PAGE, current * PER_PAGE + PER_PAGE);
-    const ghostCount = Math.max(0, PER_PAGE - bookings.length);
+    const bookings = all.slice(current * DETAIL_PER_PAGE, current * DETAIL_PER_PAGE + DETAIL_PER_PAGE);
+    const ghostCount = Math.max(0, DETAIL_PER_PAGE - bookings.length);
     return (
       <div className="q-detail-view" data-testid={`barber-queue-detail-${kind}`}>
         <div className="q-detail-tab" data-active="true">
@@ -336,21 +490,24 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
             ))}
           </div>
         )}
-        <div className="q-detail-ghost-grid">
+        <div className="q-detail-ghost-grid" ref={gridZoomRef}>
+          {kind === "appointments" && all.length === 0 && (appointmentsLoading || appointmentsError || (count ?? 0) > 0) && (
+            <p className="q-detail-message" role="status">{appointmentsError ? "Appointments could not be loaded. Please refresh the page." : appointmentsLoading ? "Loading appointments…" : "Appointment details are unavailable. Please refresh the page."}</p>
+          )}
           {bookings.map((booking) => (
-             <div key={booking.id} className="q-booking-card q-unified-card" data-testid={`barber-walkin-${booking.id}`}>
+            <div key={booking.id} className="q-booking-card q-unified-card" data-testid={`barber-appointment-${booking.id}`}>
               <div className="q-booking-client q-booking-client-top q-unified-head">
                 {booking.ticketNumber != null && <span>#{booking.ticketNumber}</span>}
                 <strong>{booking.clientName}</strong>
-                <em className="q-unified-pill" data-kind={kind}>{detail.label}</em>
+                <em className="q-unified-pill" data-kind={kind}>{kind === "walk-ins" ? walkInState(booking.status) : detail.label}</em>
               </div>
               <div className="q-unified-main">
-                 <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : "WALK-IN"}</small><b>{fmtTime(+new Date(booking.date))}</b></div></div>
+                <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div><small>{kind === "completed" ? "COMPLETED" : kind === "no-shows" ? "MISSED" : kind === "appointments" ? visitDay(booking.date) : kind === "walk-ins" ? "WALKED IN" : "APPOINTMENT"}</small><b>{detailTime(booking, kind)}</b></div></div>
                 <div className="q-unified-side"><small>DURATION</small><b>{booking.duration > 0 ? `${booking.duration} min` : "—"}</b></div>
               </div>
               <div className="q-unified-footer">
                 <div><small>Current Service</small><b>{booking.serviceName || "Not selected"}</b></div>
-                <div><small>Barber</small><b>{booking.staffName || (kind === "walk-ins" ? "Walk-in" : "Unassigned")}</b></div>
+                <div><small>Barber</small><b>{(booking.staffName ? techLabel(booking.staffName) : "") || (kind === "walk-ins" ? "Walk-in" : "Unassigned")}</b></div>
               </div>
             </div>
           ))}
@@ -371,7 +528,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, glance, clockOf
   return (
     <section className="work-area" data-testid="barber-queue">
       <div className="tt-panel">
-        <Glance
+        <Glance timezone={timezone}
           waitLabel={waitLabel} checkedIn={waitingCount} inService={inServiceCount} clockedInTechs={clockedInTechCount} glance={glance}
           activeView={activeKind} onView={openView} onTechs={onTechs}
         />

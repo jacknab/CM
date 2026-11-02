@@ -24,6 +24,7 @@ import AccountLocked from "@/pages/AccountLocked";
 import TrialExpired from "@/pages/TrialExpired";
 import { useAuth } from "@/hooks/use-auth";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 interface AccountStatusGateProps {
   children: React.ReactNode;
 }
@@ -154,6 +155,7 @@ export function AccountStatusGate({ children }: AccountStatusGateProps) {
       if (cancelled) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${storeId}`);
+      keepSocketAlive(ws);
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);

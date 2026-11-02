@@ -105,6 +105,12 @@ export async function moveOnce(from: KV, to: KV): Promise<boolean> {
   return true;
 }
 
+/** Which storage the offline engine ended up on (the health report): the app's database, or the browser's after
+ *  the app's could not be opened — and why. "pending" until the first use. */
+let usingKind: "pending" | "app" | "browser" = "pending";
+let usingError: string | null = null;
+export const offlineStorageInUse = () => ({ kind: usingKind, error: usingError });
+
 /**
  * A `KV` over the app's database that first carries over whatever the browser's storage holds, then uses
  * the app's database for everything.
@@ -114,8 +120,12 @@ export function movedKV(from: KV, to: KV): KV {
   // this session exactly as before, so a faulty database can never stop the POS from saving.
   let chosen: Promise<KV> | null = null;
   const pick = () => (chosen ??= moveOnce(from, to).then(
-    () => to,
-    (err) => { console.warn("[offline] the app's database is unavailable, using browser storage:", err?.message ?? err); return from; },
+    () => { usingKind = "app"; return to; },
+    (err) => {
+      console.warn("[offline] the app's database is unavailable, using browser storage:", err?.message ?? err);
+      usingKind = "browser"; usingError = String(err?.message ?? err).slice(0, 200);
+      return from;
+    },
   ));
   return {
     async get<T>(store: StoreName, key: string) { return (await pick()).get<T>(store, key); },

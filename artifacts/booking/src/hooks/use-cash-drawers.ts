@@ -85,8 +85,8 @@ export function useDeleteCashDrawer() {
 }
 
 /**
- * This POS station's cash drawer (owner, 2026-10-29). Each drawer is assigned to one station in Settings › Cash
- * Drawers, and a station without one can't take cash (`cashAllowed` false; the server refuses it too).
+ * This POS station's cash drawer (owner, 2026-10-29). A drawer may be shared by several stations in Settings › Cash
+ * Drawers, but each station uses one drawer. A station without one can't take cash (`cashAllowed` false; the server refuses it too).
  *
  * The drawer's starting cash is set once on the drawer, so there is no morning count: the drawer is opened for the
  * day with that amount by itself, and counted at Day Close.

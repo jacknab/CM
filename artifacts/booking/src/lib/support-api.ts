@@ -13,7 +13,14 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export interface OfflineHealthProblem { code: string; severity: "critical" | "warning" | "info"; text: string; deviceId?: string; fix: string | null; needsPerson?: boolean }
+export interface OfflineFix { id: number; deviceId: string | null; command: string; problem: string | null; status: string; detail: string | null; createdBy: string; createdAt: string; finishedAt: string | null }
+export interface OfflineHealthVerdict { score: number | null; problems: OfflineHealthProblem[]; devices: number; fixes?: OfflineFix[] }
+export interface OfflineHealthSalon extends OfflineHealthVerdict { storeId: number; name: string; slug: string | null; checkedAt: string; lastReportAt: string | null }
+
 export const supportApi = {
+  /** Every salon with tablets reporting their offline health, worst first. */
+  offlineHealth: () => request<{ salons: OfflineHealthSalon[] }>(`/offline-health`),
   auth: {
     login: (email: string, password: string) =>
       request<SupportAgent>("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
@@ -57,6 +64,11 @@ export const supportApi = {
       request<{ ok: boolean; email: string; message: string }>(`/accounts/${id}/send-email`, { method: "POST", body: JSON.stringify({ subject, message }) }),
     booking:     (id: number) => request<BookingOverview>(`/accounts/${id}/booking`),
     pos:         (id: number) => request<PosOverview>(`/accounts/${id}/pos`),
+    /** Offline-mode score and problems, worked out now (api-server lib/offlineHealthRules.ts). */
+    offlineHealth:(id: number) => request<OfflineHealthVerdict>(`/accounts/${id}/offline-health`),
+    /** Start one offline fix now (Run fix). */
+    offlineFix:  (id: number, fix: { command: string; deviceId?: string | null; problem?: string }) =>
+      request<{ ok: boolean; id: number; status: string }>(`/accounts/${id}/offline-fix`, { method: "POST", body: JSON.stringify(fix) }),
     communications:(id: number) => request<CommunicationsData>(`/accounts/${id}/communications`),
     website:     (id: number) => request<WebsiteData>(`/accounts/${id}/website`),
     healthCheck: {
@@ -442,6 +454,8 @@ export interface PosOverview {
     localHub: { address: string; at: string | null; confirmedAt?: string | null } | null; trustedNetworkIp: string | null; trustedNetworkAt: string | null;
   };
   stations: { id: number; name: string; active: boolean; isDefault: boolean; activationCode: string | null; drawerId: number | null;
+    /** The salon has no stations set up: its one front desk (station 0), shown as a station. */
+    oneDesk?: boolean;
     claimedAt: string | null; claimDeviceId: string | null; tablet: { deviceId: string; lastSeenAt: string } | null; screens: string[] }[];
   drawers: { id: number; name: string; active: boolean; startingCash: number | null; mainStation: string | null; stations: string[];
     openShift: { openedAt: string; openingBalance: number | null } | null;
@@ -450,6 +464,11 @@ export interface PosOverview {
     appBuild: string | null; pending: number; attention: number; unsentCashCount: number; unsentCashAmount: number }[];
   customerScreens: { screenId: string; station: string | null; pairedAt: string | null; lastSeenAt: string | null; ip: string | null; userAgent: string | null }[];
   kiosks: { id: number; pairedAt: string; lastSeenAt: string | null; revokedAt: string | null; ip: string | null; userAgent: string | null }[];
+  /** Offline-mode health each tablet last reported (routes/deviceHealth.ts; report shape: booking lib/deviceHealth.ts). */
+  deviceHealth?: { deviceId: string; role: string | null; page: string | null; registerId: number | null; appBuild: string | null;
+    reportedAt: string; receivedAt: string; ip: string | null; report: any }[];
+  appPrinters?: { connection: "net" | "bluetooth" | "usb"; address: string; port: number | null; name: string | null; model: string | null;
+    tabletRole: string | null; appBuild: string | null; lastSeenAt: string; lastPrintAt: string | null; lastPrintOk: boolean | null; lastError: string | null }[];
   printers: { id: number; machine: string | null; printer: string | null; status: string | null; version: string | null; ip: string | null;
     lastSeenAt: string | null; revokedAt: string | null; isDefault: boolean; pairedAt: string }[];
   ownerApp: { platform: string; firstSeenAt: string; lastSeenAt: string | null }[];

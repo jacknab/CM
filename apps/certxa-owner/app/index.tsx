@@ -23,7 +23,7 @@ import {
   Platform, Text, TouchableOpacity, BackHandler, AppState,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { runLocalDb, type LocalDbRequest } from '../lib/localDb';
+import { checkDatabase, reopenDatabase, runLocalDb, type LocalDbRequest } from '../lib/localDb';
 import { localHub } from '../lib/localHub';
 import WebView from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
@@ -36,18 +36,19 @@ import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Colors } from '@/constants/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { apiCaller, notifySessionReady, isSessionReady } from '@/lib/terminalBridge';
+import { flushReports, queueReport } from '@/lib/offlineCard';
+import * as Updates from 'expo-updates';
 import { deviceQualifiesForSetup, getStoredDeviceRole, setStoredDeviceRole, type DeviceRole } from '@/lib/deviceRole';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 import { WifiSetupScreen } from '@/components/onboarding/WifiSetupScreen';
 import { APP_BUILD_LABEL } from '@/lib/buildInfo';
 import { ManagerMenu } from '@/components/ManagerMenu';
 import { wifiSetupSupported } from '@/lib/wifi';
-import { IDLE_SLEEP_MS, useIdleSleep } from '@/lib/idleSleep';
 import { useNightlyRestart, isDefaultHomeApp, openDeviceSettings, isKioskManaged, exitKioskToSettings, followSensorOrientation, prepareCardReader, restartApp } from '@/lib/appRestart';
 import { KioskExitPinModal } from '@/components/KioskExitPinModal';
 import { POSModal, type POSData } from '@/components/POSModal';
 import { viewportLockJs } from '@/lib/viewportLock';
-import { printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printTechId, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
+import { getSavedPrinter, printReceipt, printReceiptCopies, openCashDrawer, printCheckinTicket, printTechId, printZReport, printText, type ReceiptData, type CheckinTicketData, type ZReportPrintData } from '@/lib/printer';
 import { QrCapture } from '@/components/QrCapture';
 import { NumberBarCapture } from '@/components/NumberBarCapture';
 import { PrinterSetupModal } from '@/components/PrinterSetupModal';
@@ -122,6 +123,8 @@ const BRIDGE_JS = `
   window.CERTXA_PRINT_BRIDGE = true;
   // This build prints technician QR badges for the /nail lock screen.
   window.CERTXA_TECH_ID_PRINT_BRIDGE = true;
+  // This build carries out the server's offline-health fixes (DEVICE_FIX) and describes itself (DEVICE_INFO).
+  window.CERTXA_DEVICE_FIX = 1;
   // ...and can print text the web app has laid out (PRINT_TEXT: technicians' pay slips).
   window.CERTXA_PRINT_TEXT = 1;
   // ...and can pop the cash drawer through the printer (OPEN_DRAWER).
@@ -336,65 +339,51 @@ export default function PortalScreen() {
 
   // Read connected-reader state from the Terminal SDK — used only for the
   // floating status badge; all discovery/payment logic stays in POSModal.
-  const { connectedReader } = useStripeTerminal();
+  // Card payments taken with no internet (lib/offlineCard.ts): as the SDK sends each one to Stripe once the internet
+  // is back, the server is told so it charges it and joins it to its /nail sale. Kept on the tablet until it has.
+  const { connectedReader } = useStripeTerminal({
+    onDidForwardPaymentIntent: (paymentIntent: any, error: any) => {
+      const offlineRef = paymentIntent?.metadata?.offline_ref;
+      if (typeof offlineRef !== 'string' || !offlineRef) return;
+      console.log('[Stripe] offline card sent to Stripe', offlineRef, paymentIntent?.id ?? null, error?.message ?? '');
+      void queueReport({ offlineRef, paymentIntentId: paymentIntent?.id ?? null, error: error?.message ?? null })
+        .then(() => flushReports((e, m, b) => apiCaller.call(e, m, b)));
+    },
+    onDidForwardingFailure: (error: any) => console.warn('[Stripe] sending offline card payments failed:', error?.message ?? error),
+  } as any);
+  useEffect(() => {
+    const flush = () => { if (isSessionReady()) void flushReports((e, m, b) => apiCaller.call(e, m, b)); };
+    flush();
+    const t = setInterval(flush, 2 * 60_000);
+    return () => clearInterval(t);
+  }, [sessionTick]);
 
-  // ── Battery-saving idle sleep ──────────────────────────────────────────────
-  // These POS tablets are deliberately kept from ever really sleeping (below) — most tablets
-  // have no reliable hardware tap-to-wake, and a real OS sleep would risk a PIN-lock screen
-  // mid-shift. Instead the app dims itself after IDLE_SLEEP_MS idle; see lib/idleSleep.ts.
-  // Never asleep while a native pop-up is open: its window is above the sleep overlay, so it couldn't be woken.
-  const nativePopupOpen = posVisible || m2PayVisible || kioskPinVisible || managerMenuVisible || printerSetupVisible || readerStatusVisible || tapSetupVisible;
-  const { asleep, recordActivity: recordIdleActivity, wake } = useIdleSleep(IDLE_SLEEP_MS, nativePopupOpen);
+  // ── Screen always on (owner, 2026-11-02) ─────────────────────────────────
+  // The tablet's screen stays on and unlocked for as long as the app runs (expo-keep-awake). The idle "sleep" that
+  // dimmed the screen and covered it in black after 2 minutes is gone. A tablet the old version left dim gets its
+  // own brightness back at start and whenever the app comes to the front.
   // When the screen was last touched — the nightly restart waits for a quiet screen.
   const lastActivityRef = useRef(Date.now());
   const recordActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
-    recordIdleActivity();
-  }, [recordIdleActivity]);
-  const savedBrightness = useRef<number | null>(null);
+  }, []);
   useEffect(() => {
     activateKeepAwakeAsync().catch(() => {});
     return () => { deactivateKeepAwake(); };
   }, []);
-  // Waking used to put back a brightness NUMBER read just before dimming. On Android that number is the
-  // tablet's brightness slider, which on a tablet using automatic brightness is often far lower than what
-  // the screen was really showing — so after the first sleep the app stayed dim for good, while anything
-  // in its own window (the exit PIN, a dialog) was bright, because the dimming applies to this window only.
-  // Waking now hands the window back to the tablet's own brightness instead of pinning it to a number.
-  const asleepNow = useRef(false);
   const restoreBrightness = useCallback(async () => {
     try {
       if (Platform.OS === 'android') await Brightness.restoreSystemBrightnessAsync();
-      else if (savedBrightness.current !== null) await Brightness.setBrightnessAsync(savedBrightness.current);
-    } catch {}
-    savedBrightness.current = null;
+    } catch { /* the tablet's own brightness stays as it is */ }
   }, []);
   useEffect(() => {
-    asleepNow.current = asleep;
-    if (!asleep) {
+    void restoreBrightness();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
       void restoreBrightness();
-      // Again a moment later: a dim still being applied on the native side can land after the first restore.
-      const again = setTimeout(() => { if (!asleepNow.current) void restoreBrightness(); }, 700);
-      return () => clearTimeout(again);
-    }
-    (async () => {
-      try {
-        // Read the current level BEFORE dimming (not concurrently) so a slow read can never
-        // race the write and capture 0 as the "original" brightness to restore later.
-        const current = await Brightness.getBrightnessAsync();
-        // Woken by a tap while that read was in flight: don't dim a screen someone is using.
-        if (!asleepNow.current) return;
-        savedBrightness.current = current;
-        await Brightness.setBrightnessAsync(0);
-        // ...or woken while the dim was being applied: undo it.
-        if (!asleepNow.current) await restoreBrightness();
-      } catch {}
-    })();
-  }, [asleep, restoreBrightness]);
-
-  // Back in front (screen turned on again, after the PIN or another app): the window's brightness is the tablet's again.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (state) => { if (state === 'active' && !asleepNow.current) void restoreBrightness(); });
+      // Kept on again: some tablets drop the screen-on request when the app goes to the background.
+      activateKeepAwakeAsync().catch(() => {});
+    });
     return () => sub.remove();
   }, [restoreBrightness]);
 
@@ -470,6 +459,23 @@ export default function PortalScreen() {
   useEffect(() => {
     apiCaller.call = callAPI;
   }, [callAPI]);
+
+  // The receipt printer this tablet prints to, sent to the server for support (/isTeam Devices › Receipt printers,
+  // owner 2026-11-02): when the salon is signed in, after the printer is set up, and with each print's result.
+  const reportPrinter = useCallback(async (print?: { ok: boolean; error: string | null }) => {
+    if (!isSessionReady()) return;
+    const p = await getSavedPrinter();
+    if (!p?.address) return;
+    try {
+      await callAPI('/api/devices/receipt-printer', 'POST', {
+        connection: p.type, address: p.address, port: p.port ?? null, name: p.name ?? null, model: p.model ?? null,
+        role: deviceRole, appBuild: APP_BUILD_LABEL, ...(print ? { print } : {}),
+      });
+    } catch { /* support information only */ }
+  }, [callAPI, deviceRole]);
+  const reportPrinterRef = useRef(reportPrinter);
+  reportPrinterRef.current = reportPrinter;
+  useEffect(() => { void reportPrinter(); }, [sessionTick, reportPrinter]);
 
   /**
    * Ask the server, now, whether this tablet's account may use the kiosk. Returns null when that
@@ -587,6 +593,58 @@ export default function PortalScreen() {
               `window.__certxaHubEvent && window.__certxaHubEvent(${JSON.stringify(JSON.stringify({ kind: 'address', address }))}); true;`
             ));
           break;
+        case 'DEVICE_FIX':
+        case 'DEVICE_INFO': {
+          // Offline health (phase 4): a fix the server sent this tablet, or what the health report needs to know
+          // about the app. The answer goes back under the same requestId.
+          const reply = (body: Record<string, unknown>) =>
+            webViewRef.current?.injectJavaScript(
+              `window.dispatchEvent(new CustomEvent('certxa_device_reply', { detail: ${JSON.stringify({ requestId: msg.requestId ?? null, ...body })} })); true;`
+            );
+          void (async () => {
+            try {
+              if (msg.type === 'DEVICE_INFO') {
+                const saved = await getSavedPrinter().catch(() => null);
+                reply({ ok: true, info: {
+                  updateId: Updates.updateId ?? null, updateCreatedAt: Updates.createdAt?.toISOString?.() ?? null,
+                  channel: Updates.channel ?? null, runtimeVersion: Updates.runtimeVersion ?? null, embedded: Updates.isEmbeddedLaunch,
+                  appBuild: APP_BUILD_LABEL, db: await checkDatabase(),
+                  printer: saved ? { type: saved.type, address: saved.address, name: saved.name ?? null } : null,
+                } });
+                return;
+              }
+              const command = String(msg.command ?? '');
+              if (command === 'reopen_database') { reply(await reopenDatabase()); return; }
+              if (command === 'test_printer') {
+                const saved = await getSavedPrinter().catch(() => null);
+                if (!saved) { reply({ ok: false, detail: 'No receipt printer is set up in this app' }); return; }
+                await printText(`[C]<b>Certxa printer test</b>\n[C]${new Date().toLocaleString()}\n[C]Sent to check this printer works.\n`);
+                reply({ ok: true, detail: `Printed a test slip on ${saved.name || saved.address}` });
+                return;
+              }
+              if (command === 'restart_app') {
+                if (busyRef.current()) { reply({ ok: false, detail: 'Not restarted: a payment or pop-up is open on this tablet' }); return; }
+                reply({ ok: true, detail: 'Restarting the app' });
+                setTimeout(() => { if (!restartApp()) webViewRef.current?.reload(); }, 1500);
+                return;
+              }
+              if (command === 'apply_update') {
+                if (!Updates.isEnabled) { reply({ ok: false, detail: 'Updates are switched off in this build' }); return; }
+                const check = await Updates.checkForUpdateAsync();
+                if (!check.isAvailable) { reply({ ok: true, detail: 'Already on the latest update' }); return; }
+                await Updates.fetchUpdateAsync();
+                if (busyRef.current()) { reply({ ok: true, detail: 'Update downloaded; it starts at the next restart (the tablet is busy now)' }); return; }
+                reply({ ok: true, detail: 'Update downloaded; restarting into it' });
+                setTimeout(() => { void Updates.reloadAsync().catch(() => {}); }, 1500);
+                return;
+              }
+              reply({ ok: false, detail: `This app doesn't know the fix "${command}"` });
+            } catch (e: any) {
+              reply({ ok: false, detail: String(e?.message ?? e).slice(0, 200) });
+            }
+          })();
+          break;
+        }
         case 'LOCAL_DB': {
           // A read or write on the tablet's encrypted database, asked for by the web screen. The answer
           // goes back under the same id; values stay as JSON text end to end.
@@ -619,13 +677,14 @@ export default function PortalScreen() {
         case 'M2_PAY': {
           // Web Calendar POS sheet requests M2 payment via device reader.
           // Show the M2PaymentOverlay which handles discovery + payment.
-          const { appointmentId, amountCents, clientName, tipCents, discountCents, priorTenderedCents, nailCheckout } = msg;
+          const { appointmentId, amountCents, clientName, tipCents, discountCents, priorTenderedCents, nailCheckout, offline } = msg;
           setM2PayData({
             appointmentId: appointmentId ?? 0,
             amountCents,
             clientName: clientName ?? 'Walk-in',
             mode: 'm2',
-            ctx: { tipCents, discountCents, priorTenderedCents, nailCheckout },
+            // `offline`: the page has no internet — the M2 takes the card offline (lib/offlineCard.ts).
+            ctx: { tipCents, discountCents, priorTenderedCents, nailCheckout, offline: offline === true },
           });
           setM2PayVisible(true);
           break;
@@ -662,6 +721,7 @@ export default function PortalScreen() {
           const { requestId, receipt, paymentIntentId, copy } = msg;
           const reply = (ok: boolean, error?: string) => {
             const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            reportPrinterRef.current({ ok, error: error ?? null });
             webViewRef.current?.injectJavaScript(
               `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
             );
@@ -689,6 +749,7 @@ export default function PortalScreen() {
           const { requestId, report } = msg;
           const reply = (ok: boolean, error?: string) => {
             const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            reportPrinterRef.current({ ok, error: error ?? null });
             webViewRef.current?.injectJavaScript(
               `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
             );
@@ -710,6 +771,7 @@ export default function PortalScreen() {
           const { requestId, text } = msg;
           const reply = (ok: boolean, error?: string) => {
             const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            reportPrinterRef.current({ ok, error: error ?? null });
             webViewRef.current?.injectJavaScript(
               `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
             );
@@ -733,6 +795,7 @@ export default function PortalScreen() {
           const { requestId, ticket, qrValue, todayCount } = msg;
           const reply = (ok: boolean, error?: string) => {
             const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            reportPrinterRef.current({ ok, error: error ?? null });
             webViewRef.current?.injectJavaScript(
               `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
             );
@@ -757,6 +820,7 @@ export default function PortalScreen() {
           const { requestId, tech, qrValue } = msg;
           const reply = (ok: boolean, error?: string) => {
             const detail = { requestId: requestId ?? null, ok, error: error ?? null };
+            reportPrinterRef.current({ ok, error: error ?? null });
             webViewRef.current?.injectJavaScript(
               `window.dispatchEvent(new CustomEvent('certxa_native_print_result', { detail: ${JSON.stringify(detail)} })); true;`
             );
@@ -861,6 +925,8 @@ export default function PortalScreen() {
       // for this device's own receipt printing; now also handed to the web app so it can save
       // them server-side and show the same "purchase details" from any device later.
       cardDetails: extra?.cardDetails ?? null,
+      // Taken with no internet: the sale carries this reference; the payment reaches Stripe later.
+      ...(extra?.offlineRef ? { offline: true, offlineRef: extra.offlineRef } : {}),
     };
     webViewRef.current?.injectJavaScript(
       `window.dispatchEvent(new CustomEvent('certxa_native_payment_complete', { detail: ${JSON.stringify(detail)} })); true;`
@@ -1064,7 +1130,7 @@ export default function PortalScreen() {
       <PrinterSetupModal
         visible={printerSetupVisible}
         storeName={printerStoreName}
-        onClose={() => setPrinterSetupVisible(false)}
+        onClose={() => { setPrinterSetupVisible(false); void reportPrinter(); }}
       />
 
       {/* Reader Status Modal */}
@@ -1122,12 +1188,6 @@ export default function PortalScreen() {
         activeOpacity={1}
       />
 
-      {/* Idle-sleep overlay — battery saving. Topmost so it covers every other overlay too;
-          any touch wakes it (see useIdleSleep). Opaque regardless of the brightness dim, so a
-          wake tap never also lands on whatever button happened to be underneath. */}
-      {asleep && (
-        <View style={styles.sleepOverlay} onTouchStart={wake} />
-      )}
 
     </View>
   );
@@ -1138,7 +1198,6 @@ export default function PortalScreen() {
 const styles = StyleSheet.create({
   root:           { flex: 1, backgroundColor: Colors.background },
   devTrigger:     { position: 'absolute', top: 0, left: 0, width: 44, height: 44 },
-  sleepOverlay:   { ...StyleSheet.absoluteFillObject, backgroundColor: '#000', zIndex: 999, elevation: 999 },
   webview:        { flex: 1, backgroundColor: Colors.background },
   loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
   errorOverlay:   { ...StyleSheet.absoluteFillObject, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },

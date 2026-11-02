@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
-import { barberUrl } from "./barberApi";
+import { syncEngine } from "@/lib/sync-engine";
 
 /**
- * Real card charging for the Barber POS checkout — the Stripe M2 reader only (Tap to Pay is deliberately not offered here):
+ * Real card charging for the Nail POS checkout — the Stripe M2 reader only (Tap to Pay is deliberately not offered here):
  *   • native Android app → the device bridge (M2_PAY), which reports back with `certxa_native_*` window events
  *   • web + Stripe Terminal → connect once, then create / collect / process / capture a PaymentIntent
  *   • paired /frontdesk tablet → the customer confirms the tip there and that device's M2 charges (see `frontdesk`)
@@ -21,7 +21,8 @@ export interface CardPaymentsOpts {
   send: (type: string, payload?: Record<string, unknown>) => void;
   /** The ticket's tip / discount / already-tendered cents, stored on the PaymentIntent by the native app. */
   context: () => { tipCents: number; discountCents: number; priorTenderedCents: number };
-  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null, cardDetails?: unknown) => void;
+  /** `offlineRef`: the M2 took the card with no internet (the Certxa app keeps it and sends it to Stripe later). */
+  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null, cardDetails?: unknown, offlineRef?: string | null) => void;
   /** What is still owed once `paid` is taken, and what the sale will have taken in all — told to the customer's screen so a part-payment doesn't read "Payment successful". */
   settlementAfter: (paid: number) => { remaining: number; paidTotal: number };
   onFailed: (message: string) => void;
@@ -60,6 +61,11 @@ export function useCardPayments(o: CardPaymentsOpts) {
   const [status, setStatus] = useState<TermStatus>("idle");
   const [nativeBusy, setNativeBusy] = useState<CardKind | null>(null);
   const [awaitingFrontdesk, setAwaitingFrontdesk] = useState(false);
+  // After staff stop waiting on the front desk, keep checking the server for a while: the customer may
+  // already have tapped their card there, and that charge must still land on this ticket.
+  const [watchingRemote, setWatchingRemote] = useState(false);
+  const watchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (watchTimer.current) clearTimeout(watchTimer.current); }, []);
   const frontdeskLock = useRef(false);
   const term = useRef<any>(null);
   const reader = useRef<any>(null);
@@ -74,6 +80,19 @@ export function useCardPayments(o: CardPaymentsOpts) {
       const d = (e as CustomEvent).detail ?? {};
       if (Number(d.appointmentId) !== opts.current.ticketId) return;
       d.handledBySheet = true; // tell any page-level handler this checkout owns the payment
+      // Taken with no internet: nothing to check with the server yet — the sale carries the app's reference and the
+      // server joins it to the payment once the app has sent it to Stripe.
+      if (d.offline === true && typeof d.offlineRef === "string" && /^off_[a-z0-9_]{6,60}$/.test(d.offlineRef)) {
+        try {
+          if (seenIntents.current.has(d.offlineRef)) return;
+          seenIntents.current.add(d.offlineRef);
+          const amount = Number(d.amount) || 0;
+          if (amount <= 0) return;
+          opts.current.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: d.last4, appointmentId: opts.current.ticketId, ...opts.current.settlementAfter(amount) });
+          opts.current.onPaid("m2", amount, d.last4 ? String(d.last4) : null, null, d.cardDetails ?? undefined, d.offlineRef);
+        } finally { setNativeBusy(null); }
+        return;
+      }
       const key = d.paymentIntentId ? String(d.paymentIntentId) : "";
       if (!key) { opts.current.onFailed("Card charge has no transaction ID. Check Stripe before retrying."); return; }
       if (seenIntents.current.has(key)) return;
@@ -155,11 +174,11 @@ export function useCardPayments(o: CardPaymentsOpts) {
   // ticket, so check it directly — a lost result message must never leave this screen waiting forever
   // on a customer who has already paid.
   useEffect(() => {
-    if (!awaitingFrontdesk) return;
+    if (!awaitingFrontdesk && !watchingRemote) return;
     let alive = true;
     const check = async () => {
       try {
-        const r = await fetch(barberUrl(`/api/barber/captured-card-payments/${opts.current.ticketId}`), { credentials: "include" });
+        const r = await fetch(`/api/barber/captured-card-payments/${opts.current.ticketId}`, { credentials: "include" });
         if (!alive || !r.ok) return;
         const rows = await r.json() as { paymentIntentId: string; amountCents: number }[];
         if (!alive || !Array.isArray(rows)) return;
@@ -168,7 +187,7 @@ export function useCardPayments(o: CardPaymentsOpts) {
     };
     const iv = setInterval(check, 4_000);
     return () => { alive = false; clearInterval(iv); };
-  }, [awaitingFrontdesk, acceptRemoteCharge]);
+  }, [awaitingFrontdesk, watchingRemote, acceptRemoteCharge]);
 
   const bridge = (type: "M2_PAY", amount: number) => {
     const o = opts.current;
@@ -180,7 +199,11 @@ export function useCardPayments(o: CardPaymentsOpts) {
     setNativeBusy("m2");
     (window as any).ReactNativeWebView.postMessage(JSON.stringify({
       type, appointmentId: o.ticketId, amountCents: cents, clientName: o.clientName, nailCheckout: true, ...o.context(),
+      // No internet: the app takes the card offline straight away (Certxa app lib/offlineCard.ts).
+      offline: syncEngine.isOffline(),
     }));
+    // The customer's screen shows the card animation; this device's reader takes the card.
+    o.send("kiosk_checkout_await_payment", { mode: "m2", total: amount, appointmentId: o.ticketId, ...o.settlementAfter(amount) });
     o.say("M2 READER — INSERT / TAP CARD", "info");
   };
 
@@ -318,11 +341,22 @@ export function useCardPayments(o: CardPaymentsOpts) {
     frontdeskBaseCents.current = Number.isFinite(base) ? Math.round(base * 100) : null;
     setAwaitingFrontdesk(true);
     opts.current.send("kiosk_checkout_tip_request", payload);
-    opts.current.say("TIP AND CARD PAYMENT SENT TO FRONT DESK", "info");
+    opts.current.say(payload.tipAlreadyChosen === true ? "CARD PAYMENT SENT TO FRONT DESK" : "TIP AND CARD PAYMENT SENT TO FRONT DESK", "info");
+  };
+
+  /** Staff stop waiting on the front desk (customer walked off, screen never showed it): the POS is usable again. */
+  const cancelFrontdesk = () => {
+    if (!awaitingFrontdesk) return;
+    frontdeskLock.current = false;
+    setAwaitingFrontdesk(false);
+    setWatchingRemote(true);
+    if (watchTimer.current) clearTimeout(watchTimer.current);
+    watchTimer.current = setTimeout(() => setWatchingRemote(false), 120_000);
+    opts.current.send("kiosk_checkout_tip_cancel", { appointmentId: opts.current.ticketId });
   };
 
   return {
-    native, status, nativeBusy, awaitingFrontdesk, frontdesk, onSocket,
+    native, status, nativeBusy, awaitingFrontdesk, frontdesk, cancelFrontdesk, onSocket,
     /** The CARD button: the M2 reader. */
     m2: (amount: number) => (native ? bridge("M2_PAY", amount) : void chargeM2(amount)),
     busy: nativeBusy !== null || awaitingFrontdesk || status === "loading" || status === "discovering" || status === "connecting" || status === "collecting" || status === "processing",

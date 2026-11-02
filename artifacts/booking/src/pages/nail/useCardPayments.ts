@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { verifyCardCharge } from "../frontdesk/verifyCardCharge";
+import { syncEngine } from "@/lib/sync-engine";
 
 /**
  * Real card charging for the Nail POS checkout — the Stripe M2 reader only (Tap to Pay is deliberately not offered here):
@@ -20,7 +21,8 @@ export interface CardPaymentsOpts {
   send: (type: string, payload?: Record<string, unknown>) => void;
   /** The ticket's tip / discount / already-tendered cents, stored on the PaymentIntent by the native app. */
   context: () => { tipCents: number; discountCents: number; priorTenderedCents: number };
-  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null, cardDetails?: unknown) => void;
+  /** `offlineRef`: the M2 took the card with no internet (the Certxa app keeps it and sends it to Stripe later). */
+  onPaid: (kind: CardKind, amount: number, last4?: string | null, paymentIntentId?: string | null, cardDetails?: unknown, offlineRef?: string | null) => void;
   /** What is still owed once `paid` is taken, and what the sale will have taken in all — told to the customer's screen so a part-payment doesn't read "Payment successful". */
   settlementAfter: (paid: number) => { remaining: number; paidTotal: number };
   onFailed: (message: string) => void;
@@ -78,6 +80,19 @@ export function useCardPayments(o: CardPaymentsOpts) {
       const d = (e as CustomEvent).detail ?? {};
       if (Number(d.appointmentId) !== opts.current.ticketId) return;
       d.handledBySheet = true; // tell any page-level handler this checkout owns the payment
+      // Taken with no internet: nothing to check with the server yet — the sale carries the app's reference and the
+      // server joins it to the payment once the app has sent it to Stripe.
+      if (d.offline === true && typeof d.offlineRef === "string" && /^off_[a-z0-9_]{6,60}$/.test(d.offlineRef)) {
+        try {
+          if (seenIntents.current.has(d.offlineRef)) return;
+          seenIntents.current.add(d.offlineRef);
+          const amount = Number(d.amount) || 0;
+          if (amount <= 0) return;
+          opts.current.send("kiosk_checkout_payment_result", { success: true, total: amount, last4: d.last4, appointmentId: opts.current.ticketId, ...opts.current.settlementAfter(amount) });
+          opts.current.onPaid("m2", amount, d.last4 ? String(d.last4) : null, null, d.cardDetails ?? undefined, d.offlineRef);
+        } finally { setNativeBusy(null); }
+        return;
+      }
       const key = d.paymentIntentId ? String(d.paymentIntentId) : "";
       if (!key) { opts.current.onFailed("Card charge has no transaction ID. Check Stripe before retrying."); return; }
       if (seenIntents.current.has(key)) return;
@@ -184,6 +199,8 @@ export function useCardPayments(o: CardPaymentsOpts) {
     setNativeBusy("m2");
     (window as any).ReactNativeWebView.postMessage(JSON.stringify({
       type, appointmentId: o.ticketId, amountCents: cents, clientName: o.clientName, nailCheckout: true, ...o.context(),
+      // No internet: the app takes the card offline straight away (Certxa app lib/offlineCard.ts).
+      offline: syncEngine.isOffline(),
     }));
     // The customer's screen shows the card animation; this device's reader takes the card.
     o.send("kiosk_checkout_await_payment", { mode: "m2", total: amount, appointmentId: o.ticketId, ...o.settlementAfter(amount) });

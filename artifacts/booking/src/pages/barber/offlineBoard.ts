@@ -1,0 +1,88 @@
+/**
+ * The board as staff see it while offline (and for a moment after): the last board the server sent, plus the
+ * walk-ins and tickets made on this device that the server has not shown back yet.
+ */
+import type { LocalRecord, PatchRecord, TakeRecord, TicketRecord, WalkinRecord } from "@/lib/nail-offline/engine";
+import type { BoardMarker, BoardTicket, NailBoard } from "./barberApi";
+
+export const EMPTY_BOARD: NailBoard = { tickets: [], markers: [], dayBookings: [], techStats: [] };
+
+export function ticketFromRecord(t: TicketRecord): BoardTicket {
+  return {
+    id: t.realId ?? t.id,
+    ticketNumber: t.ticketNumber ?? null,
+    status: t.status,
+    date: t.createdAt, checkedInAt: t.createdAt, startedAt: t.startedAt,
+    duration: t.duration,
+    client: { id: t.clientId, name: t.clientName, phone: t.phone, loyaltyPoints: 0 },
+    service: { id: t.service.id, name: t.service.name, price: t.service.price },
+    addons: t.addons,
+    nail: t.nail ? {
+      sizeId: t.nail.nailSizeId ?? null, shapeId: t.nail.nailShapeId ?? null,
+      applicationId: t.nail.nailArtApplicationId ?? null, effectId: t.nail.nailArtEffectId ?? null,
+      priceAdjustment: t.nailPriceAdjustment, lines: t.nailLines,
+    } : null,
+    customLines: t.customLines,
+    staff: t.staff,
+    total: t.total,
+    // Made at the desk on this tablet: a walk-in (the server records it as one too).
+    walkIn: true,
+    offline: !t.realId,
+  };
+}
+
+export function overlayBoard(board: NailBoard | null | undefined, records: LocalRecord[]): NailBoard {
+  const base = board ?? EMPTY_BOARD;
+  // A ticket paid in cash on this device has left the floor; it is shown under "saved on this tablet" until sent.
+  const localTickets = records.filter((r): r is TicketRecord => r.kind === "ticket" && !r.paid);
+  const paidLocally = new Set(records.filter((r): r is TicketRecord => r.kind === "ticket" && !!r.paid && !!r.realId).map((r) => r.realId!));
+  const walkins = records.filter((r): r is WalkinRecord => r.kind === "walkin");
+  const patches = new Map(records.filter((r): r is PatchRecord => r.kind === "patch").map((r) => [r.ticketId, r]));
+  const takes = records.filter((r): r is TakeRecord => r.kind === "take");
+  if (!localTickets.length && !walkins.length && !patches.size && !paidLocally.size && !takes.length) return base;
+
+  // What this device changed on tickets the server already had: started, moved, edited, cancelled, paid.
+  const serverTickets = base.tickets
+    .filter((t) => { const p = patches.get(t.id); return !(p && (p.status === "cancelled" || p.paid)) && !paidLocally.has(t.id); })
+    .map((t) => {
+      const p = patches.get(t.id);
+      if (!p) return t;
+      return { ...t, ...(p.edit?.view as Partial<BoardTicket> | undefined), ...(p.status === "started" ? { status: "started" as const, startedAt: p.startedAt ?? t.startedAt } : {}),
+        ...(p.staff ? { staff: p.staff } : {}), offline: true };
+    });
+  const serverTicketIds = new Set(base.tickets.map((t) => t.id));
+  // Once the server has a ticket, the server's board says whether it is still open. A ticket the server
+  // confirmed is drawn from this device's copy only while the board on hand is older than that
+  // confirmation (it has not caught up yet). After that, absent from the board means paid or cancelled —
+  // drawing it from the device again is what left paid tickets sitting in the queue.
+  const boardAt = base.now ? Date.parse(base.now) : NaN;
+  const settledByServer = (r: { realId?: number | null; syncedAt?: string }) =>
+    r.realId != null && Number.isFinite(boardAt) && (!r.syncedAt || boardAt >= Date.parse(r.syncedAt));
+  const tickets = [...serverTickets,
+    ...localTickets.filter((t) => !(t.realId && serverTicketIds.has(t.realId)) && !settledByServer(t)).map(ticketFromRecord)];
+
+  // A waiting entry already turned into a ticket on this device is no longer waiting.
+  const ticketed = new Set(localTickets.filter((t) => !t.realId).map((t) => t.walkinId).filter((id): id is number => id != null));
+  const serverMarkerIds = new Set(base.markers.map((m) => m.id));
+  const waiting: BoardMarker[] = walkins
+    .filter((w) => w.status === "waiting" && !(w.synced && (w.realId == null || serverMarkerIds.has(w.realId))) && !(w.synced && settledByServer(w)))
+    .map((w) => ({ id: w.realId ?? w.id, ticketNumber: w.ticketNumber ?? null, clientId: w.clientId, clientName: w.clientName, phone: w.phone, createdAt: w.createdAt, offline: !w.synced }));
+  // Never two tickets under one id: the cards and the ticket popup find a ticket by its id, so two would both open
+  // the first (offline ids from before 2026-11-02 could repeat between tablets).
+  const seen = new Set<number>();
+  const unique = tickets.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  const markers = [...base.markers.filter((m) => !ticketed.has(m.id)), ...waiting];
+  // A client a barber took on this tablet and the server hasn't shown back yet: with that barber. A take the server
+  // confirmed is drawn from here only until a board newer than that confirmation arrives.
+  const byMarker = new Map<number, TakeRecord>();
+  for (const t of takes) {
+    if (t.syncedAt && Number.isFinite(boardAt) && boardAt >= Date.parse(t.syncedAt)) continue;
+    byMarker.set(t.markerId, t);
+    const real = walkins.find((w) => w.id === t.markerId)?.realId;
+    if (real != null) byMarker.set(real, t);
+  }
+  return { ...base, tickets: unique, markers: markers.map((m) => {
+    const t = byMarker.get(m.id);
+    return t ? { ...m, staffId: t.staff.id, staffName: t.staff.name, offline: true } : m;
+  }) };
+}

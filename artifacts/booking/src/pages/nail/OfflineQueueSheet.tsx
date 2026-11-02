@@ -1,18 +1,66 @@
 import { useEffect, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { X } from "lucide-react";
 import { nailOffline, type LocalRecord, type Op } from "@/lib/nail-offline";
 import { syncEngine } from "@/lib/sync-engine";
+import { hasLocalHub, localHub, type HubSnapshot } from "@/lib/local-hub";
 import { techLabel } from "./techName";
 
 const WHAT: Record<Op["type"], string> = {
-  "client.create": "New client", "walkin.create": "Check-in", "ticket.create": "Ticket", "ticket.start": "Start service",
-  "ticket.update": "Ticket change", "ticket.reassign": "Technician change", "ticket.cancel": "Cancel ticket", "ticket.checkout": "Cash payment",
+  "client.create": "New client", "walkin.create": "Check-in", "walkin.assign": "Client taken", "ticket.create": "Ticket", "ticket.start": "Start service",
+  "ticket.update": "Ticket change", "ticket.reassign": "Technician change", "ticket.cancel": "Cancel ticket", "ticket.checkout": "Payment",
 };
 
 /**
  * What this tablet has saved and not yet sent: each change, whether it is waiting or was refused by the
  * server, and for a refused one the reason with Try again / Remove. Nothing here is ever removed by itself.
  */
+/**
+ * This tablet's address on the salon's Wi-Fi and the hub's (the tablet the others connect to with no internet), with
+ * Update: both are looked up again, saved on the server and on this tablet, and the hub link is brought up again.
+ * Only in the Certxa app, where the hub runs.
+ */
+function HubInfo() {
+  const [info, setInfo] = useState<HubSnapshot>(() => localHub.snapshot());
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ text: string; ok: boolean } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void localHub.lookupAddress().then(() => { if (live) setInfo(localHub.snapshot()); });
+    const off = localHub.onStatusChange(() => { if (live) setInfo(localHub.snapshot()); });
+    return () => { live = false; off(); };
+  }, []);
+  const update = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const r = await localHub.refresh();
+      setInfo(r);
+      const linked = r.status === "serving" || r.status === "connected";
+      setResult(!linked
+        ? { text: r.hubAddress ? `Could not connect to the hub at ${r.hubAddress}.` : "No hub address yet. Make sure the main front desk tablet is on, then press Update again.", ok: false }
+        : r.savedOnServer ? { text: "Updated and saved on the server and this tablet.", ok: true }
+        : { text: "Updated. No internet, so it is saved on this tablet only.", ok: true });
+    } catch (err) {
+      setResult({ text: (err as Error)?.message || "Could not update.", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="assign-create-item" style={{ cursor: "default", flexWrap: "wrap", gap: 8 }} data-testid="nail-hub-info">
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div className="assign-create-name" data-testid="nail-hub-own-ip">{`Network IP: ${info.ownAddress ?? "—"}`}</div>
+        <div className="assign-create-name" data-testid="nail-hub-ip">{`Hub IP: ${info.hubAddress ?? "—"}`}</div>
+      </div>
+      <button type="button" className="assign-create-btn assign-create-btn-ready" disabled={busy} onClick={() => void update()} data-testid="nail-hub-update">
+        {busy ? "UPDATING…" : "UPDATE"}
+      </button>
+      {result && <div className={result.ok ? "assign-create-hint" : "gift-error"} style={{ flexBasis: "100%" }} role="status">{result.text}</div>}
+    </div>
+  );
+}
+
 export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: number; offline: boolean; onClose: () => void }) {
   const [ops, setOps] = useState<Op[]>([]);
   const [recs, setRecs] = useState<LocalRecord[]>([]);
@@ -53,6 +101,7 @@ export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: numb
           <button type="button" className="assign-create-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
         <div className="assign-create-list">
+          {hasLocalHub() && <HubInfo />}
           {nailOffline.storageProblem() && (
             <div className="gift-error" data-testid="nail-storage-problem">
               {nailOffline.storageProblem()!.kind === "full" ? "This tablet's storage is full." : "This tablet cannot save right now."}
@@ -61,7 +110,7 @@ export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: numb
           )}
           {syncEngine.needsSignIn() && <div className="gift-error" data-testid="nail-signin-needed">This tablet has been signed out. Everything below is kept and will be sent as soon as someone signs in to the salon again.</div>}
           <div className="assign-create-hint" data-testid="nail-last-sync">
-            {lastSync ? `Last sent to the server: ${new Date(lastSync).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Nothing has been sent from this tablet yet."}
+            {lastSync ? `Last sent to the server: ${new Date(lastSync).toLocaleString([], { timeZone: salonTimeZone(), month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Nothing has been sent from this tablet yet."}
           </div>
           {others > 0 && <div className="assign-create-hint">{others === 1 ? "1 saved change belongs to another salon and will be sent when that salon signs in on this tablet." : `${others} saved changes belong to another salon and will be sent when that salon signs in on this tablet.`}</div>}
           {ops.length === 0 && <div className="assign-create-hint">Everything has been sent.</div>}

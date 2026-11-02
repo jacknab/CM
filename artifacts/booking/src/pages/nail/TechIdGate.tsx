@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { useNailText } from "./i18n";
 import { Delete, Loader2 } from "lucide-react";
 import { TURN_UNIT, formatTurns } from "@shared/turnRules";
@@ -6,6 +7,8 @@ import { useShake } from "@/hooks/use-shake";
 import { ApiError, isAccountStoppedError, identifyTech, type TechSignIn } from "./nailApi";
 import { resumeOrSignIn } from "@/lib/resumeSignIn";
 import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { useQueryClient } from "@tanstack/react-query";
+import { KEYPAD_CODE, scanKeypadCode } from "@/lib/keypadCode";
 import "./techGate.css";
 import { techLabel } from "./techName";
 
@@ -39,7 +42,7 @@ export function TechIdGate({ storeName, timezone, turnQueue, keypadVisible = tru
   }, []);
   let clock: string;
   try { clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone: timezone }); }
-  catch { clock = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+  catch { clock = now.toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" }); }
 
   const press = (d: string) => { setMessage(""); setDigits((cur) => (cur.length >= 2 ? cur : cur + d)); };
   const back = () => { setMessage(""); setDigits((cur) => cur.slice(0, -1)); };
@@ -76,46 +79,33 @@ export function TechIdGate({ storeName, timezone, turnQueue, keypadVisible = tru
 
   useBarcodeScanner((raw) => {
     const trimmed = raw.trim();
-    const techMatch = /^TECH:(\d{1,2})$/i.exec(trimmed);
+    // A Tech ID badge, or a manager badge ("M7-K3Q7XB"): both sign in by the Tech ID.
+    const techMatch = /^TECH:(\d{1,2})$/i.exec(trimmed) ?? /^M(\d{1,2})-[A-Z2-7]{6}$/i.exec(trimmed);
     if (techMatch) {
       setDigits(techMatch[1]);
       void signIn(Number(techMatch[1]));
       return;
     }
-    const qrMatch = /^QR:(.+)$/i.exec(trimmed);
-    if (qrMatch) {
-      // QR confirmation code for sensitive settings (e.g. keypad hide)
-      void handleQrConfirmation(qrMatch[1]);
+    if (KEYPAD_CODE.test(trimmed)) {
+      // The salon's KEYPAD QR: hides the keypad, or shows it again.
+      void handleKeypadCode(trimmed);
       return;
     }
     setMessage("That is not a Tech ID badge."); shake();
   });
 
-  const handleQrConfirmation = useCallback(async (token: string) => {
+  const queryClient = useQueryClient();
+  const handleKeypadCode = useCallback(async (code: string) => {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch("/api/nail/qr-code/verify", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) {
-        setMessage("Keypad hide confirmed.");
-        setDigits("");
-      } else {
-        setMessage(data.message || "QR code not valid.");
-        shake();
-      }
-    } catch {
-      setMessage("No connection. Try again.");
-      shake();
+      const r = await scanKeypadCode(code, queryClient);
+      if (r.ok) { setMessage(r.keypadVisible ? "Keypad shown." : "Keypad hidden. Scan the same QR to show it again."); setDigits(""); }
+      else { setMessage(r.error); shake(); }
     } finally {
       setBusy(false);
     }
-  }, [busy, shake]);
+  }, [busy, shake, queryClient]);
 
   // A keyboard (or a numeric scanner wedge) works too.
   useEffect(() => {

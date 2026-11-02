@@ -1,3 +1,4 @@
+import { isBookingSystemOff } from "./bookingSystem";
 import path from "path";
 import { isAccountStopped } from "./accountSuspension";
 import fs from "fs";
@@ -1187,6 +1188,21 @@ export function serveDistFile(
   }
 }
 
+/**
+ * Hides a website's booking buttons and links (the booking system switched off): any link or button that goes to a
+ * booking page (…/book, …/booking, …/appointments, a Certxa booking page) or says "Book…", "Schedule…", "Reserve…",
+ * "Make an appointment", and any embedded booking frame. Templates build their buttons differently, so it looks at
+ * the page as it is drawn, including what it adds later.
+ */
+const HIDE_BOOKING_SCRIPT = `<style>iframe[src*="certxa.com"][src*="book"]{display:none!important}</style><script>(function(){
+var to=/(^|\\/)(book|booking|book-now|book-online|appointments?|reserve)(\\/|$|[?#])|certxa\\.com\\/(book|s\\/)/i;
+var says=/^\\s*(book|schedule|reserve|make an appointment|request an appointment)\\b/i;
+function hide(){var els=document.querySelectorAll('a,button,[role="button"]');for(var i=0;i<els.length;i++){var el=els[i];
+var h=el.getAttribute('href')||el.getAttribute('data-href')||'';var t=(el.textContent||'').trim();
+if((h&&to.test(h))||(t.length<40&&says.test(t))){el.style.setProperty('display','none','important');el.setAttribute('aria-hidden','true');}}}
+hide();if(document.readyState!=='complete')window.addEventListener('load',hide);
+try{new MutationObserver(function(){hide();}).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}})();</script>`;
+
 // ── Core tenant serving logic (shared by slug + custom-domain handlers) ───────
 
 async function serveTenantSite(
@@ -1228,7 +1244,7 @@ async function serveTenantSite(
   const imageOps: Record<string, string> = content?.imageOps ?? {};
   const colorOps: ColorOps = content?.colorOps ?? {};
   const savedSeo: TenantSeoOverrides = content?.seo ?? {};
-  const replacementScript = buildReplacementScript(fields) + buildBlockOpsScript(blockOps) + buildImageOpsScript(imageOps) + buildColorOpsScript(colorOps);
+  let replacementScript = buildReplacementScript(fields) + buildBlockOpsScript(blockOps) + buildImageOpsScript(imageOps) + buildColorOpsScript(colorOps);
   const canonicalUrl = siteBaseUrl({
     slug: website.slug,
     customDomain: website.customDomain ?? null,
@@ -1237,6 +1253,10 @@ async function serveTenantSite(
 
   let seo: SeoMeta = { canonical: canonicalUrl, ...savedSeo };
   const storeId = website.storeid == null ? null : Number(website.storeid);
+  // The salon switched its booking system off (lib/bookingSystem.ts): the website stays, its booking buttons go.
+  if (storeId !== null && Number.isInteger(storeId) && storeId > 0 && await isBookingSystemOff(storeId)) {
+    replacementScript += HIDE_BOOKING_SCRIPT;
+  }
   // Build tenant data when we have a storeId so we can inject live STORE_DATA
   // into the served template. This ensures pre-built demo content is
   // replaced with the real store's services/categories on page load.

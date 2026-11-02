@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Users, Clock, CheckCircle, Loader2, MapPin, Phone, X, Navigation, Bell } from "lucide-react";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 type LocationStatus = "idle" | "requesting" | "granted" | "denied" | "unsupported";
 
 interface QueueInfo {
@@ -61,6 +62,7 @@ export default function PublicCheckIn() {
 
     const connect = () => {
       ws = new WebSocket(`${protocol}//${window.location.host}/ws/notifications?storeId=${storeId}`);
+      keepSocketAlive(ws);
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data as string);

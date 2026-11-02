@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from "react";
+import { startDeviceHealth } from "@/lib/deviceHealth";
+import { setPrintSettings } from "@/lib/printSettings";
+import { setSalonTimeZone } from "@/lib/salonClock";
 import { printNativeCheckinTicket, slipServiceNames } from "../lib/native-checkin-ticket";
 import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
@@ -24,6 +27,7 @@ import KioskPairing from "../components/kiosk/KioskPairing";
 import kioskWelcomeBanner from "@/assets/kiosk-welcome-banner.jpg";
 import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 type Screen =
   | "idle" | "phone" | "loading" | "welcome"
   | "name_entry" | "service_type" | "services" | "service_options"
@@ -444,6 +448,9 @@ function KioskCheckInScreens() {
     setBusyStaffIds(d.busyStaffIds || []);
     setStaffServiceIds(d.staffServiceIds || {});
     setKioskConfig({ kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true });
+    setSalonTimeZone(d.timezone);
+    // Whether a check-in slip prints (front desk setup → Printing).
+    if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
     setServiceOptionsMap(d.serviceOptionsMap ?? {});
     // Nail salons get the nail-salon look. Remembered for this kiosk address so the next start opens in it.
     const nailLook = d.serviceCheckin === true;
@@ -491,6 +498,8 @@ function KioskCheckInScreens() {
 
   // The salon hub: with no internet, lookups and check-ins go to the POS tablet over the salon's Wi-Fi.
   useEffect(() => { if (storeId) void localHub.start(storeId, "screen"); }, [storeId]);
+  // The kiosk's offline-mode health, reported every 2 minutes (lib/deviceHealth.ts; support's Devices tab).
+  useEffect(() => (storeId ? startDeviceHealth({ role: "kiosk", storeId, slug: slug ?? null, usesOfflineQueue: false }) : undefined), [storeId, slug]);
 
   // ── WebSocket: account_status_changed + dual-screen POS checkout events ──
   useEffect(() => {
@@ -501,6 +510,7 @@ function KioskCheckInScreens() {
     const connect = () => {
       if (destroyed) return;
       ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}`);
+      keepSocketAlive(ws);
       kioskWsRef.current = ws;
       ws.onmessage = (e) => {
         try {

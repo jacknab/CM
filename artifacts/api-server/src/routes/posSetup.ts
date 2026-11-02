@@ -34,8 +34,12 @@ async function mainDrawer(storeId: number): Promise<{ id: number; name: string; 
   const r = await pool.query(
     `SELECT d.id, d.name, d.target_float FROM cash_drawers d
       WHERE d.store_id = $1 AND d.is_active
-        AND (d.id = (SELECT cash_drawer_id FROM registers WHERE store_id = $1 AND is_default AND is_active LIMIT 1) OR d.main_station)
-      ORDER BY (d.id = (SELECT cash_drawer_id FROM registers WHERE store_id = $1 AND is_default AND is_active LIMIT 1)) DESC NULLS LAST, d.id
+        AND (
+          d.id = (SELECT cash_drawer_id FROM registers WHERE store_id = $1 AND is_default AND is_active LIMIT 1)
+          OR d.main_station
+          OR EXISTS (SELECT 1 FROM registers r WHERE r.store_id = $1 AND r.is_active AND r.cash_drawer_id = d.id)
+        )
+      ORDER BY (d.id = (SELECT cash_drawer_id FROM registers WHERE store_id = $1 AND is_default AND is_active LIMIT 1)) DESC NULLS LAST, d.main_station DESC, d.id
       LIMIT 1`,
     [storeId],
   );

@@ -138,6 +138,17 @@ export const actionQueueDB = {
     });
   },
 
+  /**
+   * Actions still marked SYNCING when the page starts were being sent when the app closed: nothing will ever
+   * pick them up again (only PENDING ones are sent), so they go back in line. Each keeps its idempotency key, so
+   * one that did reach the server is not done twice. Call once per page load, before the first sync pass.
+   */
+  async recoverInFlight(): Promise<number> {
+    const stuck = (await this.getAll()).filter((a) => a.state === "SYNCING").map((a) => a.id);
+    if (stuck.length) await this.setStates(stuck, "PENDING");
+    return stuck.length;
+  },
+
   async updatePendingCreate(entityTempId: string, updates: Record<string, unknown>): Promise<void> {
     const all = await this.getAll();
     const action = all.find(

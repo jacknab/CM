@@ -1,4 +1,6 @@
 import { useState, type ReactNode } from "react";
+import { fixName, OfflineFixHistory, OfflineProblems, OfflineScore } from "@/components/isTeam/OfflineHealthSummary";
+import type { OfflineHealthProblem } from "@/lib/support-api";
 import { useQuery } from "@tanstack/react-query";
 import { formatInTimeZone } from "date-fns-tz";
 import { formatDistanceToNowStrict } from "date-fns";
@@ -58,6 +60,29 @@ export default function PosTab({ accountId }: { accountId: number }) {
     queryFn: () => supportApi.accounts.pos(accountId),
     refetchInterval: 30_000,
   });
+  // The offline-mode score and problems, worked out from the tablets' reports (api-server lib/offlineHealthRules.ts).
+  const { data: health, refetch: refetchHealth } = useQuery({
+    queryKey: ["support-offline-health", accountId],
+    queryFn: () => supportApi.accounts.offlineHealth(accountId),
+    refetchInterval: 60_000,
+  });
+  // Run fix: started now, the same fix the 5-minute job would start; the history below shows how it went.
+  const [fixing, setFixing] = useState<string | null>(null);
+  const [fixMessage, setFixMessage] = useState<string | null>(null);
+  const runFix = async (p: OfflineHealthProblem) => {
+    if (!p.fix) return;
+    const key = `${p.fix}:${p.deviceId ?? ""}`;
+    setFixing(key); setFixMessage(null);
+    try {
+      const r = await supportApi.accounts.offlineFix(accountId, { command: p.fix, deviceId: p.deviceId ?? null, problem: p.code });
+      setFixMessage(r.status === "done" ? `${fixName(p.fix)}: done.` : `${fixName(p.fix)}: sent to the tablet. Its result appears below.`);
+      void refetchHealth();
+    } catch (err) {
+      setFixMessage(`${fixName(p.fix)}: ${(err as Error)?.message || "could not start"}`);
+    } finally {
+      setFixing(null);
+    }
+  };
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-sm text-slate-400">Loading POS details…</div>;
   if (error || !data) return <div className="flex items-center justify-center h-64 text-sm text-red-500">Could not load POS details.</div>;
@@ -100,8 +125,8 @@ export default function PosTab({ accountId }: { accountId: number }) {
       <Section title="POS settings">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 p-4">
           <Setting label="POS" value={s.posEnabled ? "On" : "Off"} />
-          <Setting label="Card payments" value={s.cardProvider === "own" ? "Own terminal (records only)" : s.cardProvider === "stripe" ? "Certxa / Stripe (M2)" : s.cardProvider ?? "Default"} />
-          <Setting label="Sales tax" value={s.salesTaxRate ? `${s.salesTaxRate}%` : "None"}
+          <Setting label="Card payments" value={s.cardProvider === "own" ? "Own terminal (records only)" : s.cardProvider === "none" ? "No card payments" : s.cardProvider === "stripe" ? "Certxa / Stripe (M2)" : s.cardProvider ?? "Default"} />
+          <Setting label="Sales tax" value={s.salesTaxRate ? `${(s.salesTaxRate * 100).toFixed(2).replace(/\.?0+$/, "")}%` : "None"}
             sub={s.salesTaxRate ? ["services", "addons", "products", "giftCards"].filter((k) => (s.taxable as any)[k]).map((k) => ({ services: "services", addons: "add-ons", products: "products", giftCards: "gift cards" } as any)[k]).join(", ") || "nothing taxed" : undefined} />
           <Setting label="Cash discount" value={s.cashDiscountPercent ? `${s.cashDiscountPercent}%` : "None"} />
           <Setting label="Lock screen" value={s.lockScreen ? "On (Tech ID to use the POS)" : "Off"} sub={s.lockScreen ? (s.keypadVisible ? "Keypad shown" : "Scanner only") : undefined} />
@@ -130,8 +155,12 @@ export default function PosTab({ accountId }: { accountId: number }) {
               : r.claimedAt ? <span key="t" className="text-xs text-slate-500">Claimed {at(r.claimedAt)}</span> : <span key="t" className="text-xs text-slate-400">No tablet</span>,
             r.screens.length ? <span key="c" className="text-xs text-slate-700">{r.screens.length} paired</span> : <span key="c" className="text-xs text-slate-400">None</span>,
             r.drawerId != null ? <span key="d" className="text-xs text-slate-700">{drawerName.get(r.drawerId) ?? `#${r.drawerId}`}</span> : <span key="d" className="text-xs text-red-600">None — no cash</span>,
-            <span key="a" className="font-mono text-xs text-slate-600">{r.activationCode ?? "—"}</span>,
+            r.oneDesk ? <span key="a" className="text-xs text-slate-400">Not needed (one station)</span>
+              : <span key="a" className="font-mono text-xs text-slate-600">{r.activationCode ?? "—"}</span>,
           ])} />
+        {data.stations.some((r) => r.oneDesk) && (
+          <p className="px-4 pb-3 text-[11px] text-slate-400" data-testid="support-pos-one-desk">No stations are set up (Settings › POS Stations), so the salon has one front desk: its tablet, its customer screen (no pairing code needed) and the main cash drawer.</p>
+        )}
       </Section>
 
       <Section title={`POS tablets (${recentTablets.length} seen in the last 2 days)`}>
@@ -166,7 +195,7 @@ export default function PosTab({ accountId }: { accountId: number }) {
             <span key="s" className="text-xs text-slate-700">{d.stations.join(", ") || "None"}</span>,
             <span key="f" className="text-xs text-slate-700">{d.startingCash != null ? `$${d.startingCash.toFixed(2)}` : "—"}</span>,
             d.openShift ? <span key="o" className="text-xs text-slate-700">Open since {at(d.openShift.openedAt)}<span className="block text-slate-400">{ago(d.openShift.openedAt)}</span></span>
-              : <span key="o" className="text-xs text-slate-400">No open shift</span>,
+              : <span key="o" className="text-xs text-slate-400">No open shift<span className="block text-[11px]">No cash session is active. It starts when an assigned POS station uses this drawer and closes at Day Close.</span></span>,
             d.lastClose ? <span key="c" className="text-xs text-slate-700">{at(d.lastClose.closedAt)}{d.lastClose.closingBalance != null && <span className="block text-slate-400">Counted ${d.lastClose.closingBalance.toFixed(2)}</span>}</span>
               : <span key="c" className="text-xs text-slate-400">Never</span>,
           ])} />
@@ -195,7 +224,90 @@ export default function PosTab({ accountId }: { accountId: number }) {
           ])} />
       </Section>
 
-      <Section title={`Receipt printers (${data.printers.length})`}>
+      <Section title={`Offline mode health (${data.deviceHealth?.length ?? 0})`}>
+        {health && (
+          <div className="px-4 py-3 border-b border-slate-100 space-y-2" data-testid="offline-health-summary">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700">Score <OfflineScore score={health.score} /></div>
+            <OfflineProblems problems={health.problems} onFix={(p) => void runFix(p)} fixing={fixing} />
+            {fixMessage && <p className="text-xs text-slate-600">{fixMessage}</p>}
+            <OfflineFixHistory fixes={health.fixes ?? []} />
+          </div>
+        )}
+        {/* Each tablet's own report, every 2 minutes while online (booking lib/deviceHealth.ts). */}
+        <Table head={["Tablet / last report", "Offline database", "Salon copy", "Hub link", "Clock"]}
+          empty="No tablet has reported its offline health yet (it starts once the tablets load the latest front desk page)."
+          rows={(data.deviceHealth ?? []).map((h) => {
+            const r = h.report ?? {};
+            const db = r.db ?? {};
+            const hub = r.hub ?? null;
+            const mirror = r.mirror;
+            const station = data.stations.find((s) => s.id === h.registerId)?.name;
+            const bad = (cond: boolean, text: string) => <span className={cond ? "block text-red-600" : "block text-slate-400"}>{text}</span>;
+            return [
+              <span key="t" className="text-xs text-slate-700">
+                <span className="font-medium">{h.role === "screen" ? "Customer screen" : h.role === "pos" ? "Front desk (main)" : h.role === "station" ? "Front desk" : h.role ?? "—"}</span>
+                {station && <span className="text-slate-500"> · {station}</span>}
+                <span className="block text-slate-400 font-mono">{h.deviceId.slice(0, 14)}</span>
+                <Dot status={statusOf(h.receivedAt)} sub={`${at(h.receivedAt)} · ${ago(h.receivedAt)}${r.offline ? " · was offline" : ""}`} />
+                {h.appBuild && <span className="block text-slate-400">{h.appBuild}</span>}
+                {r.app?.updateId && <span className="block text-slate-400 font-mono">update {String(r.app.updateId).slice(0, 8)}{r.app.channel ? ` · ${r.app.channel}` : ""}</span>}
+              </span>,
+              <span key="d" className="text-xs text-slate-700">
+                <span className={db.storage === "app" ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+                  {db.storage === "app" ? "App database" : db.storage === "browser" ? "Browser storage" : db.storage ?? "—"}
+                </span>
+                {db.storageError && bad(true, `App database failed: ${db.storageError}`)}
+                {db.test && bad(!db.test.ok, db.test.ok ? `Write test OK (${db.test.ms} ms)` : `Write test FAILED: ${db.test.error ?? ""}`)}
+                {r.app?.db && bad(!r.app.db.ok, r.app.db.ok ? `File check OK${r.app.db.sizeBytes ? ` · ${(r.app.db.sizeBytes / 1_048_576).toFixed(1)} MB` : ""}` : `File check FAILED: ${r.app.db.result ?? ""}`)}
+                {db.records != null && <span className="block text-slate-400">{db.records} records · {db.unsent ?? 0} unsent{db.refused ? ` · ${db.refused} refused` : ""}</span>}
+                {db.oldestUnsentAt && bad(Date.now() - Date.parse(db.oldestUnsentAt) > 3_600_000, `Oldest unsent: ${ago(db.oldestUnsentAt)}`)}
+                {db.lastSentAt && <span className="block text-slate-400">Last sent {ago(db.lastSentAt)}</span>}
+                {db.error && bad(true, db.error)}
+              </span>,
+              <span key="m" className="text-xs text-slate-700">
+                {mirror == null ? <span className="text-slate-400">{h.role === "screen" ? "—" : "None (not in the app)"}</span>
+                  : mirror.error ? bad(true, mirror.error)
+                  : <>
+                      {bad(!mirror.complete, mirror.complete ? "Complete" : "Not complete")}
+                      <span className="block text-slate-400">{mirror.rows} rows · {mirror.tables} tables</span>
+                      {mirror.syncedAt ? bad(Date.now() - Date.parse(mirror.syncedAt) > 86_400_000, `Synced ${ago(mirror.syncedAt)}`) : bad(true, "Never synced")}
+                    </>}
+              </span>,
+              <span key="h" className="text-xs text-slate-700">
+                {!hub ? "—" : <>
+                  <span className={hub.status === "serving" || hub.status === "connected" ? "font-medium text-emerald-700" : "font-medium text-red-600"}>
+                    {hub.status === "serving" ? `Hub (${hub.peers ?? 0} connected)` : hub.status === "connected" ? "Connected to hub" : hub.status === "connecting" ? "Connecting…" : "Off"}
+                  </span>
+                  <span className="block text-slate-400 font-mono">{hub.ownAddress ?? "?"} → {hub.hubAddress ?? "?"}</span>
+                  {hub.lastLinkedAt && <span className="block text-slate-400">Linked {ago(hub.lastLinkedAt)}</span>}
+                  {hub.foundAt && <span className="block text-slate-400">Found by Wi-Fi search {ago(hub.foundAt)}</span>}
+                </>}
+              </span>,
+              <span key="c" className="text-xs text-slate-700">
+                {bad(!!(r.clock?.deviceTz && r.clock?.salonTz && r.clock.deviceTz !== r.clock.salonTz), r.clock?.deviceTz ?? "—")}
+                {r.clock?.salonTz && <span className="block text-slate-400">Salon: {r.clock.salonTz}</span>}
+              </span>,
+            ];
+          })} />
+      </Section>
+
+      <Section title={`Receipt printers (${data.printers.length + (data.appPrinters?.length ?? 0)})`}>
+        {/* Printers the Certxa app on the tablets prints to — reported by the app itself. */}
+        <Table head={["Status / last seen", "Printer", "IP address / connection", "Last print", "Tablet"]}
+          empty="No printer set up in the Certxa app on the tablets."
+          rows={(data.appPrinters ?? []).map((p) => [
+            <Dot key="s" status={statusOf(p.lastSeenAt)} sub={`${at(p.lastSeenAt)} · ${ago(p.lastSeenAt)}`} />,
+            <span key="n" className="text-xs text-slate-700">{p.name ?? "—"}{p.model && <span className="block text-slate-400">{p.model}</span>}</span>,
+            <span key="a" className="font-mono text-xs text-slate-700">
+              {p.connection === "net" ? `${p.address}${p.port ? `:${p.port}` : ""}` : p.address}
+              <span className="block font-sans text-slate-400">{p.connection === "net" ? "Network (IP)" : p.connection === "bluetooth" ? "Bluetooth" : "USB"}</span>
+            </span>,
+            <span key="l" className="text-xs text-slate-700">
+              {p.lastPrintAt == null ? "—" : p.lastPrintOk ? `Printed ${at(p.lastPrintAt)}` : `Failed ${at(p.lastPrintAt)}`}
+              {p.lastPrintOk === false && p.lastError && <span className="block text-slate-400">{p.lastError}</span>}
+            </span>,
+            <span key="t" className="text-xs text-slate-700">{p.tabletRole ?? "—"}{p.appBuild && <span className="block text-slate-400">{p.appBuild}</span>}</span>,
+          ])} />
         <Table head={["Status / last seen", "Computer", "Printer", "Agent version", "IP address"]}
           empty="No receipt print agent installed."
           rows={data.printers.map((p) => [

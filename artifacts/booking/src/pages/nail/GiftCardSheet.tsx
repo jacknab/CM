@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { Gift, X } from "lucide-react";
 import { lookupGiftCard, sellGiftCard, type GiftCardInfo } from "./nailApi";
 import { newIdempotencyKey } from "@/lib/nail-offline";
@@ -44,7 +45,7 @@ export function GiftCardSheet({ onClose, onSay }: { onClose: () => void; onSay: 
   const printSold = () => {
     if (!sold || !(window as any).CERTXA_PRINT_TEXT) return;
     const text = ["[C]<b>GIFT CARD</b>", `[C]<b>${money(sold.amount)}</b>`, "[L]--------------------------------", `[L]Code: ${sold.code}`,
-      ...(recipient.trim() ? [`[L]For: ${recipient.trim()}`] : []), `[L]Sold: ${new Date().toLocaleString("en-US", { dateStyle: "short", timeStyle: "short" })}`,
+      ...(recipient.trim() ? [`[L]For: ${recipient.trim()}`] : []), `[L]Sold: ${new Date().toLocaleString("en-US", { timeZone: salonTimeZone(), dateStyle: "short", timeStyle: "short" })}`,
       `[L]Paid: ${sold.method === "cash" ? "Cash" : "Card"}`, "[L]Keep this code. It is needed to pay.", "[L]"].join("\n");
     (window as any).ReactNativeWebView?.postMessage(JSON.stringify({ type: "PRINT_TEXT", requestId: `gift_${Date.now()}`, text }));
   };

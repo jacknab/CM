@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { formatElapsed } from "./ticketDraft";
 import type { BoardMarker, BoardTicket } from "./nailApi";
 import { techLabel } from "./techName";
 
 const NO_COLOR = "#454c56";
-const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" });
 const firstName = (n: string | null | undefined) => (n ?? "").trim().split(/\s+/)[0] || "Guest";
 
 /** What this row's chip should say — the one glanceable signal for "does this client already belong to a tech?"

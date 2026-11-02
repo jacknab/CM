@@ -1,6 +1,7 @@
 // Moved out of pages/Calendar.tsx so the /nail and /barber staff screens don't load the whole calendar.
 import { useState, useEffect, useRef, useCallback } from "react";
-import { checkManagerPin } from "@/lib/managerPin";
+import { checkManagerPin, managerBadge } from "@/lib/managerPin";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, X, Delete } from "lucide-react";
 
@@ -40,6 +41,24 @@ export function ManagerPinSheet({ onClose, onSuccess, title = "Manager Access" }
       .catch(() => { if (!cancelled) { setErrorMsg("Couldn't check the PIN. Try again."); setDigits(""); } });
     return () => { cancelled = true; };
   }, [digits]);
+
+  // A manager badge scanned here counts as the PIN; `onSuccess` gets the badge's code, which the server accepts
+  // wherever it asks for the PIN.
+  const [checkingBadge, setCheckingBadge] = useState(false);
+  useBarcodeScanner((raw) => {
+    const badge = managerBadge(raw);
+    if (!badge) { if (/^(TECH:|M\d)/i.test(raw.trim())) setErrorMsg("That is not a manager badge."); return; }
+    if (checkingBadge) return;
+    setCheckingBadge(true);
+    setErrorMsg(null);
+    void checkManagerPin(badge.code)
+      .then((result) => {
+        if (result === "ok") { onSuccessRef.current(badge.code); return; }
+        setErrorMsg(result === "locked" ? "Too many wrong PINs. Wait a few minutes." : "That manager badge no longer works.");
+      })
+      .catch(() => setErrorMsg("Couldn't check the PIN. Try again."))
+      .finally(() => setCheckingBadge(false));
+  });
 
   const numKeys = [
     ["1", "2", "3"],

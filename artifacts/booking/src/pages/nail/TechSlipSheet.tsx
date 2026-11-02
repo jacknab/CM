@@ -1,3 +1,4 @@
+import { staffApi } from "@/lib/staffScreenApi";
 import { useEffect, useState } from "react";
 import { buildTechSlipText, type TechSlip } from "@/lib/techSlip";
 import { ApiError, identifyTech, type TechSignIn } from "./nailApi";
@@ -47,7 +48,7 @@ export function TechSlipSheet({ staffId, staffName, timezone, onClose }: { staff
   useEffect(() => {
     let cancelled = false;
     setSlip(null); setError(null); setNote(null);
-    fetch(`/api/nail/tech-slip?staffId=${staffId}&period=${period}`, { credentials: "include" })
+    fetch(staffApi(`/tech-slip?staffId=${staffId}&period=${period}`), { credentials: "include" })
       .then(async (res) => {
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error(data?.message || "Could not load the slip");

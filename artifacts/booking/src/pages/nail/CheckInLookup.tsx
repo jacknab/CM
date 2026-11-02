@@ -1,4 +1,6 @@
 import { useCallback, useRef, useState } from "react";
+import { printSettings } from "@/lib/printSettings";
+import { salonNowForPrint } from "@/lib/salonClock";
 import { ArrowLeft, CheckCircle2, Delete, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -85,6 +87,8 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   // "CI:{checkinToken}" for a true walk-in (no appointment exists yet — see /api/qr/lookup on the
   // server for how each resolves, and how that resolution moves forward once a ticket is created).
   const printCheckinTicket = (r: CheckInResult) => {
+    // The salon chose no check-in slips (front desk setup → Printing).
+    if (printSettings().checkinSlip === "none") return;
     // A check-in saved on this tablet offline has no server code yet: its slip carries the ticket number (TN:),
     // which the POS scans as a ticket-number lookup.
     const qrValue = r.todayAppointment ? `BK:${r.todayAppointment.id}` : r.checkin?.token ? `CI:${r.checkin.token}`
@@ -120,7 +124,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
       ticket: {
         clientName: r.client.name,
         ticketNumber,
-        date: new Date().toISOString(),
+        date: salonNowForPrint(),
         // A booked client's service goes on the slip for the tech (a walk-in hasn't chosen one yet).
         services: r.todayAppointment?.serviceName ? [r.todayAppointment.serviceName] : [],
       },

@@ -2,13 +2,17 @@
  * transaction because an external capture cannot be rolled back by PostgreSQL. */
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { ticketServicePriceSQL } from "./pricingLevels";
 import { db } from "../db";
 import { captureTerminalPaymentIntent, getPaymentAccount, retrieveTerminalPaymentIntent } from "./stripeConnect";
 import { applyLoyaltyDeltaTx } from "./loyaltyAward";
 import { NO_SALES_TAX, salesTaxCents, type SalesTaxSettings } from "@shared/nailCheckout";
 
 /** `card`: a card taken on the salon's own terminal and only recorded here — no Certxa charge behind it. */
-export interface NailTender { method: "cash" | "gift" | "m2" | "tap" | "card"; amount: number; code?: string; paymentIntentId?: string }
+/** `offlineRef`: an M2 card taken while the internet was down — saved on the tablet and sent to Stripe later
+ *  (offline_card_payments). It has no PaymentIntent yet, so it is recorded on trust and linked when it arrives. */
+export interface NailTender { method: "cash" | "gift" | "m2" | "tap" | "card"; amount: number; code?: string; paymentIntentId?: string; offlineRef?: string }
+export const OFFLINE_CARD_REF = /^off_[a-z0-9_]{6,60}$/;
 export interface NailShare { appointmentId: number; tip: number; discount: number; totalPaid: number; serviceRevenue: number; productRevenue: number; paymentMethod: string }
 export interface NailCheckoutInput {
   storeId: number; appointmentId: number; idempotencyKey: string;
@@ -83,9 +87,12 @@ export function validateNailCheckoutInput(a: NailCheckoutInput): void {
       cents(shares.reduce((n, s) => n + s.discount, 0)) !== cents(a.discount) ||
       cents(shares.reduce((n, s) => n + s.totalPaid, 0)) !== cents(a.totalPaid)) throw new NailCheckoutError("Group checkout shares do not match", 400);
   if (a.tenders.some((t) => !validMoney(t.amount) || t.amount <= 0 || !["cash", "gift", "m2", "tap", "card"].includes(t.method) ||
-    ((t.method === "m2" || t.method === "tap") && !/^pi_[a-zA-Z0-9]+$/.test(t.paymentIntentId ?? "")) ||
+    ((t.method === "m2" || t.method === "tap") && !/^pi_[a-zA-Z0-9]+$/.test(t.paymentIntentId ?? "") &&
+      !(t.method === "m2" && !t.paymentIntentId && OFFLINE_CARD_REF.test(t.offlineRef ?? ""))) ||
     (t.method === "gift" && !t.code?.trim()))) throw new NailCheckoutError("Invalid tender", 400);
   if (new Set(a.tenders.filter((t) => t.paymentIntentId).map((t) => t.paymentIntentId)).size !== a.tenders.filter((t) => t.paymentIntentId).length)
+    throw new NailCheckoutError("Duplicate card charge", 409);
+  if (new Set(a.tenders.filter((t) => t.offlineRef).map((t) => t.offlineRef)).size !== a.tenders.filter((t) => t.offlineRef).length)
     throw new NailCheckoutError("Duplicate card charge", 409);
   const tendered = cents(a.tenders.reduce((n, t) => n + t.amount, 0));
   const cash = cents(a.tenders.filter((t) => t.method === "cash").reduce((n, t) => n + t.amount, 0));
@@ -114,7 +121,8 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
   // A sale a tablet took while offline is recorded as it happened.
   if (!collectedAt) await requireWholeVisit(db, a.storeId, shares.map((s) => s.appointmentId));
   // Stripe verification before locks: no network request while holding DB rows.
-  const cards = a.tenders.filter((t) => t.method === "m2" || t.method === "tap");
+  const cards = a.tenders.filter((t) => (t.method === "m2" || t.method === "tap") && t.paymentIntentId);
+  const offlineCards = a.tenders.filter((t) => t.method === "m2" && !t.paymentIntentId && t.offlineRef);
   if (cards.length) await chargeCardTenders(a, cards);
   return db.transaction(async (tx) => {
     // The key's unique index serializes identical attempts; all other locks have
@@ -158,7 +166,7 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
     // tickets must match their stored service, add-ons, nail options and custom lines.
     for (const share of shares) {
       const priced: any = (await tx.execute(sql`SELECT
-        COALESCE(s.price, 0) AS service_price,
+        COALESCE(${sql.raw(ticketServicePriceSQL())}, 0) AS service_price,
         COALESCE((SELECT SUM(ad.price) FROM appointment_addons aa JOIN addons ad ON ad.id = aa.addon_id
           WHERE aa.appointment_id = a.id), 0) AS addon_price,
         COALESCE(ns.length_price_adj_snapshot, 0) + COALESCE(ns.shape_price_adj_snapshot, 0) +
@@ -183,6 +191,21 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
         WHERE payment_intent_id = ${card.paymentIntentId!}`);
       else await tx.execute(sql`INSERT INTO nail_checkout_card_intents (payment_intent_id, store_id, appointment_id, amount_cents, idempotency_key)
         VALUES (${card.paymentIntentId!}, ${a.storeId}, ${a.appointmentId}, ${cents(card.amount)}, ${a.idempotencyKey})`);
+    }
+    // Cards taken offline: the sale is joined to its saved payment, which may reach Stripe before or after this.
+    for (const card of offlineCards) {
+      const row: any = (await tx.execute(sql`INSERT INTO offline_card_payments (store_id, offline_ref, appointment_id, amount_cents, idempotency_key, recorded_at)
+        VALUES (${a.storeId}, ${card.offlineRef!}, ${a.appointmentId}, ${cents(card.amount)}, ${a.idempotencyKey}, now())
+        ON CONFLICT (offline_ref) DO UPDATE SET appointment_id = EXCLUDED.appointment_id, idempotency_key = EXCLUDED.idempotency_key,
+          amount_cents = COALESCE(offline_card_payments.amount_cents, EXCLUDED.amount_cents), recorded_at = now()
+        WHERE offline_card_payments.store_id = EXCLUDED.store_id AND offline_card_payments.recorded_at IS NULL
+        RETURNING payment_intent_id, status`)).rows[0];
+      if (!row) throw new NailCheckoutError("Card charge is already used by another checkout");
+      if (row.payment_intent_id && row.status === "paid") {
+        await tx.execute(sql`INSERT INTO nail_checkout_card_intents (payment_intent_id, store_id, appointment_id, amount_cents, idempotency_key)
+          VALUES (${row.payment_intent_id}, ${a.storeId}, ${a.appointmentId}, ${cents(card.amount)}, ${a.idempotencyKey})
+          ON CONFLICT (payment_intent_id) DO NOTHING`);
+      }
     }
     let giftTotal = 0;
     const gifts = new Map<string, number>();
@@ -242,7 +265,9 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
         completed.push(reconciled);
         continue;
       }
-      const srv: any = row.service_id ? (await tx.execute(sql`SELECT price FROM services WHERE id = ${row.service_id} AND store_id = ${a.storeId}`)).rows[0] : null;
+      // The price this ticket was charged at, kept with it (a barbershop or hair salon: the professional's price).
+      const srv: any = row.service_id ? (await tx.execute(sql`SELECT ${sql.raw(ticketServicePriceSQL())} AS price FROM appointments a
+        JOIN services s ON s.id = a.service_id WHERE a.id = ${share.appointmentId} AND a.store_id = ${a.storeId}`)).rows[0] : null;
       const member: any = row.staff_id ? (await tx.execute(sql`SELECT commission_rate FROM staff WHERE id = ${row.staff_id} AND store_id = ${a.storeId}`)).rows[0] : null;
       const updated: any = (await tx.execute(sql`UPDATE appointments SET status = 'completed', completed_at = COALESCE(${paidAt ? paidAt.toISOString() : null}::timestamptz, now()),
         payment_method = ${share.paymentMethod}, tip_amount = ${share.tip.toFixed(2)}::numeric,
@@ -252,6 +277,10 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
         service_price = COALESCE(service_price, ${srv?.price ?? null}::numeric),
         commission_rate = COALESCE(commission_rate, ${member?.commission_rate ?? null}::numeric)
         WHERE id = ${share.appointmentId} AND store_id = ${a.storeId} RETURNING *`)).rows[0];
+      // Barbershops and hair salons: the level the price came from stays with the ticket (no level: nothing to keep).
+      if (row.staff_id) await tx.execute(sql`UPDATE appointments ap SET pricing_level_id = lv.id, pricing_level_name = lv.name
+        FROM staff st JOIN pricing_levels lv ON lv.id = st.pricing_level_id
+        WHERE ap.id = ${share.appointmentId} AND ap.store_id = ${a.storeId} AND st.id = ap.staff_id AND ap.pricing_level_id IS NULL`);
       completed.push(updated);
     }
     await tx.execute(sql`INSERT INTO nail_checkout_operations (store_id, idempotency_key, request_hash, result)

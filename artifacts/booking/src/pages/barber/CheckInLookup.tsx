@@ -1,15 +1,22 @@
 import { useCallback, useRef, useState } from "react";
+import { printSettings } from "@/lib/printSettings";
+import { salonNowForPrint } from "@/lib/salonClock";
 import { ArrowLeft, CheckCircle2, Delete, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isValidNanpPrefix } from "@/lib/phone-validation";
 import { useShake } from "@/hooks/use-shake";
 import { createClient } from "./NameEntry";
+import { syncEngine } from "@/lib/sync-engine";
+import { nailOffline, isLocalId, newIdempotencyKey } from "@/lib/nail-offline";
+import { clientOnDevice } from "./barberApi";
 import { findClientId } from "./clientLookup";
 import { QuickAreaCodes } from "./QuickAreaCodes";
 import { useQuickAreaCodes } from "./useQuickAreaCodes";
 import { isNativeApp } from "./useCardPayments";
-import { barberUrl } from "./barberApi";
+import { techLabel } from "./techName";
+import { quickNameProblem } from "./quickName";
+import { KEY_ROWS, LIGHT, KB_KEY, KB_WIDE } from "./touchKeys";
 
 /**
  * Front-desk Check-In — the Customers page (`/client-lookup`, full-screen phone pad → "Add Client Name" on-screen keyboard)
@@ -32,17 +39,11 @@ export interface CheckInResult {
   todayCount?: number;
 }
 
-const KEY_ROWS = [
-  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
-  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
-  ["Z", "X", "C", "V", "B", "N", "M"],
-];
 const NUM_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"]];
 
 // Touch targets scale with the screen height so nothing is cut off on a 10" tablet.
-const NUM_KEY = "w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border bg-card text-[clamp(24px,4vh,36px)] font-semibold hover-elevate active-elevate-2";
-const KB_KEY = "flex-1 min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border bg-card text-[clamp(20px,3.6vh,32px)] font-medium hover-elevate active-elevate-2";
-const KB_WIDE = "flex-[1.5] min-w-0 h-[clamp(52px,10.5vh,88px)] rounded-lg border text-[clamp(20px,3.6vh,32px)] font-medium flex items-center justify-center";
+// Light keys on the light sheet (the same look as the Queue tab, 2026-10-29) — /nail itself runs in dark mode.
+const NUM_KEY = `w-[clamp(84px,9vw,124px)] h-[clamp(52px,9.5vh,84px)] rounded-lg border ${LIGHT} text-[clamp(24px,4vh,36px)] font-semibold`;
 
 const formatPhone = (d: string): string => {
   if (d.length <= 3) return `(${d}`;
@@ -58,7 +59,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   clientEnteringPhone?: boolean;
   onClose: () => void;
   /** Checked in: the message for the notice bar. */
-  onDone: (message: string) => void;
+  onDone: (message: string, result: CheckInResult) => void;
   /** Browser-connected thermal printer; native bridge remains the fallback. */
   onPrintTicket?: (result: CheckInResult) => Promise<void>;
 }) {
@@ -66,6 +67,9 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
   const [shift, setShift] = useState(true);
+  // Quick Check-in (owner, 2026-10-29): a client who won't give a phone number, checked in by name only (quickName.ts).
+  const [quick, setQuick] = useState(false);
+  const [nameError, setNameError] = useState("");
   // A digit that can't start a real US number is refused with a shake — the digits already typed stay put.
   const { shakeClass, shake: rejectDigit, onShakeEnd } = useShake();
   const [busy, setBusy] = useState(false);
@@ -73,7 +77,6 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   const [result, setResult] = useState<CheckInResult | null>(null);
   const ran = useRef("");
   const quickCodes = useQuickAreaCodes(storeId);
-  const offline = typeof navigator !== "undefined" && !navigator.onLine;
 
   // Fire the check-in ticket to the printer through the native bridge — doesn't block or delay
   // the "Checked in" screen either way, but a genuine failure still gets surfaced (same
@@ -84,7 +87,12 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
   // "CI:{checkinToken}" for a true walk-in (no appointment exists yet — see /api/qr/lookup on the
   // server for how each resolves, and how that resolution moves forward once a ticket is created).
   const printCheckinTicket = (r: CheckInResult) => {
-    const qrValue = r.todayAppointment ? `BK:${r.todayAppointment.id}` : r.checkin ? `CI:${r.checkin.token}` : null;
+    // The salon chose no check-in slips (front desk setup → Printing).
+    if (printSettings().checkinSlip === "none") return;
+    // A check-in saved on this tablet offline has no server code yet: its slip carries the ticket number (TN:),
+    // which the POS scans as a ticket-number lookup.
+    const qrValue = r.todayAppointment ? `BK:${r.todayAppointment.id}` : r.checkin?.token ? `CI:${r.checkin.token}`
+      : r.checkin?.ticketNumber ? `TN:${r.checkin.ticketNumber}` : null;
     const ticketNumber = r.todayAppointment?.ticketNumber ?? r.checkin?.ticketNumber ?? null;
     if (!qrValue || ticketNumber == null) {
       console.warn("[check-in ticket print] skipped: check-in response has no QR value or ticket number", {
@@ -116,38 +124,91 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
       ticket: {
         clientName: r.client.name,
         ticketNumber,
-        date: new Date().toISOString(),
+        date: salonNowForPrint(),
         // A booked client's service goes on the slip for the tech (a walk-in hasn't chosen one yet).
         services: r.todayAppointment?.serviceName ? [r.todayAppointment.serviceName] : [],
       },
     }));
   };
 
+  // No server: the walk-in is saved on this device and queued; it shows in the waiting list from there.
+  const checkInOnDevice = async (clientId: number, key: string): Promise<CheckInResult> => {
+    const who = await clientOnDevice(clientId);
+    if (!who) throw new Error("This client isn't on this tablet yet, and the server can't be reached. Add them as a new client to check them in.");
+    const { already, walkin } = await nailOffline.checkIn(storeId, { id: clientId, name: who.name, phone: who.phone }, key);
+    return { status: already ? "already" : "walkin", client: { id: clientId, name: who.name, loyaltyPoints: 0 }, todayAppointment: null,
+      // The check-in saved on this tablet, with the number it was given here.
+      checkin: { id: walkin.id, token: "", ticketNumber: walkin.ticketNumber ?? 0 } };
+  };
+
   const checkIn = async (clientId: number) => {
-    const res = await fetch(barberUrl("/api/barber/checkin"), {
-      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId }),
-    });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
-    const r = data as CheckInResult;
+    const key = newIdempotencyKey("walkin.create");
+    let r: CheckInResult;
+    if (syncEngine.isOffline() || isLocalId(clientId)) {
+      r = await checkInOnDevice(clientId, key);
+    } else {
+      let res: Response;
+      try {
+        res = await fetch("/api/barber/checkin", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": key }, body: JSON.stringify({ clientId }),
+        });
+      } catch {
+        syncEngine.noteUnreachable();
+        res = null as unknown as Response;
+      }
+      if (!res) r = await checkInOnDevice(clientId, key);
+      else {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
+        r = data as CheckInResult;
+      }
+    }
+    finish(r);
+  };
+
+  // Quick Check-in (owner, 2026-10-30): a walk-in by name only is NOT made into a client record — the name stays on
+  // the check-in (POST /api/barber/checkin-walkin). With no server it is saved on this tablet the same way (client id 0).
+  const checkInByName = async (who: string) => {
+    const key = newIdempotencyKey("walkin.create");
+    const onDevice = async (): Promise<CheckInResult> => {
+      const { walkin } = await nailOffline.checkIn(storeId, { id: 0, name: who, phone: null }, key);
+      return { status: "walkin", client: { id: 0, name: who, loyaltyPoints: 0 }, todayAppointment: null,
+        checkin: { id: walkin.id, token: "", ticketNumber: walkin.ticketNumber ?? 0 } };
+    };
+    let r: CheckInResult;
+    if (syncEngine.isOffline()) r = await onDevice();
+    else {
+      let res: Response | null = null;
+      try {
+        res = await fetch("/api/barber/checkin-walkin", {
+          method: "POST", credentials: "include", headers: { "Content-Type": "application/json", "X-Idempotency-Key": key }, body: JSON.stringify({ name: who }),
+        });
+      } catch { syncEngine.noteUnreachable(); }
+      if (!res) r = await onDevice();
+      else {
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.status) throw new Error(data?.message || "Could not check the client in");
+        r = { ...data, client: { ...data.client, id: 0 } } as CheckInResult;
+      }
+    }
+    finish(r);
+  };
+
+  const finish = (r: CheckInResult) => {
     setResult(r);
     setStep("done");
+    // A check-in saved offline gets its slip too: its code is the ticket number (TN:), see printCheckinTicket.
     if (r.status !== "already") printCheckinTicket(r);
     const first = (r.client.name || "Client").trim().split(/\s+/)[0];
     const line = r.status === "already" ? `${first} is already checked in`
-      : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${r.todayAppointment.staffName}` : ""}`
+      : r.status === "appointment" ? `${first} checked in${r.todayAppointment?.staffName ? ` · ${techLabel(r.todayAppointment.staffName)}` : ""}`
       : `${first} checked in · waiting for a barber`;
-    setTimeout(() => onDone(line), 1400);
+    setTimeout(() => onDone(line, r), 1400);
   };
 
   const run = async (digits: string) => {
     if (ran.current === digits) return;
     ran.current = digits;
-    if (offline) {
-      setMessage("You're offline — check-in needs a connection. Reconnect and try again.");
-      setStep("error");
-      return;
-    }
     setStep("finding");
     try {
       const id = await findClientId(storeId, digits);
@@ -183,9 +244,15 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
 
   const saveNew = useCallback(async () => {
     if (!name.trim() || busy) return;
+    if (quick) {
+      // Not a real name: it is cleared and has to be typed again.
+      const problem = quickNameProblem(name);
+      if (problem) { setName(""); setShift(true); setNameError(problem); return; }
+    }
     setBusy(true);
     try {
-      await checkIn(await createClient(storeId, name, phone));
+      if (quick) await checkInByName(name.trim().replace(/\s+/g, " "));
+      else await checkIn(await createClient(storeId, name, phone));
     } catch (e: any) {
       setMessage(e?.message === "save failed" ? "We could not save this client. Please try again." : (e?.message || "Could not check the client in"));
       setStep("error");
@@ -193,9 +260,10 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, phone, busy, storeId]);
+  }, [name, phone, busy, storeId, quick]);
 
   const key = (k: string) => {
+    setNameError("");
     if (k === "SHIFT") { setShift((v) => !v); return; }
     if (k === "BACKSPACE") { setName((v) => v.slice(0, -1)); return; }
     if (k === "SPACE") { setName((v) => v + " "); setShift(true); return; }
@@ -211,21 +279,20 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
 
   const back = () => {
     if (step === "phone") { onClose(); return; }
-    ran.current = ""; setStep("phone"); setMessage(""); setName(""); setShift(true);
+    ran.current = ""; setStep("phone"); setMessage(""); setName(""); setShift(true); setQuick(false); setNameError("");
   };
 
   return (
-    <div className="dark cx-cal fixed inset-0 z-[320] flex flex-col bg-background text-foreground" data-testid="barber-checkin-sheet">
+    <div className="cx-cal fixed inset-0 z-[320] flex flex-col text-[#0f1f3d]" data-testid="barber-checkin-sheet"
+      // The same background as the Queue tab (owner, 2026-10-29).
+      style={{ background: "linear-gradient(180deg, #f7fafd 0%, #eef3f9 100%)" }}>
       <div className="flex items-center justify-between gap-2 px-4 py-3 border-b">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="h-12 w-12" onClick={back} data-testid="barber-checkin-back" aria-label="Back">
             <ArrowLeft className="w-6 h-6" />
           </Button>
-          <span className="text-lg font-semibold">{step === "name" ? "Enter Client Name" : "Check-In"}</span>
+          <span className="text-lg font-semibold">{step === "name" ? (quick ? "Quick Check-in" : "Enter Client Name") : "Check-In"}</span>
         </div>
-        {offline && step !== "name" && (
-          <span className="text-xs text-amber-500 font-medium px-2 py-0.5 rounded-full border border-amber-500/40">Offline — check-in needs a connection</span>
-        )}
         <Button variant="ghost" size="icon" className="h-12 w-12" onClick={onClose} data-testid="barber-checkin-close" aria-label="Close">
           <X className="w-6 h-6" />
         </Button>
@@ -281,6 +348,11 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
               </div>
               <QuickAreaCodes codes={quickCodes} onPick={appendDigits} variant="page" />
             </div>
+            {/* For a client who won't give a phone number: checked in by name (a real one — quickName.ts). */}
+            <Button variant="outline" className={cn("mt-[2vh] h-[clamp(48px,7vh,60px)] px-8 text-base border", LIGHT)} data-testid="barber-quick-checkin"
+              onClick={() => { setQuick(true); setName(""); setShift(true); setNameError(""); setStep("name"); }}>
+              Quick Check-in (no phone number)
+            </Button>
           </>
         )}
 
@@ -288,42 +360,46 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
 
         {step === "name" && (
           <>
-            <h1 className="text-[clamp(26px,4.5vh,38px)] font-bold mb-1" data-testid="barber-name-entry">Add Client Name</h1>
-            <p className="text-sm text-muted-foreground mb-[1.4vh]">Creating new client for {formatPhone(phone)}</p>
+            <h1 className="text-[clamp(26px,4.5vh,38px)] font-bold mb-1" data-testid="barber-name-entry">{quick ? "Client's Name" : "Add Client Name"}</h1>
+            <p className="text-sm text-muted-foreground mb-[1.4vh]">{quick ? "No phone number. Enter the client's real name." : `Creating new client for ${formatPhone(phone)}`}</p>
             <div
               className={cn(
-                "w-full max-w-[760px] h-[clamp(54px,8vh,72px)] mb-[1.6vh] px-5 border rounded-xl bg-card flex items-center justify-center text-[clamp(22px,3.5vh,32px)] font-bold tracking-wide",
-                name ? "text-foreground border-primary/60" : "text-muted-foreground/40 border-border",
+                "w-full max-w-[760px] h-[clamp(54px,8vh,72px)] mb-[1.6vh] px-5 border rounded-xl bg-[#ffffff] flex items-center justify-center text-[clamp(22px,3.5vh,32px)] font-bold tracking-wide",
+                name ? "text-[#0f1f3d] border-[#1f6fe0]" : "text-[#9aa8bb] border-[#d5deea]",
               )}
               role="textbox" aria-label="Client name" aria-readonly="true" aria-live="polite"
               data-testid="barber-name-display"
             >
               {name || "Client name"}
             </div>
+            {nameError && <p className="-mt-[0.8vh] mb-[1.2vh] text-[15px] font-semibold text-destructive" role="alert" data-testid="barber-quick-name-error">{nameError}</p>}
             <div className="w-full max-w-[1100px] space-y-[1.2vh]">
               {KEY_ROWS.map((row, ri) => (
                 <div key={ri} className="flex justify-center gap-[0.6vw]" style={ri === 1 ? { padding: "0 5%" } : undefined}>
                   {ri === 2 && (
-                    <button onClick={() => key("SHIFT")} className={cn(KB_WIDE, shift ? "bg-primary text-primary-foreground" : "bg-card hover-elevate active-elevate-2")} data-testid="kb-shift" aria-label="Shift">&#8593;</button>
+                    <button onClick={() => key("SHIFT")} className={cn(KB_WIDE, shift ? "bg-[#1f6fe0] text-white border-[#1f6fe0]" : LIGHT)} data-testid="kb-shift" aria-label="Shift">&#8593;</button>
                   )}
                   {row.map((k) => (
                     <button key={k} onClick={() => key(k)} className={KB_KEY} data-testid={`kb-${k.toLowerCase()}`}>{shift ? k : k.toLowerCase()}</button>
                   ))}
                   {ri === 2 && (
-                    <button onClick={() => key("BACKSPACE")} className={cn(KB_WIDE, "bg-card hover-elevate active-elevate-2")} data-testid="kb-backspace" aria-label="Backspace"><Delete className="w-7 h-7" /></button>
+                    <button onClick={() => key("BACKSPACE")} className={cn(KB_WIDE, LIGHT)} data-testid="kb-backspace" aria-label="Backspace"><Delete className="w-7 h-7" /></button>
                   )}
                 </div>
               ))}
               <div className="flex justify-center gap-[0.6vw]">
                 <button onClick={() => key("@")} className={cn(KB_KEY, "flex-[1.2]")} data-testid="kb-at">@</button>
                 <button onClick={() => key("SPACE")} className={cn(KB_KEY, "flex-[6] text-[clamp(16px,2.6vh,24px)]")} data-testid="kb-space">Spacebar</button>
-                <button onClick={() => key("RETURN")} className={cn(KB_KEY, "flex-[2] text-[clamp(16px,2.6vh,24px)]", name.trim() ? "bg-green-500 text-white hover:bg-green-600" : "")} data-testid="kb-return">Return &#8629;</button>
+                <button onClick={() => key("RETURN")} className={cn(KB_KEY, "flex-[2] text-[clamp(16px,2.6vh,24px)]", name.trim() ? "bg-green-500 text-white hover:bg-green-600" : "")} data-testid="kb-return">{quick ? "Next" : <>Return &#8629;</>}</button>
               </div>
             </div>
-            <Button className="mt-[2vh] px-16 h-[clamp(52px,9vh,76px)] text-xl bg-green-500 text-white" size="lg" onClick={() => void saveNew()}
-              disabled={!name.trim() || busy} data-testid="barber-checkin-save">
-              {busy ? "Saving..." : "Done"}
-            </Button>
+            {/* Quick Check-in goes on with the keyboard's Next key (owner, 2026-10-29): no separate Done button. */}
+            {!quick && (
+              <Button className="mt-[2vh] px-16 h-[clamp(52px,9vh,76px)] text-xl bg-green-500 text-white" size="lg" onClick={() => void saveNew()}
+                disabled={!name.trim() || busy} data-testid="barber-checkin-save">
+                {busy ? "Saving..." : "Done"}
+              </Button>
+            )}
           </>
         )}
 
@@ -333,7 +409,7 @@ export function CheckInLookup({ storeId, clientEnteringPhone = false, onClose, o
             <h1 className="text-3xl font-bold">{result.status === "already" ? "Already checked in" : "Checked in"}</h1>
             <p className="text-lg text-muted-foreground">
               {result.client.name}
-              {result.status === "appointment" && result.todayAppointment ? ` · ${result.todayAppointment.serviceName ?? "Appointment"}${result.todayAppointment.staffName ? ` with ${result.todayAppointment.staffName}` : ""}` : ""}
+              {result.status === "appointment" && result.todayAppointment ? ` · ${result.todayAppointment.serviceName ?? "Appointment"}${result.todayAppointment.staffName ? ` with ${techLabel(result.todayAppointment.staffName)}` : ""}` : ""}
               {result.status === "walkin" ? " · waiting for a barber" : ""}
             </p>
           </div>

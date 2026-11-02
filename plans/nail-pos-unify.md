@@ -15,8 +15,8 @@ to see the same ticket live. Offline, the hub must do the same job.
 
 ## Owner decisions (2026-10-28)
 
-1. **Everything is managed on the server**, so every station sees a change at once. Offline, the hub (main POS
-   tablet) has to work the same way.
+1. **Everything is managed on the server**, so every station sees a change at once. Offline, the elected hub host
+   (the main POS by default, with another active POS taking over when it stops checking in) has to work the same way.
 2. **A service the ticket's technician doesn't do** still becomes its own ticket for the next technician in turn,
    but that ticket's number is **temporary**: the client pays once, when every service is done. Opening checkout on
    ANY ticket of the visit combines all of the visit's tickets into one checkout.
@@ -37,7 +37,7 @@ to see the same ticket live. Offline, the hub must do the same job.
    TURN); each change is a line operation (add / remove one line, by id), never a whole-ticket overwrite; SAVE
    hands it to TURN. Every station sees it live.
 4. **Retail-only sale with no client.**
-5. **Hub offline parity**: other stations send the same line operations over the hub to the main POS tablet, which
+5. **Hub offline parity**: other stations send the same line operations over the hub to the elected host, which
    applies them to its device copy and sends the board back to every station.
 
 ## Progress

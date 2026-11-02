@@ -4,6 +4,7 @@ import { api } from "@shared/apiPaths";
 import type { Store } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 import { offlineSessionBootstrap } from "@/lib/offline-session-bootstrap";
+import { setSalonTimeZone } from "@/lib/salonClock";
 
 export function useStores() {
   const { user } = useAuth();
@@ -60,5 +61,8 @@ export const StoreContext = createContext<StoreContextType>({
 });
 
 export function useSelectedStore() {
-  return useContext(StoreContext);
+  const ctx = useContext(StoreContext);
+  // Printed slips show the salon's time, not the tablet's (lib/salonClock.ts).
+  setSalonTimeZone(ctx.selectedStore?.timezone);
+  return ctx;
 }

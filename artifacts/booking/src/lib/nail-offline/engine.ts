@@ -72,9 +72,21 @@ export interface PatchRecord {
   paid?: CashPayment;
   createdAt: string;
 }
-export type LocalRecord = ClientRecord | WalkinRecord | TicketRecord | PatchRecord;
+/**
+ * /barber: a barber took a waiting client (a walk-in, no ticket yet) while the server could not be reached
+ * (plans/barber-offline.md, step 2). `markerId` is the walk-in: the server's check-in id, or a walk-in made on
+ * this device (a local id) that must reach the server first.
+ */
+export interface TakeRecord {
+  kind: "take"; id: number; storeId: number; markerId: number; clientName: string;
+  staff: { id: number; name: string; color: string | null };
+  createdAt: string;
+  /** When the server confirmed it. From then on the server's board shows who has the client. */
+  syncedAt?: string;
+}
+export type LocalRecord = ClientRecord | WalkinRecord | TicketRecord | PatchRecord | TakeRecord;
 
-export type OpType = "client.create" | "walkin.create" | "ticket.create" | "ticket.start"
+export type OpType = "client.create" | "walkin.create" | "walkin.assign" | "ticket.create" | "ticket.start"
   | "ticket.update" | "ticket.reassign" | "ticket.cancel" | "ticket.checkout";
 export interface Op {
   id: string; seq: number; storeId: number; type: OpType;
@@ -166,7 +178,7 @@ export class NailOffline {
    * Ticket numbers given while the internet is down are printed on the client's slip and receipt, so each one
    * must be the ticket's number for good: unique across the salon's tablets, and never one the server gives
    * out meanwhile (online bookings keep taking numbers during an outage).
-   *  - One tablet gives them out: the main POS (the hub). Other POS stations ask it over the salon's Wi-Fi
+   *  - One tablet gives them out: the elected hub host. Other POS stations ask it over the salon's Wi-Fi
    *    (`setTicketNumberSource`); with no answer a ticket gets no number until it is sent.
    *  - They start OFFLINE_NUMBER_GAP above the last number the server was seen to use, leaving room for that
    *    many online bookings during the outage; the server keeps the number it is sent (claimTicketNumber).
@@ -174,10 +186,10 @@ export class NailOffline {
   static readonly OFFLINE_NUMBER_GAP = 50;
   private numberSource: ((storeId: number) => Promise<number | null>) | null = null;
   private numberLock: Promise<unknown> = Promise.resolve();
-  /** A POS station that is not the main one: its offline numbers come from the main POS. Null: this tablet gives them out. */
+  /** A POS station that is not the hub host: its offline numbers come from the host. Null: this tablet gives them out. */
   setTicketNumberSource(source: ((storeId: number) => Promise<number | null>) | null): void { this.numberSource = source; }
   /**
-   * The main POS: the next offline ticket number, for this tablet or one asking over the hub. Null when the
+   * The hub host: the next offline ticket number, for this tablet or one asking over the hub. Null when the
    * salon's numbering has never been seen here. One at a time, saved at once, so two requests never share one.
    */
   issueTicketNumber(storeId: number): Promise<number | null> {
@@ -216,10 +228,22 @@ export class NailOffline {
   }
 
   // ── What staff do offline ──
+  /**
+   * A record's id is this tablet's own (owner, 2026-11-02): ids used to be a plain counter (-1, -2, …) on every tablet,
+   * so the hub host and a station both had a "-3" — a station's cash sale forwarded to the host paid the HOST's -3 and
+   * the ticket really paid stayed UNPAID, and a station's own -3 was hidden behind the host's. Each tablet now draws
+   * its ids from its own range: -(device × 1,000,000 + counter), the device number (1–2,000) picked once at random.
+   */
   private async next(writes: Write[]): Promise<{ id: number; seq: number }> {
     const n = ((await this.kv.get<number>("meta", "counter")) ?? 0) + 1;
     writes.push({ store: "meta", key: "counter", value: n });
-    return { id: -n, seq: n };
+    let device = await this.kv.get<number>("meta", "device");
+    // At most 2,000 tablets' ranges: every id stays within a 32-bit integer (the server's id columns).
+    if (!Number.isSafeInteger(device) || !device || device < 1 || device > 2000) {
+      device = 1 + Math.floor(Math.random() * 2000);
+      writes.push({ store: "meta", key: "device", value: device });
+    }
+    return { id: -(device * 1_000_000 + (n % 1_000_000)), seq: n };
   }
   /** `key`: when the same request was already tried online and got no answer, its key is reused here, so
    *  the server still sees one request however it finally arrives. */
@@ -314,6 +338,29 @@ export class NailOffline {
     return next;
   }
 
+  /**
+   * /barber: the signed-in barber takes a waiting client. One barber per client: a client already taken on this
+   * device can't be taken again here.
+   */
+  async takeWalkin(storeId: number, marker: { id: number; clientName: string }, staff: TakeRecord["staff"], key?: string): Promise<TakeRecord> {
+    const recs = await this.records(storeId);
+    if (isLocalId(marker.id) && !recs.some((r) => r.kind === "walkin" && r.id === marker.id && r.status === "waiting")) {
+      throw new Error("This client is no longer waiting on this tablet");
+    }
+    const held = recs.find((r): r is TakeRecord => r.kind === "take" && r.markerId === marker.id);
+    if (held) {
+      if (held.staff.id === staff.id) return held;
+      throw new Error(`This client was already taken by ${held.staff.name}`);
+    }
+    const writes: Write[] = [];
+    const { id, seq } = await this.next(writes);
+    const rec: TakeRecord = { kind: "take", id, storeId, markerId: marker.id, clientName: marker.clientName, staff, createdAt: this.now().toISOString() };
+    const op = this.op(seq, storeId, "walkin.assign", id, key);
+    writes.push({ store: "records", key: recKey(id), value: rec }, { store: "ops", key: op.id, value: op });
+    await this.commit(writes);
+    return rec;
+  }
+
   /** Take back something made on this device that the server has not been told about yet. */
   async cancel(recordId: number): Promise<void> {
     const rec = await this.kv.get<LocalRecord>("records", recKey(recordId));
@@ -323,6 +370,12 @@ export class NailOffline {
     if (mine.some((o) => o.state === "done" && o.type !== "ticket.start")) throw new Error("This has already been sent — cancel it once the connection is back");
     if ((rec.kind === "ticket" || rec.kind === "patch") && rec.paid) throw new Error("This ticket has been paid in cash and cannot be cancelled here");
     const writes: Write[] = [{ store: "records", key: recKey(recordId), value: undefined }, ...mine.map((o) => ({ store: "ops" as const, key: o.id, value: undefined }))];
+    // A walk-in taken back takes its "taken by" with it (both only on this device).
+    if (rec.kind === "walkin") {
+      for (const t of (await this.records(rec.storeId)).filter((r): r is TakeRecord => r.kind === "take" && r.markerId === recordId)) {
+        writes.push({ store: "records", key: recKey(t.id), value: undefined }, ...ops.filter((o) => o.recordId === t.id).map((o) => ({ store: "ops" as const, key: o.id, value: undefined })));
+      }
+    }
     // A cancelled ticket gives its walk-in back to the waiting list.
     if (rec.kind === "ticket" && rec.walkinId != null && isLocalId(rec.walkinId)) {
       const w = await this.kv.get<WalkinRecord>("records", recKey(rec.walkinId));
@@ -412,10 +465,23 @@ export class NailOffline {
     ]);
   }
 
+  /** Can this tablet write to and read back from its offline database right now? (The health report.) */
+  async selfTest(): Promise<{ ok: boolean; ms: number; error?: string }> {
+    const started = Date.now();
+    try {
+      const stamp = `${started}-${Math.random().toString(36).slice(2, 8)}`;
+      await this.kv.batch([{ store: "meta", key: "healthcheck", value: stamp }]);
+      const back = await this.kv.get<string>("meta", "healthcheck");
+      return back === stamp ? { ok: true, ms: Date.now() - started } : { ok: false, ms: Date.now() - started, error: "Read back a different value" };
+    } catch (err) {
+      return { ok: false, ms: Date.now() - started, error: String((err as Error)?.message ?? err).slice(0, 200) };
+    }
+  }
+
   // ── Looking at what is on the device ──
   async records(storeId: number): Promise<LocalRecord[]> {
     return (await this.kv.getAll<LocalRecord>("records")).filter((r) => r.storeId === storeId).sort((a, b) => b.id - a.id);
-  }  /** This tablet's own records — never forwarded to the main POS (remoteEngine.ts), e.g. for this tablet's turn events. */
+  }  /** This tablet's own records — never forwarded to the hub host (remoteEngine.ts), e.g. for this tablet's turn events. */
   localRecords(storeId: number): Promise<LocalRecord[]> { return NailOffline.prototype.records.call(this, storeId); }
 
   async ops(storeId?: number): Promise<Op[]> {
@@ -459,8 +525,9 @@ export class NailOffline {
     for (let grew = true; grew;) {
       grew = false;
       for (const r of recs) {
-        if (gone.has(r.id) || r.kind === "patch" || r.realId) continue;
-        const dependsOn = r.kind === "walkin" || r.kind === "ticket" ? [r.clientId] : [];
+        if (gone.has(r.id) || r.kind === "patch" || (r.kind === "take" ? r.syncedAt : r.realId)) continue;
+        // A barber's take of a walk-in that won't exist goes with it.
+        const dependsOn = r.kind === "walkin" || r.kind === "ticket" ? [r.clientId] : r.kind === "take" ? [r.markerId] : [];
         if (dependsOn.some((d) => gone.has(d))) { gone.add(r.id); grew = true; }
       }
     }
@@ -513,7 +580,7 @@ export class NailOffline {
     const realOf = async (id: number): Promise<number | undefined> => {
       if (!isLocalId(id)) return id;
       const r = await this.kv.get<LocalRecord>("records", recKey(id));
-      return r && r.kind !== "patch" ? r.realId ?? undefined : undefined;
+      return r && r.kind !== "patch" && r.kind !== "take" ? r.realId ?? undefined : undefined;
     };
 
     for (const queued of await this.ops(storeId)) {
@@ -548,6 +615,19 @@ export class NailOffline {
           // "already" / "appointment": the server has them checked in another way — just as good.
           if (reply.status < 300) patch = { realId: reply.body?.checkin?.id ?? null, synced: true, syncedAt: this.now().toISOString(),
             ticketNumber: reply.body?.checkin?.ticketNumber ?? rec.ticketNumber ?? null } as Partial<WalkinRecord>;
+        } else if (op.type === "walkin.assign" && rec.kind === "take") {
+          // A walk-in made on this device goes first; one the server answered "already checked in another way"
+          // has no check-in of its own to give to the barber.
+          let markerId: number | null = rec.markerId;
+          if (isLocalId(rec.markerId)) {
+            const w = await this.kv.get<WalkinRecord>("records", recKey(rec.markerId));
+            if (w && !w.synced) continue;
+            markerId = w?.realId ?? null;
+          }
+          reply = markerId == null
+            ? { status: 409, body: { message: "The server already had this client checked in another way: give them to the barber on the front desk" } }
+            : await transport.send("POST", `/api/nail/markers/${markerId}/assign`, { staffId: rec.staff.id }, op.idempotencyKey);
+          if (reply.status < 300) patch = { syncedAt: this.now().toISOString() } as Partial<TakeRecord>;
         } else if (op.type === "ticket.create" && rec.kind === "ticket") {
           // 0 = a walk-in by name only (no client record); it goes with its check-in.
           const clientId = rec.clientId === 0 ? 0 : await realOf(rec.clientId);
@@ -653,6 +733,8 @@ export class NailOffline {
     const recs = await this.kv.getAll<LocalRecord>("records");
     // A client record is kept while any walk-in or ticket on this device still points at it.
     const needed = new Set(recs.filter((r): r is WalkinRecord | TicketRecord => (r.kind === "walkin" || r.kind === "ticket") && open.has(r.id)).map((r) => r.clientId));
+    // A walk-in is kept while a "taken by" still to be sent points at it (it needs the walk-in's server id).
+    for (const r of recs) if (r.kind === "take" && open.has(r.id)) needed.add(r.markerId);
     const writes: Write[] = [];
     for (const o of ops) if (o.state === "done" && Date.parse(o.doneAt ?? o.createdAt) < cutoff && !open.has(o.recordId)) writes.push({ store: "ops", key: o.id, value: undefined });
     const dropping = new Set(writes.map((w) => w.key));

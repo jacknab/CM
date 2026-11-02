@@ -16,11 +16,13 @@ const STATUS_VIEW: Record<string, { label: string; icon: typeof XCircle; color: 
   "no-show":  { label: "No-Show", icon: UserX, color: "#c17d1f", bg: "#fbf1de" },
   completed:  { label: "Paid", icon: CheckCircle2, color: "#0c8a55", bg: "#e7f6ee" },
   pending:    { label: "Not Checked In", icon: Clock, color: "#5b6b85", bg: "#eef2f8" },
+  // A kiosk check-in that never got a ticket and is no longer waiting.
+  checkin_expired: { label: "Check-in expired", icon: Clock, color: "#5b6b85", bg: "#eef2f8" },
 };
 
 /**
  * Read-only fallback for a ticket number that resolved to a real appointment but isn't on
- * today's live board (see NailHome.tsx's applyLookupResult) — a cancelled ticket, a no-show, or
+ * today's live board (see BarberHome.tsx's applyLookupResult) — a cancelled ticket, a no-show, or
  * a completed one with no receipt token to open instead. There's nothing "live" to open for any
  * of these, so this just shows what the record says rather than erroring as if it didn't exist.
  */

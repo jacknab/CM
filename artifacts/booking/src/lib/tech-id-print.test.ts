@@ -23,6 +23,16 @@ describe("Tech ID printing", () => {
     const message = JSON.parse(postMessage.mock.calls[0][0]);
     expect(message).toMatchObject({ type: "PRINT_TECH_ID", qrValue: "TECH:7", tech: { id: 7, name: "Ana" } });
     window.dispatchEvent(new CustomEvent("certxa_native_print_result", { detail: { requestId: message.requestId, ok: true } }));
-    await expect(pending).resolves.toBe(true);
+    await expect(pending).resolves.toEqual({ ok: true });
+  });
+
+  it("passes on why the app could not print", async () => {
+    const postMessage = vi.fn();
+    vi.stubGlobal("window", Object.assign(new EventTarget(), { CERTXA_TECH_ID_PRINT_BRIDGE: true, ReactNativeWebView: { postMessage } }));
+    const pending = printNativeTechId({ id: 7, name: "Ana" }, "M7-K3Q7XB");
+    const message = JSON.parse(postMessage.mock.calls[0][0]);
+    expect(message.qrValue).toBe("M7-K3Q7XB");
+    window.dispatchEvent(new CustomEvent("certxa_native_print_result", { detail: { requestId: message.requestId, ok: false, error: "Could not reach the printer at 192.168.0.50" } }));
+    await expect(pending).resolves.toEqual({ ok: false, error: "Could not reach the printer at 192.168.0.50" });
   });
 });

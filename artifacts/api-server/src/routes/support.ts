@@ -3459,7 +3459,7 @@ router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Requ
   if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });
   try {
     const q = (sql: string) => pool.query(sql, [storeId]).then((r) => r.rows).catch((e) => { console.error("[support/pos]", e?.message); return [] as any[]; });
-    const [[store], [settingsRow], stations, claims, drawers, sessions, tablets, screens, kiosks, printers, ownerApp, [trust]] = await Promise.all([
+    const [[store], [settingsRow], stations, claims, drawers, sessions, tablets, screens, kiosks, printers, ownerApp, [trust], appPrinters, health] = await Promise.all([
       q(`SELECT id, timezone, category, pos_enabled, sales_tax_rate, tax_services_taxable, tax_addons_taxable, tax_products_taxable,
                 tax_gift_cards_taxable, cash_discount_percent, kiosk_permitted, restrict_kiosk_network FROM locations WHERE id = $1`),
       q(`SELECT preferences FROM store_settings WHERE store_id = $1`),
@@ -3477,12 +3477,24 @@ router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Requ
            FROM print_agents WHERE store_id = $1 ORDER BY revoked_at NULLS FIRST, last_seen_at DESC NULLS LAST`),
       q(`SELECT platform, created_at, last_seen_at FROM owner_push_devices WHERE store_id = $1 ORDER BY last_seen_at DESC NULLS LAST LIMIT 10`),
       q(`SELECT trusted_ip, anchor_device_id, updated_at FROM store_network_trust WHERE store_id = $1`),
+      q(`SELECT connection, address, port, name, model, tablet_role, app_build, reported_ip, last_seen_at, last_print_at, last_print_ok, last_error
+           FROM app_receipt_printers WHERE store_id = $1 ORDER BY last_seen_at DESC`).catch(() => []),
+      // Offline-mode health each tablet last reported (routes/deviceHealth.ts), the past week.
+      q(`SELECT device_id, role, page, register_id, app_build, report, reported_at, received_at, ip FROM device_health
+           WHERE store_id = $1 AND received_at > now() - interval '7 days' ORDER BY received_at DESC`),
     ]);
     if (!store) return res.status(404).json({ error: "Account not found" });
     let prefs: any = {};
     try { prefs = typeof settingsRow?.preferences === "string" ? JSON.parse(settingsRow.preferences) : (settingsRow?.preferences ?? {}); } catch { prefs = {}; }
     const nailScreen = prefs.nailScreen ?? {};
     const stationName = new Map<number, string>(stations.map((r: any) => [Number(r.id), r.name]));
+    // A salon with no stations set up still has one front desk: station 0 (its tablet, its customer screen and the
+    // main station's cash drawer). Shown as a station so support sees what is linked to what (2026-11-02, store 38).
+    const oneDesk = !stations.some((r: any) => r.is_active !== false);
+    const ONE_DESK = "Main POS station";
+    if (oneDesk) stationName.set(0, ONE_DESK);
+    const deskDrawer = drawers.find((d: any) => d.is_active !== false && d.main_station);
+    const onDesk = (registerId: unknown) => registerId == null || Number(registerId) === 0;
     res.json({
       timezone: store.timezone || "UTC",
       settings: {
@@ -3505,7 +3517,17 @@ router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Requ
         localHub: prefs.localHub?.address ? { address: prefs.localHub.address, at: prefs.localHub.addressAt ?? null, confirmedAt: prefs.localHub.confirmedAt ?? prefs.localHub.addressAt ?? null } : null,
         trustedNetworkIp: trust?.trusted_ip ?? null, trustedNetworkAt: trust?.updated_at ?? null,
       },
-      stations: stations.map((r: any) => {
+      stations: [...(oneDesk ? [(() => {
+        const claim = claims.find((c: any) => onDesk(c.register_id));
+        const tablet = tablets.find((t: any) => onDesk(t.register_id) && /^\/(nail|barber|calendar|pos)/.test(String(t.page ?? "/nail")));
+        return {
+          id: 0, name: ONE_DESK, active: true, isDefault: true, oneDesk: true, activationCode: null,
+          drawerId: deskDrawer ? Number(deskDrawer.id) : null,
+          claimedAt: claim?.claimed_at ?? null, claimDeviceId: claim?.device_id ?? null,
+          tablet: tablet ? { deviceId: tablet.device_id, lastSeenAt: tablet.last_seen_at } : null,
+          screens: screens.filter((sc: any) => onDesk(sc.register_id)).map((sc: any) => sc.screen_id),
+        };
+      })()] : []), ...stations.map((r: any) => {
         const claim = claims.find((c: any) => Number(c.register_id) === Number(r.id));
         const tablet = tablets.find((t: any) => Number(t.register_id) === Number(r.id));
         return {
@@ -3515,14 +3537,20 @@ router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Requ
           tablet: tablet ? { deviceId: tablet.device_id, lastSeenAt: tablet.last_seen_at } : null,
           screens: screens.filter((s: any) => Number(s.register_id) === Number(r.id)).map((s: any) => s.screen_id),
         };
-      }),
+      })],
       drawers: drawers.map((d: any) => {
         const open = sessions.find((x: any) => Number(x.drawer_id) === Number(d.id) && !x.closed_at);
         const last = sessions.find((x: any) => Number(x.drawer_id) === Number(d.id) && x.closed_at);
+        const drawerStations = stations.filter((r: any) => Number(r.cash_drawer_id) === Number(d.id)).map((r: any) => r.name);
+        if (d.main_station) {
+          const defaultStation = stations.find((r: any) => r.is_active !== false && r.is_default && r.cash_drawer_id == null);
+          if (defaultStation) drawerStations.push(defaultStation.name);
+          else if (!stations.some((r: any) => r.is_active !== false)) drawerStations.push("Main POS station");
+        }
         return {
           id: Number(d.id), name: d.name, active: d.is_active !== false, startingCash: d.target_float != null ? Number(d.target_float) : null,
           mainStation: d.main_station ?? null,
-          stations: stations.filter((r: any) => Number(r.cash_drawer_id) === Number(d.id)).map((r: any) => r.name),
+          stations: drawerStations,
           openShift: open ? { openedAt: open.opened_at, openingBalance: open.opening_balance != null ? Number(open.opening_balance) : null } : null,
           lastClose: last ? { closedAt: last.closed_at, closingBalance: last.closing_balance != null ? Number(last.closing_balance) : null,
             mismatch: !!last.prior_closing_mismatch, variance: last.prior_closing_variance != null ? Number(last.prior_closing_variance) : null } : null,
@@ -3530,14 +3558,24 @@ router.get("/api/support/accounts/:id/pos", requireSupportAuth, async (req: Requ
       }),
       tablets: tablets.map((t: any) => ({
         deviceId: t.device_id, lastSeenAt: t.last_seen_at, ip: t.last_ip ?? null, userAgent: t.user_agent ?? null, page: t.page ?? null,
-        station: t.register_id != null ? (stationName.get(Number(t.register_id)) ?? `#${t.register_id}`) : null, appBuild: t.app_build ?? null,
+        station: t.register_id != null ? (stationName.get(Number(t.register_id)) ?? `#${t.register_id}`) : oneDesk ? ONE_DESK : null, appBuild: t.app_build ?? null,
         pending: Number(t.pending) || 0, attention: Number(t.attention) || 0, unsentCashCount: Number(t.cash_count) || 0, unsentCashAmount: Number(t.cash_amount) || 0,
       })),
       customerScreens: screens.map((s: any) => ({
-        screenId: s.screen_id, station: s.register_id ? (stationName.get(Number(s.register_id)) ?? `#${s.register_id}`) : null,
+        screenId: s.screen_id, station: s.register_id ? (stationName.get(Number(s.register_id)) ?? `#${s.register_id}`) : oneDesk ? ONE_DESK : null,
         pairedAt: s.paired_at, lastSeenAt: s.last_seen_at, ip: s.last_ip ?? null, userAgent: s.user_agent ?? null,
       })),
       kiosks: kiosks.map((k: any) => ({ id: Number(k.id), pairedAt: k.created_at, lastSeenAt: k.last_used_at, revokedAt: k.revoked_at, ip: k.last_ip ?? null, userAgent: k.user_agent ?? null })),
+      // Printers the Certxa app on the salon's tablets prints to (IP printers on the Wi-Fi, Bluetooth, USB).
+      deviceHealth: (health as any[]).map((h: any) => ({
+        deviceId: h.device_id, role: h.role ?? null, page: h.page ?? null, registerId: h.register_id ?? null, appBuild: h.app_build ?? null,
+        reportedAt: h.reported_at, receivedAt: h.received_at, ip: h.ip ?? null, report: h.report ?? {},
+      })),
+      appPrinters: (appPrinters as any[]).map((p: any) => ({
+        connection: p.connection, address: p.address, port: p.port ?? null, name: p.name ?? null, model: p.model ?? null,
+        tabletRole: p.tablet_role ?? null, appBuild: p.app_build ?? null, lastSeenAt: p.last_seen_at,
+        lastPrintAt: p.last_print_at ?? null, lastPrintOk: p.last_print_ok ?? null, lastError: p.last_error ?? null,
+      })),
       printers: printers.map((p: any) => ({
         id: Number(p.id), machine: p.machine_name, printer: p.printer_name, status: p.printer_status, version: p.agent_version, ip: p.paired_ip ?? null,
         lastSeenAt: p.last_seen_at, revokedAt: p.revoked_at, isDefault: !!p.is_default, pairedAt: p.created_at,

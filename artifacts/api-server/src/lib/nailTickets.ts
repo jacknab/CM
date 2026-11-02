@@ -18,6 +18,7 @@ import { atomicCreateBooking, occupiedMinutes } from "../bookingEngine";
 import { autoAssignResource } from "../services/resource-assignment";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { withTurnLock } from "./turnLock";
+import { ticketServicePriceSQL } from "./pricingLevels";
 import { getLastDayCloseAt } from "./dayCloseBoundary";
 import * as nailConfig from "./nailConfig";
 import { getBufferMinutes } from "./appointmentBuffer";
@@ -1729,7 +1730,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
             -- A ticket made at the kiosk with no client record linked still has the name/number
             -- the client typed on their check-in — show that rather than "Walk-in".
             k.client_name AS checkin_name, k.phone AS checkin_phone,
-            a.service_id, s.name AS service_name, COALESCE(s.price, 0) AS service_price,
+            a.service_id, s.name AS service_name, COALESCE(${ticketServicePriceSQL()}, 0) AS service_price,
             st.name AS staff_name, st.color AS staff_color,
             COALESCE(ad.items, '[]'::json) AS addons,
             ns.length_name_snapshot, ns.shape_name_snapshot, ns.art_application_name_snapshot, ns.art_effect_name_snapshot,
@@ -2079,7 +2080,15 @@ export async function assignMarkerToBarber(args: { storeId: number; markerId: nu
       WHERE id = $1 AND store_id = $2 AND appointment_id IS NULL AND status = 'waiting'`,
     [args.markerId, args.storeId, member.id, member.name],
   );
-  if (taken.rowCount === 0) return fail(409, "This client was already taken or is no longer waiting.");
+  if (taken.rowCount === 0) {
+    // Already with this same barber (a resend after a lost answer, or the same take from another tablet): done.
+    const mine = await pool.query(
+      `SELECT 1 FROM kiosk_checkins WHERE id = $1 AND store_id = $2 AND staff_id = $3 AND status = 'called'`,
+      [args.markerId, args.storeId, member.id],
+    );
+    if (mine.rowCount) return { ok: true, data: { staffName: member.name } };
+    return fail(409, "This client was already taken or is no longer waiting.");
+  }
   return { ok: true, data: { staffName: member.name } };
 }
 

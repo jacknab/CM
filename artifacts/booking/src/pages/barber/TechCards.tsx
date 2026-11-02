@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
+import { gridZoomRef } from "./gridZoom";
+import { useNailText, type NailTextKey } from "./i18n";
 import { Clock } from "lucide-react";
 import { DEFAULT_SERVICE_MIN, estimateWait, formatWait, type WaitTech } from "@shared/waitEstimate";
 import type { BoardMarker, BoardTicket, SalonGlance, TechDayStats, TurnTech } from "./barberApi";
 import { Glance, type QueueView } from "./QueueTab";
+import { techLabel } from "./techName";
 
-type Status = "in-service" | "available" | "break" | "off";
+type Status = "in-service" | "assigned" | "available" | "break" | "off";
 
 
-const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" });
 
 /**
  * What the front desk needs to know about each technician, right now.
@@ -18,7 +22,7 @@ const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "num
  * ("started") ticket that showed up as a stuck, un-tappable "IN CHAIR" card with a running timer
  * and no assigned ticket to open — the tech had a waiting client, not one in the chair.
  */
-function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: boolean): Status {
+function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: boolean, holding: boolean): Status {
   if (t.clockedIn === false && !assumedIn) return "off";
   // A real started ticket wins over a pause/break flag — pausing a tech from the Calendar's Turn
   // System (e.g. taking them out of the walk-in rotation) doesn't mean they've stopped serving
@@ -27,10 +31,12 @@ function statusOf(t: TurnTech, current: BoardTicket | undefined, assumedIn: bool
   // clock them out mid-service.
   if (current) return "in-service";
   if (t.paused || t.currentStatus === "on_break") return "break";
+  // A client has been given to them and is waiting for START: not free, but not in the chair either.
+  if (holding) return "assigned";
   return "available";
 }
 
-const TIMER_LABEL: Record<Exclude<Status, "off">, string> = { available: "FREE", "in-service": "IN CHAIR", break: "ON BREAK" };
+const TIMER_LABEL: Record<Exclude<Status, "off">, NailTextKey> = { available: "free", assigned: "clientWaiting", "in-service": "inChair", break: "onBreak" };
 
 /**
  * HH:MM:SS since a moment the SERVER recorded (so it is the same on every POS station and never restarts when a screen is
@@ -51,19 +57,19 @@ function LiveTimer({ since, offsetMs, testId, className = "tt-timer" }: { since:
   return <span className={className} data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
-const PILL: Record<Status, string> = { "in-service": "IN SERVICE", available: "AVAILABLE", break: "ON BREAK", off: "NOT CLOCKED IN" };
+const PILL: Record<Status, NailTextKey> = { "in-service": "inService", assigned: "assigned", available: "available", break: "onBreak", off: "notClockedIn" };
 const firstName = (n: string) => n.trim().split(/\s+/)[0] ?? n;
 
 /** The tech cards live on two pages you swipe between (or pick from the tab strip): clocked out · clocked in and free.
  *  The third page this used to have — In Service — now lives on the Queue tab instead, alongside the checked-in queue. */
 const PAGES: { key: "out" | "in"; label: string; empty: string; match: (s: Status) => boolean }[] = [
   { key: "out", label: "Clocked Out", empty: "No barbers are clocked out", match: (s) => s === "off" },
-  { key: "in", label: "Clocked In", empty: "No barbers are clocked in and free", match: (s) => s === "available" || s === "break" },
+  { key: "in", label: "Clocked In", empty: "No barbers are clocked in and free", match: (s) => s === "available" || s === "assigned" || s === "break" },
 ];
 /** The page shown whenever the Techs tab opens. */
 const HOME_PAGE = 1;
 
-export function TechCards({ techs, tickets, markers, glance, stats, loading, clockOffsetMs = 0, assumedIn = [], onClockedOutTap, onClockedInTap, onQueueView }: {
+export function TechCards({ techs, tickets, markers, glance, stats, loading, clockOffsetMs = 0, assumedIn = [], onClockedOutTap, onClockedInTap, onTicketTap, onQueueView }: {
   techs: TurnTech[]; tickets: BoardTicket[]; stats: TechDayStats[]; loading: boolean; clockOffsetMs?: number;
   markers: BoardMarker[];
   glance: SalonGlance | undefined;
@@ -73,9 +79,12 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
   onClockedOutTap?: (tech: TurnTech) => void;
   /** A clocked-in (free or on break) tech's card was tapped — the front desk can clock them out. */
   onClockedInTap?: (tech: TurnTech) => void;
+  /** A technician holding an assigned client that hasn't been started was tapped — opens that client's ticket. */
+  onTicketTap?: (ticket: BoardTicket) => void;
   /** Open a metric's detail page on the Queue tab. */
   onQueueView: (view: QueueView) => void;
 }) {
+  const { t: tx } = useNailText();
   const [metricTick, setMetricTick] = useState(() => Date.now());
   const metricNow = metricTick + clockOffsetMs;
   useEffect(() => {
@@ -86,7 +95,8 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
   // Keep this strip numerically identical to Queue: both tabs use the same board records,
   // TURN availability, optimistic clock-ins, and shared wait estimator.
   const waitingTickets = useMemo(() => tickets.filter((t) => t.status === "confirmed"), [tickets]);
-  const startedTickets = useMemo(() => tickets.filter((t) => t.status === "started"), [tickets]);
+  // A ticket marked DONE no longer keeps its technician in the chair.
+  const startedTickets = useMemo(() => tickets.filter((t) => t.status === "started" && !t.doneAt), [tickets]);
   const waitLabel = useMemo(() => {
     const known = [...startedTickets, ...waitingTickets].map((t) => t.duration).filter((d) => d > 0);
     const defaultServiceMin = known.length ? Math.round(known.reduce((a, b) => a + b, 0) / known.length) : DEFAULT_SERVICE_MIN;
@@ -97,7 +107,10 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
         clockedIn: t.clockedIn !== false || assumedIn.includes(t.id),
         paused: !!t.paused || t.currentStatus === "on_break",
         busy: !!current || t.currentStatus === "busy",
-        remainingMin: current ? (+new Date(current.startedAt ?? current.date) + current.duration * 60_000 - metricNow) / 60_000 : null,
+        // Held for a waiting ticket that has not been started: that ticket is already in the line below with its
+        // own length, so the technician must not also be counted as mid-way through an unknown service.
+        remainingMin: current ? (+new Date(current.startedAt ?? current.date) + current.duration * 60_000 - metricNow) / 60_000
+          : waitingTickets.some((x) => x.staff?.id === t.id) ? 0 : null,
         pausedForMin: t.paused && t.stateSince ? (metricNow - +new Date(t.stateSince)) / 60_000 : null,
       };
     });
@@ -118,10 +131,13 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
     return techs
       .map((t) => {
         const mine = tickets.filter((x) => x.staff?.id === t.id);
-        const current = mine.find((x) => x.status === "started");
+        const current = mine.find((x) => x.status === "started" && !x.doneAt);
         const queue = mine.filter((x) => x.status === "confirmed").sort((a, b) => +new Date(a.date) - +new Date(b.date));
         const st = stats.find((s) => s.staffId === t.id);
-        const status = statusOf(t, current, assumedIn.includes(t.id));
+        // Held for a waiting ticket (or a front-desk check-in) that hasn't started. A ticket merely queued behind
+        // nothing-in-particular does not count: the turn system must be holding them for it.
+        const holding = t.currentStatus === "busy" && (queue.length > 0 || markers.some((m) => m.staffId === t.id));
+        const status = statusOf(t, current, assumedIn.includes(t.id), holding);
         const stateSince = t.stateSince ? +new Date(t.stateSince) : null;
         // The server's stored time wins. Before it has one (first minute after a change, older data): the ticket's start,
         // else the day's clock-in / last checkout, else — for a tech we just set in on this screen — right now.
@@ -135,7 +151,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
       })
       .sort((a, b) => Number(a.status === "off") - Number(b.status === "off"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [techs, tickets, stats, assumedIn]);
+  }, [techs, tickets, markers, stats, assumedIn]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   // ── pages + swipe ─────────────────────────────────────────────────────────
@@ -177,7 +193,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
   // Technicians use In Service's fixed 4 × 4 card grid, not an expanding/scaled layout.
   const renderGrid = (list: typeof cards, empty: string) => {
     return (
-        <div className="q-detail-ghost-grid q-tech-grid" data-testid="barber-tech-fixed-grid">
+        <div className="q-detail-ghost-grid q-tech-grid" ref={gridZoomRef} data-testid="barber-tech-fixed-grid">
           {list.length === 0 && !loading && <p className="q-detail-message" role="status">{empty}</p>}
           {list.map((c) => {
             const { t, current, queue, status, nextUp, stats: st, since } = c;
@@ -186,33 +202,34 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
             const done = st?.doneToday ?? 0;
             const inLine = status !== "off" && status !== "break" && (t.turnPosition ?? i) < 900 ? (t.turnPosition ?? i) + 1 : null;
             const clockOut = (status === "available" || status === "break") && onClockedInTap ? () => onClockedInTap(t) : null;
-            const tappable = (status === "off" && !!onClockedOutTap) || !!clockOut;
+            const openWaiting = status === "assigned" && next && onTicketTap ? () => onTicketTap(next) : null;
+            const tappable = (status === "off" && !!onClockedOutTap) || !!clockOut || !!openWaiting;
             return (
                 <div key={t.id} className={`q-booking-card q-unified-card q-tech-card ${tappable ? "tt-tappable" : ""}`} data-testid={`barber-tech-card-${t.id}`} data-status={status}
                   role={tappable ? "button" : undefined} tabIndex={tappable ? 0 : undefined}
-                  onClick={clockOut ?? (tappable ? () => onClockedOutTap?.(t) : undefined)}
+                  onClick={openWaiting ?? clockOut ?? (tappable ? () => onClockedOutTap?.(t) : undefined)}
                   onKeyDown={tappable ? (event) => {
                     if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
                     event.preventDefault();
-                    (clockOut ?? (() => onClockedOutTap?.(t)))();
+                    (openWaiting ?? clockOut ?? (() => onClockedOutTap?.(t)))();
                   } : undefined}>
                   <div className="q-booking-client q-booking-client-top q-unified-head">
                     {t.avatarUrl && <img className="q-tech-avatar" src={t.avatarUrl} alt="" />}
-                    <strong>{t.name}</strong>
-                    {status === "available" && nextUp && <em className="q-tech-next" data-testid={`barber-tech-next-${t.id}`}>NEXT</em>}
-                    <em className="q-unified-pill" data-kind={status}>{PILL[status]}</em>
+                    <strong>{techLabel(t.name, t.id)}</strong>
+                    {status === "available" && nextUp && <em className="q-tech-next" data-testid={`barber-tech-next-${t.id}`}>{tx("next")}</em>}
+                    <em className="q-unified-pill" data-kind={status}>{tx(PILL[status])}</em>
                   </div>
                   <div className="q-unified-main">
                     <div className="q-unified-clock"><Clock size={25} strokeWidth={1.8} /><div>
-                      <small>{status === "off" ? "NOT CLOCKED IN" : TIMER_LABEL[status]}</small>
-                      {status === "off" ? <b>Tap to clock in</b> : <LiveTimer since={since} offsetMs={clockOffsetMs} testId={`barber-tech-timer-${t.id}`} />}
+                      <small>{status === "off" ? tx("notClockedIn") : tx(TIMER_LABEL[status])}</small>
+                      {status === "off" ? <b>{tx("tapToClockIn")}</b> : <LiveTimer since={since} offsetMs={clockOffsetMs} testId={`barber-tech-timer-${t.id}`} />}
                     </div>
                     </div>
-                    <div className="q-unified-side"><small>CLIENTS TODAY</small><b>{status === "off" ? "—" : done}</b></div>
+                    <div className="q-unified-side"><small>{tx("clientsToday")}</small><b>{status === "off" ? "—" : done}</b></div>
                   </div>
                   <div className="q-unified-footer">
-                    <div><small>Current Service</small><b>{current ? `${current.service.name} · ${firstName(current.client.name)}` : inLine != null ? `#${inLine} in turn` : "—"}</b></div>
-                    <div><small>Next Up</small><b>{next ? `${next.client.name} · ${fmtTime(+new Date(next.date))}${queue.length > 1 ? ` (+${queue.length - 1})` : ""}` : "—"}</b></div>
+                    <div><small>{tx("currentService")}</small><b>{current ? `${current.service.name} · ${firstName(current.client.name)}` : inLine != null ? `#${inLine} ${tx("inTurn")}` : "—"}</b></div>
+                    <div><small>{tx("nextUp")}</small><b>{next ? `${next.client.name} · ${fmtTime(+new Date(next.date))}${queue.length > 1 ? ` (+${queue.length - 1})` : ""}` : "—"}</b></div>
                   </div>
                 </div>
             );
@@ -239,7 +256,7 @@ export function TechCards({ techs, tickets, markers, glance, stats, loading, clo
       <div className="tt-tabs" role="tablist" data-testid="barber-techs-tabs">
         {PAGES.map((pg, k) => (
           <button key={pg.key} type="button" role="tab" aria-selected={page === k} className={page === k ? "active" : ""} onClick={() => setPage(k)} data-testid={`barber-techs-tab-${pg.key}`}>
-            {pg.label}<em>{pageCards[k].length}</em>
+            {tx(pg.key === "out" ? "clockedOut" : "clockedInTab")}<em>{pageCards[k].length}</em>
           </button>
         ))}
       </div>

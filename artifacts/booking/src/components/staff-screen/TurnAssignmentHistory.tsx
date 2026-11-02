@@ -4,6 +4,7 @@
  * the reason — with the service named ("Tom Lam doesn't do Dip Powder"), so nobody has to argue about it.
  * Built from the turn history the server records at each assignment (GET /api/turn/history).
  */
+import { salonTimeZone } from "@/lib/salonClock";
 import { useQuery } from "@tanstack/react-query";
 import { formatTurns } from "@shared/turnRules";
 import { useLanguage } from "@/hooks/use-language";
@@ -95,7 +96,7 @@ export function TurnAssignmentHistory({ storeId, open }: { storeId: number; open
                   {e.ticketNumber != null && <span className="mr-1.5 rounded bg-slate-900 px-1.5 py-0.5 text-[11px] font-black text-white">{e.ticketNumber}</span>}
                   {e.serviceName ?? "—"}{e.clientName ? ` · ${firstName(e.clientName)}` : ""} → <span className="text-blue-700">{e.staffName}</span>
                 </p>
-                <span className="text-xs text-slate-400">{new Date(e.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>
+                <span className="text-xs text-slate-400">{new Date(e.at).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" })}</span>
               </div>
               <p className="mt-1 text-[13px] leading-5 text-slate-600">{why}</p>
               {passed.length > 0 && (

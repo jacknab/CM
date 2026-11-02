@@ -1,4 +1,7 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { usePrintSettings } from "@/lib/printSettings";
+import { printSettings } from "@/lib/printSettings";
+import { salonNowForPrint } from "@/lib/salonClock";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 
 import { CalendarFaderScrollbar } from "@/components/CalendarFaderScrollbar";
@@ -68,6 +71,7 @@ import { ManagerPinSheet } from "@/components/staff-screen/ManagerPinSheet";
 import { TimeClockSheet } from "@/components/staff-screen/TimeClockSheet";
 import { TurnPageModal, type TurnTechnician } from "@/components/staff-screen/TurnPage";
 import { VoucherRedeemSheet } from "@/components/staff-screen/VoucherRedeemSheet";
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 type SidebarItem =
   | { kind: "link"; to: string; label: string; icon: any }
   | { kind: "action"; action: "quick-checkout" | "cash-drawer" | "day-close" | "open-register" | "client-lookup" | "redeem-voucher"; label: string; icon: any };
@@ -582,6 +586,8 @@ export default function Calendar() {
 
   // ── Bluetooth thermal printer ──────────────────────────────────────────────
   const thermalPrinter = useThermalPrinter();
+  // What prints by itself (front desk setup → Printing).
+  usePrintSettings();
   // Stable ref so WS closures can call print without being in their dep arrays
   const thermalPrintRef = useRef<((bytes: Uint8Array) => Promise<void>) | null>(null);
   thermalPrintRef.current = thermalPrinter.isConnected ? thermalPrinter.print : null;
@@ -709,6 +715,7 @@ export default function Calendar() {
       if (destroyed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${selectedStore.id}&registerId=${activeRegisterId}`);
+      keepSocketAlive(ws);
       // A reconnect may have missed a settings change while offline — resync.
       ws.onopen = () => {
         if (hasConnectedBefore) refreshAllData();
@@ -802,6 +809,7 @@ export default function Calendar() {
       if (destroyed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${selectedStore.id}`);
+      keepSocketAlive(ws);
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -1253,6 +1261,8 @@ export default function Calendar() {
   // USB/BT barcode scanners act as HID keyboards and inject keystrokes very
   // fast (< 50 ms apart); humans type > 100 ms apart. We exploit this gap.
   const handleQRScan = useCallback(async (raw: string) => {
+    // A manager badge or Tech ID badge is for the manager PIN pad (ManagerPinSheet), not a client lookup.
+    if (/^(TECH:|QR:|KP:|M\d{1,2}-)/i.test(raw.trim())) return;
     try {
       setQrFlash(true);
       setTimeout(() => setQrFlash(false), 600);
@@ -5575,7 +5585,11 @@ export function CheckoutPOSPanel({
   // `copy` picks which physical copy: 'salon' (signature copy, auto-printed right after a card
   // charge settles), 'customer' (the Print Receipt button once the salon copy already went out
   // for a card sale), or 'both' (cash — no signature needed, nothing held back).
-  const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both'): Promise<boolean> => new Promise((resolve) => {
+  const nativePrintReceipt = (asked: 'salon' | 'customer' | 'both'): Promise<boolean> => new Promise((resolve) => {
+    // The salon chose not to print its own copy (front desk setup → Printing): only the customer's copy prints.
+    const salonCopy = printSettings().salonCopy;
+    if (!salonCopy && asked === "salon") { resolve(true); return; }
+    const copy = !salonCopy && asked === "both" ? "customer" : asked;
     const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let finished = false;
     const finish = (ok: boolean, error?: string) => {
@@ -5604,7 +5618,7 @@ export function CheckoutPOSPanel({
         storeCityStateZip: [st?.city, [st?.state, st?.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ") || undefined,
         storePhone: st?.phone || "",
         ticketNumber: (appointment as any).ticketNumber ?? appointment.id,
-        dateIso: new Date().toISOString(),
+        dateIso: salonNowForPrint(),
         clientName: posCustomerName,
         items: receiptItems(),
         subtotal, discount, tax, tip, grandTotal,
@@ -5737,6 +5751,7 @@ export function CheckoutPOSPanel({
     if (destroyed) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${storeId}&registerId=${activeRegisterId}`);
+    keepSocketAlive(ws);
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
@@ -7832,6 +7847,7 @@ function WalkInCheckoutPanel({ onClose, onThermalPrint }: { onClose: () => void;
     if (destroyed) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${wiStoreId}&registerId=${wiActiveRegisterId}`);
+    keepSocketAlive(ws);
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);

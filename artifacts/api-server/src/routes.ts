@@ -1,3 +1,5 @@
+import { forgetBookingSystem, isBookingSystemOff, isBookingSystemOffBySlug } from "./lib/bookingSystem";
+import { printSettingsOf } from "@shared/printSettings";
 import { usesBuiltInReviewsOnly } from "./lib/reviewLinks";
 import { isAccountStopped } from "./lib/accountSuspension";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
@@ -14,6 +16,7 @@ import supportRouter from "./routes/support";
 import signupProgressRouter from "./routes/signupProgress";
 import kioskDeviceRouter from "./routes/kioskDevice";
 import stationPairingRouter from "./routes/stationPairing";
+import deviceHealthRouter, { startOfflineHealthJob } from "./routes/deviceHealth";
 import { kioskGate, claimMissedYouText, verifyKioskSelection, sessionCoversStore } from "./lib/kioskAccess";
 import supportAccountListRouter from "./routes/supportAccountList";
 import liveChatAccountRouter from "./routes/liveChatAccount";
@@ -28,6 +31,7 @@ import { KIOSK_ART_INDUSTRY } from "@shared/kioskArt";
 import { smartCheckinFor, recordOffers } from "./lib/smartCheckin";
 import { sanitizeTipPresets } from "@shared/tipPresets";
 import { idempotent, startIdempotencyCleanup } from "./lib/idempotency";
+import { priceRanges, priceTable, quotePrices, savePriceOnAppointment, ticketServicePriceSQL, usesPricingLevels } from "./lib/pricingLevels";
 import { cashShortageCents, dayCloseLockedUntil, denominationTotal, parseDrawerAmount } from "./lib/dayClose";
 import { getLastDayCloseAt } from "./lib/dayCloseBoundary";
 import { allocateTenders } from "./lib/tenderAllocation";
@@ -37,7 +41,7 @@ import rateLimit from "express-rate-limit";
 import { getStoreOwnerContact } from "./lib/systemEmails";
 import { resolveActivationCode, ensureLocationActivationCode, ensureRegisterActivationCode } from "./lib/activationCodes";
 import { classifySmsCancellationIntent } from "./lib/smsCancellationIntent";
-import { getClientIp, reportCalendarNetwork, isRequestFromTrustedNetwork } from "./lib/salonNetworkGuard";
+import { getClientIp, reportCalendarNetwork, reportPosNetwork, isRequestFromTrustedNetwork } from "./lib/salonNetworkGuard";
 import { api } from "@shared/routes";
 import { isAuthenticated } from "./auth";
 import { attachAuthContext, requirePermission, ownStaffScope, can } from "./middleware/permissions";
@@ -202,6 +206,7 @@ import { TURN_UNIT, explainAssignment, formatTurns, isDollarMode, lineMessage, n
 import * as turnEngine from "./lib/turnEngine";
 import { withTurnLock } from "./lib/turnLock";
 import { mutateStorePreferences, writeStorePreferences } from "./lib/storePreferences";
+import { chooseLocalHubHost, recordLocalHubLease } from "./lib/localHubElection";
 import * as nailGiftCards from "./lib/nailGiftCards";
 import { settleNailCheckout, NailCheckoutError } from "./lib/nailCheckoutSettlement";
 import { getBufferMinutes, normalizeBufferMinutes, clashesWithBuffer, getHouseCallTravelMinutes, heldWindow, neededWindow } from "./lib/appointmentBuffer";
@@ -1469,6 +1474,10 @@ export async function registerRoutes(
   app.use(kioskDeviceRouter);
   // POS stations kept per tablet + customer screens paired by code (routes/stationPairing.ts)
   app.use(stationPairingRouter);
+  // Offline-mode health reports from the salon's tablets (routes/deviceHealth.ts)
+  app.use(deviceHealthRouter);
+  // Every 5 minutes: each salon's offline-mode score and problems (lib/offlineHealthRules.ts).
+  startOfflineHealthJob();
   // Support Home feed: admins write posts on /isadmin, support agents read them on /isTeam (routes/supportFeed.ts)
   app.use(supportFeedRouter);
 
@@ -1910,6 +1919,7 @@ export async function registerRoutes(
     if (req.path.startsWith("/public/")) return next(); // Allow public routes
     if (req.path.startsWith("/contractor-payouts/public/")) return next(); // Contractor onboarding — public token-gated routes
     if (req.path.startsWith("/print-agent/agent/")) return next(); // Certxa Print Agent on the salon PC — device token + signed requests (routes/printAgent.ts)
+    if (req.path === "/devices/health") return next(); // Tablet health reports — signed in, or a paired customer screen (routes/deviceHealth.ts checks)
 
     // Admin routes — require a valid user session AND platform-admin role,
     // OR a valid ADMIN_DB_HEALTH_KEY bearer token (for monitoring / CI).
@@ -4311,6 +4321,9 @@ export async function registerRoutes(
   // POS setup: the /nail POS's first-time setup wizard (routes/posSetup.ts, plans/pos-setup.md).
   const { default: posSetupRouter } = await import("./routes/posSetup.js");
   app.use(posSetupRouter);
+  // Pricing levels (barbershops and hair salons): the owner's levels, prices per level and per professional.
+  const { default: pricingLevelsRouter } = await import("./routes/pricingLevels.js");
+  app.use(pricingLevelsRouter);
   // The /manage assistant: looks things up and changes account and front desk settings after the owner confirms.
   const { default: ownerAssistantRouter } = await import("./routes/ownerAssistant.js");
   app.use(ownerAssistantRouter);
@@ -7180,6 +7193,7 @@ If you have any questions, please contact your administrator.
         autoClockOutFloor:   f.autoClockOutFloor   !== undefined ? String(f.autoClockOutFloor) : "01:00",
         kioskEnabled:        (ks2 as any).kioskEnabled !== false,
         staffPortalEnabled:  f.staffPortalEnabled  !== undefined ? !!f.staffPortalEnabled  : true,
+        bookingSystem:       f.bookingSystem       !== undefined ? !!f.bookingSystem       : true,
       });
     } catch (error) {
       console.error("Error fetching feature flags:", error);
@@ -7192,7 +7206,7 @@ If you have any questions, please contact your administrator.
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ message: "No store context" });
 
-      const { turnSystem, timeclock, waitlist, pos, rewardPoints, autoClockOutFloor, kioskEnabled, staffPortalEnabled } = req.body as Record<string, unknown>;
+      const { turnSystem, timeclock, waitlist, pos, rewardPoints, autoClockOutFloor, kioskEnabled, staffPortalEnabled, bookingSystem } = req.body as Record<string, unknown>;
 
       // POS flag lives in the locations table (existing column)
       if (pos !== undefined) {
@@ -7210,6 +7224,8 @@ If you have any questions, please contact your administrator.
       if (rewardPoints        !== undefined) nextFeatures.rewardPoints       = !!rewardPoints;
       if (autoClockOutFloor   !== undefined) nextFeatures.autoClockOutFloor  = String(autoClockOutFloor);
       if (staffPortalEnabled  !== undefined) nextFeatures.staffPortalEnabled = !!staffPortalEnabled;
+      // The booking system switch (lib/bookingSystem.ts): takes effect at once everywhere that checks it.
+      if (bookingSystem       !== undefined) { nextFeatures.bookingSystem = !!bookingSystem; forgetBookingSystem(storeId); }
 
       // kioskEnabled lives in kioskSettings (not features), update it there
       const existingKs2 = currentPrefs.kioskSettings && typeof currentPrefs.kioskSettings === "object" ? currentPrefs.kioskSettings : {};
@@ -7229,6 +7245,7 @@ If you have any questions, please contact your administrator.
         autoClockOutFloor:   nextFeatures.autoClockOutFloor  !== undefined ? String(nextFeatures.autoClockOutFloor) : "01:00",
         kioskEnabled:        (nextKs as any).kioskEnabled !== false,
         staffPortalEnabled:  nextFeatures.staffPortalEnabled !== undefined ? !!nextFeatures.staffPortalEnabled : true,
+        bookingSystem:       nextFeatures.bookingSystem      !== undefined ? !!nextFeatures.bookingSystem      : true,
       });
     } catch (error) {
       console.error("Error saving feature flags:", error);
@@ -8914,6 +8931,8 @@ If you have any questions, please contact your administrator.
         ...publicStore, businessHours: hours, showPrices,
         googleRating, googleReviewCount,
         displayRating, displayReviewCount, reviewSource,
+        // false: the salon switched its booking system off (lib/bookingSystem.ts) — no booking from this page.
+        bookingSystem: !(await isBookingSystemOff(store.id)),
       });
     } catch (error) {
       return res.status(500).json({ message: "Internal server error" });
@@ -9402,6 +9421,18 @@ If you have any questions, please contact your administrator.
     return slots;
   }
 
+  // The booking system switched off (lib/bookingSystem.ts): no new bookings from the booking page, the website, the
+  // AI assistants (MCP) or anything else that books through these routes.
+  app.use(/^\/api\/public\/store\/([^/]+)\/(availability|available-days|book|house-call|waitlist|pro-times)(\/|$)/, async (req: any, res: any, next: any) => {
+    try {
+      const slug = decodeURIComponent(String(req.params?.[0] ?? req.originalUrl.split("/")[4] ?? ""));
+      if (slug && await isBookingSystemOffBySlug(slug)) {
+        return res.status(403).json({ message: "This salon isn't taking online bookings right now.", code: "BOOKING_OFF" });
+      }
+    } catch { /* never blocks on a failed check */ }
+    next();
+  });
+
   app.get("/api/public/store/:slug/availability", async (req, res) => {
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
@@ -9436,6 +9467,65 @@ If you have any questions, please contact your administrator.
       return res.json(await openTimesForDay(store, { serviceId, date, duration, specificStaffId, extraServiceId, staffView, visitAt: String(req.query.visitAt ?? ""), legs }));
     } catch (error) {
       console.error("Public availability error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // ── Barbershops and hair salons: prices by professional (lib/pricingLevels.ts; pages/public-booking/pro) ──
+  // GET /api/public/store/:slug/pro-pricing — who books, their level, and each one's price for each service they do,
+  // with each service's lowest-to-highest price. Not for any other business.
+  app.get("/api/public/store/:slug/pro-pricing", async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(req.params.slug);
+      if (!store || !usesPricingLevels((store as any).category)) return res.status(404).json({ message: "Not found" });
+      const t = await priceTable(store.id);
+      const ranges = [...priceRanges(t.prices)].map(([serviceId, r]) => ({ serviceId, ...r }));
+      return res.json({ staff: t.staff, prices: t.prices, ranges });
+    } catch (error) {
+      console.error("[pro-pricing]", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // GET /api/public/store/:slug/pro-times?serviceId&date&duration[&extraServiceId][&staffId]
+  // The open times, each with the professional who takes it and their price for each service. With no professional
+  // chosen ("Any available"), each time goes to the lowest-priced professional free then, so the price shown is
+  // the lowest the client could be quoted; the review step shows who it is before anything is booked.
+  app.get("/api/public/store/:slug/pro-times", async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(req.params.slug);
+      if (!store || !usesPricingLevels((store as any).category)) return res.status(404).json({ message: "Not found" });
+      const status = ((store as any).accountStatus ?? "active").toLowerCase();
+      if (status === "suspended" || status === "canceled" || ((store as any).onlineBookingMode ?? "all") === "off") return res.json([]);
+      const serviceId = Number(req.query.serviceId);
+      const date = String(req.query.date ?? "");
+      const duration = Number(req.query.duration);
+      const extraServiceId = req.query.extraServiceId ? Number(req.query.extraServiceId) : null;
+      const staffId = req.query.staffId ? Number(req.query.staffId) : null;
+      if (!serviceId || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !duration) return res.status(400).json({ message: "serviceId, date and duration are required" });
+      const t = await priceTable(store.id);
+      const priceOf = (sid: number, svc: number) => t.prices.find((p) => p.staffId === sid && p.serviceId === svc)?.price;
+      // Only professionals who do the first service (the second may go to another, as online booking does today).
+      const eligible = staffId != null ? [staffId] : [...new Set(t.prices.filter((p) => p.serviceId === serviceId).map((p) => p.staffId))];
+      const best = new Map<string, { time: string; staffId: number; staffName: string; extraStaffId?: number; extraStaffName?: string; prices: Record<number, number>; total: number }>();
+      for (const sid of eligible) {
+        if (priceOf(sid, serviceId) == null) continue;
+        const slots = await openTimesForDay(store, { serviceId, date, duration, specificStaffId: sid, extraServiceId, staffView: false });
+        for (const slot of slots) {
+          const prices: Record<number, number> = { [serviceId]: priceOf(slot.staffId, serviceId) ?? 0 };
+          if (extraServiceId) {
+            const p = priceOf(slot.extraStaffId ?? slot.staffId, extraServiceId);
+            if (p == null) continue;
+            prices[extraServiceId] = p;
+          }
+          const total = Math.round(Object.values(prices).reduce((a, b) => a + b, 0) * 100) / 100;
+          const cur = best.get(slot.time);
+          if (!cur || total < cur.total) best.set(slot.time, { time: slot.time, staffId: slot.staffId, staffName: slot.staffName, extraStaffId: slot.extraStaffId, extraStaffName: slot.extraStaffName, prices, total });
+        }
+      }
+      return res.json([...best.values()].sort((a, b) => a.time.localeCompare(b.time)));
+    } catch (error) {
+      console.error("[pro-times]", error);
       return res.status(500).json({ message: "Internal server error" });
     }
   });
@@ -9756,6 +9846,9 @@ If you have any questions, please contact your administrator.
         // Solo plan: a house call ('client') with the client's address (plans/solo-work-places-and-approval.md).
         visitAt: z.enum(["place", "client"]).optional(),
         clientAddress: z.record(z.string(), z.unknown()).optional(),
+        // Barbershops and hair salons: the price the client was shown for each service (serviceId → price). The
+        // server works the price out itself; when it differs, nothing is booked and the client is shown the new one.
+        quotedPrices: z.record(z.string(), z.number().finite().min(0)).optional(),
       });
 
       const parsed = bookingSchema.parse(req.body);
@@ -9880,7 +9973,19 @@ If you have any questions, please contact your administrator.
       // For a package, the effective price (fixed override or component sum) is
       // the authoritative total — its add-ons are already folded in.
       const serviceRecord = await storage.getService(input.serviceId);
-      const servicePrice = Number(serviceRecord?.price ?? 0);
+      // Barbershops and hair salons price by professional (their own price, else their level's, else the standard
+      // price — lib/pricingLevels.ts). Every other business, nail salons included, prices exactly as before.
+      const levelPricing = usesPricingLevels((store as any).category) && !resolvedPackage;
+      const firstQuote = levelPricing ? (await quotePrices(store.id, input.staffId, [input.serviceId])).get(input.serviceId) ?? null : null;
+      const servicePrice = firstQuote ? firstQuote.price : Number(serviceRecord?.price ?? 0);
+      const shownPrice = (serviceId: number) => parsed.quotedPrices?.[String(serviceId)];
+      if (firstQuote) {
+        const shown = shownPrice(input.serviceId);
+        // Never a different price than the client approved: they are shown the price and book again.
+        if (shown != null && Math.abs(shown - firstQuote.price) > 0.004) {
+          return res.status(409).json({ code: "PRICE_CHANGED", message: `The price of ${serviceRecord?.name ?? "this service"} is now $${firstQuote.price.toFixed(2)}. Please review and confirm.`, prices: { [input.serviceId]: firstQuote.price } });
+        }
+      }
       let addonTotal = 0;
       if (!resolvedPackage) {
         for (const addonId of input.addonIds) {
@@ -10073,6 +10178,8 @@ If you have any questions, please contact your administrator.
         return res.status(409).json({ message: createResult.error.message });
       }
       const appointmentId = createResult.data.id;
+      // The price quoted, and the level it came from, stay with the appointment: changing a level later never changes it.
+      if (firstQuote) await savePriceOnAppointment(appointmentId, firstQuote);
       if (houseCall) await saveClientAddress(customer.id, houseCall.address);
 
       if (voucherRow) {
@@ -10246,6 +10353,22 @@ If you have any questions, please contact your administrator.
             await compensateStripePayment(store.id, input.stripePaymentIntentId).catch(() => {});
           }
           return res.status(409).json({ message: "That time no longer has room for both services. Please choose another time." });
+        }
+        // Barbershops and hair salons: the second service is priced for the professional who got it. Higher than the
+        // client was shown: nothing stays booked and they are shown the price (it is never raised silently).
+        if (levelPricing) {
+          const extraQuote = (await quotePrices(store.id, extraAppointment.staffId, [extraService.id])).get(extraService.id);
+          const shown = shownPrice(extraService.id);
+          if (extraQuote && shown != null && extraQuote.price > shown + 0.004) {
+            await storage.deleteAppointment(extraAppointment.id).catch(() => {});
+            await storage.deleteAppointment(appointmentId).catch(() => {});
+            if (input.stripePaymentIntentId) {
+              const { compensateStripePayment } = await import("./routes/bookingPayments.js");
+              await compensateStripePayment(store.id, input.stripePaymentIntentId).catch(() => {});
+            }
+            return res.status(409).json({ code: "PRICE_CHANGED", message: `${extraService.name} with ${extraAppointment.staffName} is $${extraQuote.price.toFixed(2)}. Please review and confirm.`, prices: { [extraService.id]: extraQuote.price } });
+          }
+          if (extraQuote) await savePriceOnAppointment(extraAppointment.id, extraQuote);
         }
         // The two appointments are one visit: the staff screens show and check them out together.
         await pool.query(`UPDATE appointments SET ticket_group_id = $1 WHERE id = ANY($2::int[]) AND store_id = $3`, [appointmentId, [appointmentId, extraAppointment.id], store.id]);
@@ -19300,6 +19423,18 @@ or
     }
     return storeId;
   };
+  /** The salon hub is the same for a nail salon and a barbershop, whichever screen asks (the customer screen and
+   *  kiosk always ask through /api/nail/). */
+  const hubStoreId = async (req: any, res: any): Promise<number | null> => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) { res.status(403).json({ message: "No store context" }); return null; }
+    const category = (await storage.getStore(storeId) as any)?.category;
+    if (!nailTickets.isNailSalonCategory(category) && !/barber/i.test(category ?? "")) {
+      res.status(403).json({ message: "This staff screen is not available for this store." });
+      return null;
+    }
+    return storeId;
+  };
 
   const nailSelectionInput = z.object({
     nailSizeId: z.number().int().nullable().optional(),
@@ -19672,7 +19807,7 @@ or
       if (!Number.isSafeInteger(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
       const { rows } = await pool.query(
         `SELECT a.status, a.staff_id, a.service_done_at, a.custom_lines,
-                COALESCE(s.price, 0) AS service_price,
+                COALESCE(${ticketServicePriceSQL()}, 0) AS service_price,
                 COALESCE((SELECT SUM(ad.price) FROM appointment_addons aa JOIN addons ad ON ad.id = aa.addon_id WHERE aa.appointment_id = a.id), 0) AS addon_price,
                 COALESCE(ns.length_price_adj_snapshot, 0) + COALESCE(ns.shape_price_adj_snapshot, 0) + COALESCE(ns.art_price_adj_snapshot, 0) AS nail_price
            FROM appointments a LEFT JOIN services s ON s.id = a.service_id
@@ -19995,13 +20130,14 @@ or
 
   // ── Who processes card payments at checkout: Certxa's Stripe reader, or the salon's own card terminal. ──
   // With "own" the POS only records that a card was taken; nothing is charged and nothing is shown to the customer.
+  // With "none" the salon takes no cards at all: the CARD button is off (front desk setup, 2026-11-02).
   app.get("/api/card-provider", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ message: "No store context" });
       const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
       const prefs: any = safeParsePreferences(row?.preferences as string | undefined);
-      return res.json({ provider: prefs.cardProvider === "own" ? "own" : "stripe" });
+      return res.json({ provider: prefs.cardProvider === "own" || prefs.cardProvider === "none" ? prefs.cardProvider : "stripe" });
     } catch (err) {
       console.error("[card-provider get]", err);
       return res.status(500).json({ message: "Could not load the card setting" });
@@ -20013,7 +20149,7 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ message: "No store context" });
       const provider = req.body?.provider;
-      if (provider !== "stripe" && provider !== "own") return res.status(400).json({ message: "Choose Stripe or Own Provider." });
+      if (provider !== "stripe" && provider !== "own" && provider !== "none") return res.status(400).json({ message: "Choose Stripe, Own Provider or no card payments." });
       await mutateStorePreferences(storeId, (current: any) => ({ ...current, cardProvider: provider }));
       broadcastNotification({ type: "settings_changed", storeId, scope: "/api/card-provider" } as any);
       return res.json({ provider });
@@ -20023,13 +20159,49 @@ or
     }
   });
 
+  // What prints by itself on the receipt printer (shared/printSettings.ts): the front desk setup's Printing step.
+  app.get("/api/nail/print-settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      return res.json(printSettingsOf(safeParsePreferences(row?.preferences as string | undefined)));
+    } catch (err) {
+      console.error("[nail/print-settings get]", err);
+      return res.status(500).json({ message: "Could not load the printing settings" });
+    }
+  });
+  app.put("/api/nail/print-settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(403).json({ message: "No store context" });
+      const b = req.body ?? {};
+      const updates: Record<string, unknown> = {};
+      if (typeof b.salonCopy === "boolean") updates.salonCopy = b.salonCopy;
+      if (b.dayClose === "auto" || b.dayClose === "none") updates.dayClose = b.dayClose;
+      if (b.checkinSlip === "auto" || b.checkinSlip === "none") updates.checkinSlip = b.checkinSlip;
+      if (!Object.keys(updates).length) return res.status(400).json({ message: "No valid settings to update" });
+      const prefs = await mutateStorePreferences(storeId, (current) => ({ ...current, printing: { ...((current as any).printing ?? {}), ...updates } }));
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/print-settings" } as any);
+      return res.json(printSettingsOf(prefs));
+    } catch (err) {
+      console.error("[nail/print-settings put]", err);
+      return res.status(500).json({ message: "Could not save the printing settings" });
+    }
+  });
+
+  const nailScreenSettings = (prefs: any) => ({
+    lockScreen: prefs?.nailScreen?.lockScreen !== false,
+    keypadVisible: prefs?.nailScreen?.keypadVisible !== false,
+  });
+
   app.get("/api/nail/screen-settings", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
       const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
       const prefs = safeParsePreferences(row?.preferences as string | undefined);
-      return res.json({ lockScreen: prefs.nailScreen?.lockScreen !== false });
+      return res.json(nailScreenSettings(prefs));
     } catch (err) {
       console.error("[nail/screen-settings get]", err);
       return res.status(500).json({ message: "Could not load the screen settings" });
@@ -20044,9 +20216,10 @@ or
       if (typeof req.body?.lockScreen === "boolean") updates.lockScreen = req.body.lockScreen;
       if (typeof req.body?.keypadVisible === "boolean") updates.keypadVisible = req.body.keypadVisible;
       if (Object.keys(updates).length === 0) return res.status(400).json({ message: "No valid settings to update" });
-      await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), ...updates } }));
+      const prefs = await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), ...updates } }));
       broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/screen-settings" } as any);
-      return res.json(updates);
+      // The whole setting back: the screen replaces its copy with this, so a partial answer would reset the other one.
+      return res.json(nailScreenSettings(prefs));
     } catch (err) {
       console.error("[nail/screen-settings put]", err);
       return res.status(500).json({ message: "Could not save the screen settings" });
@@ -20426,11 +20599,42 @@ or
     if (pinRateLimited(storeId)) return "locked";
     const given = typeof pin === "string" ? pin.trim() : "";
     const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
-    const hash = (safeParsePreferences(row?.preferences as string | undefined) as any)?.nailScreen?.managerPinHash;
-    const ok = /^\d{4}$/.test(given) && (typeof hash === "string" && hash ? await bcrypt.compare(given, hash) : given === DEFAULT_MANAGER_PIN);
+    const nailScreen = (safeParsePreferences(row?.preferences as string | undefined) as any)?.nailScreen;
+    const hash = nailScreen?.managerPinHash;
+    const badge = MANAGER_BADGE.exec(given.toUpperCase());
+    const ok = badge
+      ? await managerBadgeValid(storeId, Number(badge[1]), badge[2], nailScreen?.managerBadges)
+      : /^\d{4}$/.test(given) && (typeof hash === "string" && hash ? await bcrypt.compare(given, hash) : given === DEFAULT_MANAGER_PIN);
     if (!ok) pinAttempts.get(storeId)!.push(Date.now());
     return ok ? "ok" : "wrong";
   }
+  // ── Manager badge (owner, 2026-11-02) ──
+  // A printed badge for the owner and anyone with the Manager role: it signs them in at the lock screen like their
+  // Tech ID, and wherever the manager PIN is asked, scanning it counts as the PIN (checkManagerPin). The code is
+  // "M<Tech ID>-<6 random letters/digits>" — short enough for the BIXOLON's Code 128 barcode. Only a hash of the
+  // random part is kept (store_settings nailScreen.managerBadges, by staff id); printing a new badge replaces it, so
+  // a lost badge stops working. Someone who is no longer the owner or a Manager: their badge stops working too.
+  const MANAGER_BADGE = /^M(\d{1,2})-([A-Z2-7]{6})$/;
+  const BADGE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const showKeypadHash = (code: string) => crypto.createHash("sha256").update(`certxa-show-keypad:${code}`).digest("hex");
+  const managerBadgeHash = (secret: string) => crypto.createHash("sha256").update(`certxa-manager-badge:${secret}`).digest("hex");
+  /** A person's badge hash(es) as stored. */
+  const badgeHashesOf = (v: unknown): string[] => (typeof v === "string" ? [v] : Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  async function managerBadgeHolders(storeId: number): Promise<Array<{ staffId: number; techId: number; name: string }>> {
+    const { rows } = await pool.query(
+      `SELECT s.id, s.barber_number, s.name FROM staff s
+         JOIN locations l ON l.id = s.store_id LEFT JOIN users u ON u.id = l.user_id
+        WHERE s.store_id = $1 AND COALESCE(s.status, 'active') NOT IN ('removed', 'deactivated') AND s.barber_number IS NOT NULL
+          AND (s.employment_type IN ('owner', 'manager') OR lower(trim(COALESCE(s.role, ''))) IN ('owner', 'manager') OR s.id = u.staff_id)
+        ORDER BY s.barber_number`, [storeId]);
+    return rows.map((r: any) => ({ staffId: Number(r.id), techId: Number(r.barber_number), name: String(r.name) }));
+  }
+  async function managerBadgeValid(storeId: number, techId: number, secret: string, badges: unknown): Promise<boolean> {
+    const holder = (await managerBadgeHolders(storeId)).find((h) => h.techId === techId);
+    const kept = holder ? badgeHashesOf((badges as Record<string, unknown> | undefined)?.[String(holder.staffId)]) : [];
+    return kept.includes(managerBadgeHash(secret));
+  }
+
   const pinRefusal = (result: "wrong" | "locked") => result === "locked"
     ? { status: 429, body: { message: "Too many wrong PINs. Wait a few minutes and try again.", code: "PIN_LOCKED" } }
     : { status: 403, body: { message: "Incorrect manager PIN.", code: "PIN_WRONG" } };
@@ -20448,6 +20652,27 @@ or
     }
   });
 
+  // What a salon tablet keeps in its offline database to check the manager PIN with no internet: the PIN's bcrypt
+  // hash, or that the salon still has the default. (The same row is already copied to the salon's tablets.)
+  app.get("/api/nail/manager-pin/offline", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const nailScreen = (safeParsePreferences(row?.preferences as string | undefined) as any)?.nailScreen;
+      const hash = nailScreen?.managerPinHash;
+      // The manager badges that work today (owner and Managers only), so a badge scan is checked offline too.
+      const badges = (await managerBadgeHolders(storeId))
+        .flatMap((h) => badgeHashesOf(nailScreen?.managerBadges?.[String(h.staffId)]).map((hash) => ({ techId: h.techId, hash })));
+      res.set("Cache-Control", "no-store");
+      const showKeypad = typeof nailScreen?.showKeypadHash === "string" ? nailScreen.showKeypadHash : null;
+      return res.json(typeof hash === "string" && hash ? { hash, isDefault: false, badges, showKeypad } : { hash: null, isDefault: true, badges, showKeypad });
+    } catch (err) {
+      console.error("[nail/manager-pin offline]", err);
+      return res.status(500).json({ message: "Could not load the PIN" });
+    }
+  });
+
   app.put("/api/nail/manager-pin", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
@@ -20459,10 +20684,52 @@ or
       if (next === DEFAULT_MANAGER_PIN || /^(\d)\1{3}$/.test(next) || next === "1234") return res.status(400).json({ message: "Choose a PIN that is harder to guess." });
       const managerPinHash = await bcrypt.hash(next, 10);
       await mutateStorePreferences(storeId, (prefs) => ({ ...prefs, nailScreen: { ...(prefs.nailScreen ?? {}), managerPinHash } }));
+      // Every tablet of the salon fetches the new one for its offline copy (GET /api/nail/manager-pin/offline).
+      broadcastNotification({ type: "manager_pin_changed", storeId } as any);
       return res.json({ ok: true });
     } catch (err) {
       console.error("[nail/manager-pin put]", err);
       return res.status(500).json({ message: "Could not change the PIN" });
+    }
+  });
+
+  // Who can have a manager badge, and who already has one (Tech ID Print, Manager menu).
+  app.get("/api/nail/manager-badges", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const badges = (safeParsePreferences(row?.preferences as string | undefined) as any)?.nailScreen?.managerBadges ?? {};
+      const holders = await managerBadgeHolders(storeId);
+      return res.json({ holders: holders.map((h) => ({ ...h, hasBadge: badgeHashesOf(badges[String(h.staffId)]).length > 0 })) });
+    } catch (err) {
+      console.error("[nail/manager-badges]", err);
+      return res.status(500).json({ message: "Could not load the manager badges" });
+    }
+  });
+
+  // A new manager badge for the owner or a Manager: approved with the manager PIN (or a manager badge). The code is
+  // returned this once, to be printed; any badge printed before for them stops working.
+  app.post("/api/nail/manager-badges/:staffId", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await nailStoreId(req, res);
+      if (!storeId) return;
+      const pin = await checkManagerPin(storeId, req.headers["x-manager-pin"] ?? req.body?.managerPin);
+      if (pin !== "ok") { const r = pinRefusal(pin); return res.status(r.status).json(r.body); }
+      const holder = (await managerBadgeHolders(storeId)).find((h) => h.staffId === Number(req.params.staffId));
+      if (!holder) return res.status(400).json({ message: "Only the owner and staff with the Manager role can have a manager badge." });
+      let secret = "";
+      for (let i = 0; i < 6; i++) secret += BADGE_ALPHABET[crypto.randomInt(BADGE_ALPHABET.length)];
+      await mutateStorePreferences(storeId, (prefs) => ({
+        ...prefs,
+        nailScreen: { ...(prefs.nailScreen ?? {}), managerBadges: { ...((prefs.nailScreen as any)?.managerBadges ?? {}), [String(holder.staffId)]: managerBadgeHash(secret) } },
+      }));
+      // Tablets refresh their offline copy (the same event as a PIN change).
+      broadcastNotification({ type: "manager_pin_changed", storeId } as any);
+      return res.json({ code: `M${holder.techId}-${secret}`, techId: holder.techId, name: holder.name });
+    } catch (err) {
+      console.error("[nail/manager-badges issue]", err);
+      return res.status(500).json({ message: "Could not make the manager badge" });
     }
   });
 
@@ -20508,48 +20775,124 @@ or
   });
 
   // ── Local hub: how the salon's tablets find each other on its own Wi-Fi when the internet is down. ──
-  // The main POS tablet reports its address on the local network; every signed-in tablet of the salon is
-  // given that address and the salon's hub token (made here on first use) while it is online, and keeps both.
+  // POS stations report their LAN addresses; the default station is preferred, and another active station takes
+  // over after the current host's two-minute lease expires. Every tablet keeps the selected address and shared token.
   const privateAddress = (v: unknown): string | null => {
     const ip = typeof v === "string" ? v.trim() : "";
     return /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/.test(ip) ? ip : null;
   };
+  // From a page loaded before the election (it only reports the main POS's address): ignored once a host has been
+  // elected, so it cannot point the screens away from the elected host.
+  const saveHubAddress = async (storeId: number, address: string) => {
+    let changed = false;
+    const now = new Date().toISOString();
+    await mutateStorePreferences(storeId, (current: any) => {
+      if (current.localHub?.hostRegisterId != null) return null;
+      changed = current.localHub?.address !== address;
+      return { ...current, localHub: { ...(current.localHub ?? {}), address, confirmedAt: now, ...(changed ? { addressAt: now } : {}) } };
+    });
+    if (changed) broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/hub" } as any);
+  };
   app.get("/api/nail/hub", isAuthenticated, async (req, res) => {
     try {
-      const storeId = await nailStoreId(req, res);
+      const storeId = await hubStoreId(req, res);
       if (!storeId) return;
       const prefs: any = await mutateStorePreferences(storeId, (current: any) =>
         current.localHub?.token ? null : { ...current, localHub: { ...(current.localHub ?? {}), token: crypto.randomBytes(24).toString("hex") } });
-      return res.json({ token: prefs.localHub.token, address: prefs.localHub.address ?? null, port: 9477 });
+      return res.json({
+        token: prefs.localHub.token, address: prefs.localHub.address ?? null,
+        hostRegisterId: prefs.localHub.hostRegisterId ?? null, port: 9477,
+      });
     } catch (err) {
       console.error("[nail/hub get]", err);
       return res.status(500).json({ message: "Could not load the hub settings" });
     }
   });
-  // Diagnostics: each tablet says what state its hub link is in, so it shows in the server log.
+  // POS stations report their LAN IP so the main station can be preferred and another active station can take over
+  // when the main tablet stops checking in. The selected host is kept stable until it expires or the main returns.
+  app.post("/api/nail/hub/heartbeat", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await hubStoreId(req, res);
+      if (!storeId) return;
+      const registerId = Number(req.body?.registerId);
+      if (!Number.isSafeInteger(registerId) || registerId < 0) return res.status(400).json({ message: "Invalid POS station" });
+      const address = privateAddress(req.body?.address);
+      if (!address) return res.status(400).json({ message: "That is not an address on a local network" });
+      // The salon's internet IP (back office Devices tab, kiosk network lock) follows its POS tablets.
+      void reportPosNetwork(storeId, getClientIp(req)).catch((err) => console.error("[nail/hub/heartbeat network]", err));
+
+      const activeStations = await db.select({ id: registers.id, isDefault: registers.isDefault })
+        .from(registers).where(and(eq(registers.storeId, storeId), eq(registers.isActive, true)));
+      const station = registerId > 0 ? activeStations.find((r) => r.id === registerId) : null;
+      if ((registerId > 0 && !station) || (registerId === 0 && activeStations.length > 0)) {
+        return res.status(400).json({ message: "That POS station isn't active for this salon" });
+      }
+
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const leaseCutoff = now.getTime() - 120_000;
+      const leases = (await recordLocalHubLease(storeId, { registerId, address, seenAt: nowIso }))
+        .filter((candidate) => Number.isSafeInteger(candidate.registerId)
+          && typeof candidate.address === "string"
+          && Number.isFinite(Date.parse(candidate.seenAt))
+          && Date.parse(candidate.seenAt) >= leaseCutoff
+          && (activeStations.length === 0 ? candidate.registerId === 0 : activeStations.some((r) => r.id === candidate.registerId)));
+      const defaultRegisterId = activeStations.length === 0 ? 0 : activeStations.find((r) => r.isDefault)?.id;
+      let hub: any;
+      let changed = false;
+      // The settings row is written only when the host changes, or every 30 minutes as the host's confirmation
+      // (shown in the back office): every write is copied to all of the salon's tablets.
+      await mutateStorePreferences(storeId, (current: any) => {
+        const { candidates: _oldLeases, ...previous } = current.localHub ?? {};
+        const selected = chooseLocalHubHost(leases, defaultRegisterId, previous.hostRegisterId)
+          ?? { registerId, address, seenAt: nowIso };
+        changed = previous.address !== selected.address || previous.hostRegisterId !== selected.registerId;
+        // `force`: Update in the /nail Connected popup — the host's address is written now, not at the next confirmation.
+        const confirmDue = selected.registerId === registerId
+          && (req.body?.force === true || !(Date.parse(previous.confirmedAt) > now.getTime() - 30 * 60_000));
+        hub = {
+          ...previous,
+          token: previous.token || crypto.randomBytes(24).toString("hex"),
+          address: selected.address,
+          hostRegisterId: selected.registerId,
+          ...(changed || confirmDue ? { confirmedAt: nowIso } : {}),
+          ...(changed ? { addressAt: nowIso } : {}),
+        };
+        if (!changed && !confirmDue && previous.token && _oldLeases === undefined) return null;
+        return { ...current, localHub: hub };
+      });
+      if (changed) broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/hub" } as any);
+      return res.json({
+        token: hub.token, address: hub.address, hostRegisterId: hub.hostRegisterId, port: 9477,
+      });
+    } catch (err) {
+      console.error("[nail/hub heartbeat]", err);
+      return res.status(500).json({ message: "Could not report this POS station's hub address" });
+    }
+  });
+  // Diagnostics only; the station heartbeat is the source of truth for the selected hub host.
   app.post("/api/nail/hub/status", isAuthenticated, async (req, res) => {
-    const storeId = await nailStoreId(req, res);
-    if (!storeId) return;
-    const clean = (v: unknown) => String(v ?? "").replace(/[^\w.:-]/g, "").slice(0, 40);
-    console.log(`[local-hub] store=${storeId} role=${clean(req.body?.role)} status=${clean(req.body?.status)} peers=${Number(req.body?.peers) || 0} address=${clean(req.body?.address)}`);
-    return res.json({ ok: true });
+    try {
+      const storeId = await hubStoreId(req, res);
+      if (!storeId) return;
+      const role = ["pos", "station", "screen"].includes(req.body?.role) ? req.body.role : "other";
+      const address = role === "pos" || role === "station" ? privateAddress(req.body?.address) : null;
+      const clean = (v: unknown) => String(v ?? "").replace(/[^\w.:-]/g, "").slice(0, 40);
+      console.log(`[local-hub] store=${storeId} role=${role} status=${clean(req.body?.status)} peers=${Number(req.body?.peers) || 0} address=${clean(address)}`);
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[nail/hub status]", err);
+      return res.status(500).json({ message: "Could not report the hub status" });
+    }
   });
 
   app.put("/api/nail/hub", isAuthenticated, async (req, res) => {
     try {
-      const storeId = await nailStoreId(req, res);
+      const storeId = await hubStoreId(req, res);
       if (!storeId) return;
       const address = privateAddress(req.body?.address);
       if (!address) return res.status(400).json({ message: "That is not an address on a local network" });
-      // Every report confirms the address (confirmedAt, shown in the back office); only a new address changes
-      // addressAt and tells the other tablets.
-      let changed = false;
-      const now = new Date().toISOString();
-      await mutateStorePreferences(storeId, (current: any) => {
-        changed = current.localHub?.address !== address;
-        return { ...current, localHub: { ...(current.localHub ?? {}), address, confirmedAt: now, ...(changed ? { addressAt: now } : {}) } };
-      });
-      if (changed) broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/hub" } as any);
+      await saveHubAddress(storeId, address);
       return res.json({ address });
     } catch (err) {
       console.error("[nail/hub put]", err);
@@ -20634,7 +20977,8 @@ or
     }
   });
 
-  app.post("/api/nail/markers/:id/assign", isAuthenticated, async (req, res) => {
+  // Idempotent: a tablet that took the client offline resends this under one key (plans/barber-offline.md).
+  app.post("/api/nail/markers/:id/assign", isAuthenticated, idempotent("nail.marker.assign", (r) => resolveSessionStoreId(r)), async (req, res) => {
     try {
       if (!barberOnly(req, res)) return;
       const storeId = await nailStoreId(req, res);
@@ -20690,7 +21034,7 @@ or
         extras: z.array(z.object({ label: z.string().min(1).max(100), price: money })).max(30).optional(),
         redemption: z.object({ customerId: z.number().int().positive(), rewardId: z.number().int().positive() }).optional(),
         tenders: z.array(z.object({ method: z.enum(["cash", "gift", "m2", "tap", "card"]), amount: money,
-          code: z.string().optional(), paymentIntentId: z.string().optional() })).max(30),
+          code: z.string().optional(), paymentIntentId: z.string().optional(), offlineRef: z.string().max(80).optional() })).max(30),
         // A cash sale taken on a tablet while it was offline says when the money was actually collected.
         collectedAt: z.string().datetime().optional(),
         // The POS station the sale is taken on (owner, 2026-10-29: a station without a cash drawer can't take cash).
@@ -23494,8 +23838,10 @@ or
         name: d.businessName, email: d.email, timezone, phone: d.phone ?? null,
         category: d.businessType, userId: user.id, parkingOptions: [], accessibilityFeatures: [],
         ownPlace: d.ownPlace === "none" && !d.houseCalls ? "salon" : (d.ownPlace ?? "salon"),
-        // A home studio starts private (clients see the city until they book); the owner can change it.
-        addressPrivate: d.ownPlace === "home",
+        // The address starts private (clients see the city until they book) unless the pro said they work in a
+        // salon, suite or booth: a home studio, house calls only, or an app too old to ask (owner, 2026-11-02: a
+        // pro's home address is never shown until they choose to show it — Settings › Work Places).
+        addressPrivate: d.ownPlace !== "salon",
         houseCalls: d.houseCalls ?? false,
       } as any);
       createdStoreId = store.id;
@@ -24533,6 +24879,39 @@ or
     }
   });
 
+  // The receipt printer a tablet's Certxa app prints to (owner, 2026-11-02): sent by the app when the salon signs in,
+  // when the printer is set up, and after each print, so support sees it under Devices › Receipt printers.
+  app.post("/api/devices/receipt-printer", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const b = req.body ?? {};
+      const connection = ["net", "bluetooth", "usb"].includes(b.connection) ? String(b.connection) : null;
+      const address = typeof b.address === "string" ? b.address.trim().slice(0, 120) : "";
+      if (!connection || !address) return res.status(400).json({ message: "connection and address are required" });
+      const port = Number.isInteger(b.port) && b.port > 0 && b.port < 65536 ? b.port : null;
+      const text = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : null);
+      const print = b.print && typeof b.print === "object" ? { ok: b.print.ok === true, error: text(b.print.error, 300) } : null;
+      await pool.query(
+        `INSERT INTO app_receipt_printers (store_id, printer_key, connection, address, port, name, model, tablet_role, app_build, reported_ip,
+                                           last_seen_at, last_print_at, last_print_ok, last_error)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), CASE WHEN $11::boolean IS NULL THEN NULL ELSE now() END, $11, $12)
+         ON CONFLICT (store_id, printer_key) DO UPDATE SET
+           port = EXCLUDED.port, name = COALESCE(EXCLUDED.name, app_receipt_printers.name), model = EXCLUDED.model,
+           tablet_role = EXCLUDED.tablet_role, app_build = EXCLUDED.app_build, reported_ip = EXCLUDED.reported_ip, last_seen_at = now(),
+           last_print_at = CASE WHEN $11::boolean IS NULL THEN app_receipt_printers.last_print_at ELSE now() END,
+           last_print_ok = CASE WHEN $11::boolean IS NULL THEN app_receipt_printers.last_print_ok ELSE $11 END,
+           last_error = CASE WHEN $11::boolean IS NULL THEN app_receipt_printers.last_error WHEN $11 THEN NULL ELSE $12 END`,
+        [storeId, `${connection}:${address}`, connection, address, port, text(b.name, 120), text(b.model, 60), text(b.role, 30),
+         text(b.appBuild, 60), getClientIp(req), print ? print.ok : null, print?.error ?? null],
+      );
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error("[POST /api/devices/receipt-printer]", err);
+      return res.status(500).json({ message: "Could not save the printer" });
+    }
+  });
+
   app.get("/api/store-network/status", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
@@ -24869,6 +25248,8 @@ or
         // fall back to their emoji on the kiosk.
         categoryImages: { ...(ks.categoryImages ?? {}), ...catalogCategoryImages },
         timezone: store.timezone ?? "UTC",
+        // Whether the kiosk / customer screen prints a check-in slip (shared/printSettings.ts).
+        checkinSlip: printSettingsOf(prefs).checkinSlip,
         showServicePrice: ks.showServicePrice !== false,
         showServiceDuration: ks.showServiceDuration !== false,
         dualScreenMode: ks.dualScreenMode === true,
@@ -26521,6 +26902,8 @@ or
       const jobId = String(req.body?.jobId ?? "");
       if (!/^[A-Za-z0-9:._-]{1,100}$/.test(jobId)) return res.status(400).json({ error: "Invalid job" });
       const key = `kioskprint:${storeId}:${jobId}`;
+      const [printRow] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      if (printSettingsOf(safeParsePreferences(printRow?.preferences as string | undefined)).checkinSlip === "none") return res.json({ claimed: false });
       const redis = getRedisClient();
       if (redis) {
         try {
@@ -26671,6 +27054,35 @@ or
     } catch (err) {
       console.error("[PUT /api/registers/:id]", err);
       return res.status(500).json({ message: "Failed to update register" });
+    }
+  });
+
+  // Make this station the salon's main one (Settings → POS Stations, owner 2026-11-02): the one whose tablet hosts the
+  // salon hub (the hub election prefers it from its tablet's next minute check-in) and that owns the bare
+  // /frontdesk/:slug address. Before, the only way to change it was to delete the main station.
+  app.put("/api/registers/:id/make-main", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const id = parseInt(String(req.params.id), 10);
+      const all = await db.select().from(registers).where(eq(registers.storeId, storeId));
+      const target = all.find((r) => r.id === id);
+      if (!target) return res.status(404).json({ message: "Register not found" });
+      if (!target.isActive) return res.status(400).json({ message: "Turn this station on before making it the main one." });
+      const before = all.find((r) => r.isDefault);
+      if (before?.id !== id) {
+        await db.transaction(async (tx) => {
+          // One main station per salon (unique index): the old one first.
+          await tx.update(registers).set({ isDefault: false }).where(and(eq(registers.storeId, storeId), eq(registers.isDefault, true)));
+          await tx.update(registers).set({ isDefault: true }).where(eq(registers.id, id));
+        });
+        for (const r of [before?.id, id]) if (r != null) broadcastNotification({ type: "kiosk_checkout_pairing_changed", storeId, registerId: r });
+        broadcastNotification({ type: "settings_changed", storeId, scope: "/api/registers" } as any);
+      }
+      return res.json({ ok: true, id });
+    } catch (err) {
+      console.error("[PUT /api/registers/:id/make-main]", err);
+      return res.status(500).json({ message: "Failed to make this the main station" });
     }
   });
 
@@ -26882,6 +27294,38 @@ or
     return rows.length > 0;
   };
 
+  // One POS station's cash drawer, set from the /nail Manager menu on that station's tablet (owner, 2026-11-02).
+  // `cashDrawerId: null` = no drawer (no cash on that station). The station can leave a drawer that has taken cash
+  // only after that drawer's Day Close — the same rule as Settings › Cash Drawers.
+  app.put("/api/registers/:id/cash-drawer", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(404).json({ message: "Store not found" });
+      const registerId = parseInt(String(req.params.id), 10);
+      const [station] = await db.select({ id: registers.id, name: registers.name, cashDrawerId: registers.cashDrawerId }).from(registers)
+        .where(and(eq(registers.id, registerId), eq(registers.storeId, storeId))).limit(1);
+      if (!station) return res.status(404).json({ message: "That POS station isn't in this salon." });
+      const raw = req.body?.cashDrawerId;
+      const target = raw == null ? null : Number(raw);
+      if (target != null) {
+        const [drawer] = await db.select({ id: cashDrawers.id, isActive: cashDrawers.isActive }).from(cashDrawers)
+          .where(and(eq(cashDrawers.id, target), eq(cashDrawers.storeId, storeId))).limit(1);
+        if (!drawer || drawer.isActive === false) return res.status(404).json({ message: "That cash drawer isn't in this salon." });
+      }
+      if (station.cashDrawerId === target) return res.json({ registerId, cashDrawerId: target });
+      if (station.cashDrawerId != null && await drawerUsedThisShift(storeId, station.cashDrawerId)) {
+        const [cur] = await db.select({ name: cashDrawers.name }).from(cashDrawers).where(eq(cashDrawers.id, station.cashDrawerId)).limit(1);
+        return res.status(409).json({ code: "DRAWER_IN_USE", message: `${cur?.name ?? "This drawer"} has taken cash since its last Day Close. Run its Day Close first, then change ${station.name}'s cash drawer.` });
+      }
+      await db.update(registers).set({ cashDrawerId: target }).where(and(eq(registers.id, registerId), eq(registers.storeId, storeId)));
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/cash-drawers" } as any);
+      return res.json({ registerId, cashDrawerId: target });
+    } catch (err) {
+      console.error("[PUT /api/registers/:id/cash-drawer]", err);
+      return res.status(500).json({ message: "Failed to change the station's cash drawer" });
+    }
+  });
+
   app.post("/api/cash-drawers", isAuthenticated, async (req, res) => {
     try {
       const storeId = await resolveSessionStoreId(req);
@@ -26933,11 +27377,11 @@ or
       if (!Object.keys(patch).length && !registerIds) return res.status(400).json({ message: "Nothing to update" });
 
       const before = (await drawerStations(storeId)).get(id) ?? [];
-      const stationsChange = (registerIds != null && (registerIds.length !== before.length || registerIds.some((r) => !before.includes(r))))
-        || (patch.mainStation !== undefined && patch.mainStation !== cur.mainStation);
-      // A drawer's POS stations change only after its Day Close (owner, 2026-10-29): once it has taken cash (or had cash
-      // paid in/out) since it was last closed, that shift's count belongs to the stations it's on.
-      if (stationsChange && await drawerUsedThisShift(storeId, id)) {
+      const nextRegisterIds = registerIds ?? before;
+      const removesStation = before.some((registerId) => !nextRegisterIds.includes(registerId));
+      const removesMainStation = cur.mainStation && patch.mainStation === false;
+      // Adding stations doesn't affect the drawer's cash count. Removing one after cash activity waits until Day Close.
+      if ((removesStation || removesMainStation) && await drawerUsedThisShift(storeId, id)) {
         return res.status(409).json({ code: "DRAWER_IN_USE", message: `${cur.name} has taken cash since its last Day Close. Run its Day Close first, then change its POS stations.` });
       }
       const clash = await drawerStationCheck(storeId, id, registerIds ?? [], patch.mainStation === true);
@@ -27053,7 +27497,6 @@ or
   // sensitive settings like keypad hide take effect. Generates a unique token,
   // stores it temporarily, and verifies it when scanned.
 
-  const qrConfirmations = new Map<string, { storeId: number; setting: string; expiresAt: number }>();
 
   // POST /api/nail/qr-code/generate — create a confirmation QR code
   app.post("/api/nail/qr-code/generate", isAuthenticated, async (req, res) => {
@@ -27061,40 +27504,53 @@ or
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
       const setting = String(req.body?.setting ?? "keypadHide");
-      const token = `QR:${storeId}:${setting}:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
-      const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min expiry
-      qrConfirmations.set(token, { storeId, setting, expiresAt });
-      // Clean up expired tokens
-      for (const [k, v] of qrConfirmations) {
-        if (v.expiresAt < Date.now()) qrConfirmations.delete(k);
-      }
-      return res.json({ token, expiresAt });
+      if (setting !== "keypadHide") return res.status(400).json({ message: "Unknown setting" });
+      // The salon's KEYPAD code (owner, 2026-11-02): one QR, scanned at the lock screen, switches the keypad — hides it
+      // while it shows (that scan is the confirmation that the scanner works) and shows it again while hidden, so a
+      // salon is never stuck on a scanner-only lock screen. Kept as a hash; each new slip replaces it; no expiry.
+      let token = "KP:";
+      for (let i = 0; i < 8; i++) token += BADGE_ALPHABET[crypto.randomInt(BADGE_ALPHABET.length)];
+      await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), showKeypadHash: showKeypadHash(token) } }));
+      // Tablets refresh their offline copy, so the code works on them with no internet too.
+      broadcastNotification({ type: "manager_pin_changed", storeId } as any);
+      return res.json({ token, expiresAt: null });
     } catch (err) {
       console.error("[nail/qr-code/generate]", err);
       return res.status(500).json({ message: "Could not generate the QR code" });
     }
   });
 
-  // POST /api/nail/qr-code/verify — confirm a scanned QR code
-  app.post("/api/nail/qr-code/verify", isAuthenticated, async (req, res) => {
+  // POST /api/nail/keypad/toggle — the salon's KEYPAD code scanned at the lock screen: hides the keypad while it
+  // shows, shows it while hidden. A second scan within 3 s (a double read) is ignored.
+  const keypadToggledAt = new Map<number, number>();
+  app.post("/api/nail/keypad/toggle", isAuthenticated, async (req, res) => {
     try {
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
-      const token = String(req.body?.token ?? "");
-      const entry = qrConfirmations.get(token);
-      if (!entry) return res.status(404).json({ message: "QR code not found or already used" });
-      if (entry.storeId !== storeId) return res.status(403).json({ message: "QR code is for a different store" });
-      if (entry.expiresAt < Date.now()) {
-        qrConfirmations.delete(token);
-        return res.status(410).json({ message: "QR code has expired. Generate a new one." });
+      const code = String(req.body?.code ?? "").trim().toUpperCase();
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      const kept = (safeParsePreferences(row?.preferences as string | undefined) as any)?.nailScreen?.showKeypadHash;
+      if (!/^KP:[A-Z2-7]{8}$/.test(code) || typeof kept !== "string" || kept !== showKeypadHash(code)) {
+        return res.status(403).json({ message: "That keypad code isn't this salon's latest one." });
       }
-      qrConfirmations.delete(token);
-      return res.json({ ok: true, setting: entry.setting });
+      const recent = Date.now() - (keypadToggledAt.get(storeId) ?? 0) < 3_000;
+      let keypadVisible = true;
+      await mutateStorePreferences(storeId, (current) => {
+        const was = (current.nailScreen as any)?.keypadVisible !== false;
+        keypadVisible = recent ? was : !was;
+        return recent ? null : { ...current, nailScreen: { ...(current.nailScreen ?? {}), keypadVisible } };
+      });
+      if (!recent) {
+        keypadToggledAt.set(storeId, Date.now());
+        broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/screen-settings" } as any);
+      }
+      return res.json({ ok: true, keypadVisible });
     } catch (err) {
-      console.error("[nail/qr-code/verify]", err);
-      return res.status(500).json({ message: "Could not verify the QR code" });
+      console.error("[nail/keypad/toggle]", err);
+      return res.status(500).json({ message: "Could not change the keypad" });
     }
   });
+
 
   return httpServer;
 }

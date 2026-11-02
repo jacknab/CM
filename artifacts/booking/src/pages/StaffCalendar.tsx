@@ -58,6 +58,7 @@ import { cn } from "@/lib/utils";
 import type { AppointmentWithDetails } from "@shared/schema";
 import { isStaffDateSelectable, isStaffSlotBookable } from "@/lib/staffCalendarDatePolicy";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 // ─── Payroll helpers (mirrored from CommissionReport) ────────────────────────
 
 type PayrollSettingsData = {
@@ -1310,15 +1311,40 @@ export default function StaffCalendar() {
   useEffect(() => {
     if (!selectedStore?.id) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${selectedStore?.id}`);
-    ws.onmessage = () => {
+    const refresh = () => {
       queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
       if (turnSystem) {
         queryClient.invalidateQueries({ queryKey: ["/api/turn/eligibility", selectedStore?.id] });
       }
     };
-    ws.onerror = () => ws.close();
-    return () => { try { ws.close(); } catch { /* ignore */ } };
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let destroyed = false;
+    let hasConnectedBefore = false;
+    // It used to connect once and never again: after any drop the staff calendar stopped updating until reloaded.
+    const connect = () => {
+      if (destroyed) return;
+      const sock = new WebSocket(`${proto}://${window.location.host}/ws/notifications?storeId=${selectedStore?.id}`);
+      ws = sock;
+      keepSocketAlive(sock);
+      sock.onopen = () => {
+        // Back after a drop: whatever changed meanwhile was missed.
+        if (hasConnectedBefore) refresh();
+        hasConnectedBefore = true;
+      };
+      sock.onmessage = (event) => {
+        try { if (JSON.parse(event.data)?.type === "pong") return; } catch { /* not JSON: treat as a change */ }
+        refresh();
+      };
+      sock.onerror = () => sock.close();
+      sock.onclose = () => { if (!destroyed) reconnectTimer = setTimeout(connect, 3000); };
+    };
+    connect();
+    return () => {
+      destroyed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { ws?.close(); } catch { /* ignore */ }
+    };
   }, [selectedStore?.id, queryClient, turnSystem]);
 
   // ── Realtime: turn eligibility changed via window event ────────────────────

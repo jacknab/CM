@@ -1,4 +1,6 @@
 // Moved out of pages/Calendar.tsx so the /nail and /barber staff screens don't load the whole calendar.
+import { staffApi } from "@/lib/staffScreenApi";
+import { salonTimeZone } from "@/lib/salonClock";
 import { useState, useEffect } from "react";
 import { formatTurns, TURN_UNIT } from "@shared/turnRules";
 import { createPortal } from "react-dom";
@@ -747,7 +749,7 @@ export function TurnPageModal({
                             {row.turnUnits == null ? "—" : `${row.turnUnits < 0 ? "−" : row.kind === "adjustment" ? "+" : ""}${formatTurns(Math.abs(row.turnUnits))}`}
                           </span>
                           <span className="text-right text-xs text-slate-400">
-                            {new Date(row.timestamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                            {new Date(row.timestamp).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" })}
                           </span>
                         </div>
                       ))}
@@ -796,7 +798,7 @@ export function TurnAdjustPanel({ storeId, staffId, name, fixedOrder, onDone }: 
     try {
       const body = { staffId, units: fixedOrder ? 1000 : units ?? 0, reason: reason.trim(), managerPin };
       try {
-        const res = await fetch("/api/nail/turn-adjust", {
+        const res = await fetch(staffApi("/turn-adjust"), {
           method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ storeId, ...body }),
         });

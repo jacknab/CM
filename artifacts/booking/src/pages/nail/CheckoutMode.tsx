@@ -6,6 +6,8 @@
  *   · the customer-facing /frontdesk screen.
  * The maths lives in shared/nailCheckout.ts (unit-tested); this file is screen state + wiring.
  */
+import { printSettings } from "@/lib/printSettings";
+import { salonNowForPrint } from "@/lib/salonClock";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNailText } from "./i18n";
 import { useCardProvider } from "@/hooks/use-card-provider";
@@ -99,6 +101,9 @@ function rememberReceipt(r: LastReceipt) { try { localStorage.setItem(LAST_RECEI
 function recallReceipt(): LastReceipt | null {
   try { const raw = localStorage.getItem(LAST_RECEIPT_KEY); return raw ? (JSON.parse(raw) as LastReceipt) : null; } catch { return null; }
 }
+
+/** CARD tapped in a salon that takes no cards (front desk setup › Card payments: "We do not accept card payments"). */
+const CARDS_OFF = "CARD PAYMENTS ARE OFF · TURN THEM ON IN MANAGER › FRONT DESK SETUP";
 
 export function CheckoutMode(p: Props) {
   const { t: tx } = useNailText();
@@ -357,7 +362,18 @@ export function CheckoutMode(p: Props) {
   const cards = useCardPayments({
     ticketId: ticket.id, clientName: ticket.client.name, dualScreen: p.dualScreen, send,
     context: () => ({ tipCents: Math.round(totals.tip * 100), discountCents: Math.round(totals.discount * 100), priorTenderedCents: Math.round(totals.tendered * 100) }),
-    onPaid: (kind, paid, last4, paymentIntentId, cardDetails) => {
+    onPaid: (kind, paid, last4, paymentIntentId, cardDetails, offlineRef) => {
+      // A card the M2 took with no internet: kept on the tablet, sent to Stripe when it is back.
+      if (!paymentIntentId && offlineRef) {
+        setTenders((cur) => cur.some((t) => t.offlineRef === offlineRef)
+          ? cur : [...cur, { id: nextId.current++, method: kind, amount: paid, offlineRef }]);
+        setCents("");
+        if (cardDetails) lastCardDetails.current = cardDetails;
+        say(`CARD TAKEN OFFLINE · ${money(paid)}${last4 ? ` · ····${last4}` : ""} · SENT WHEN THE INTERNET IS BACK`, "success");
+        chargingHere.current = false;
+        setPayType("cash");
+        return;
+      }
       if (!paymentIntentId) { say("Card charge could not be identified. Check Stripe before taking another payment.", "error"); return; }
       try {
         const saved = JSON.parse(localStorage.getItem(cardRecoveryKey) || "[]") as Tender[];
@@ -393,6 +409,8 @@ export function CheckoutMode(p: Props) {
     // The customer's screen reconnected and is asking whether this checkout is still open: answer with the cart.
     if (m.type === "kiosk_checkout_sync_request") {
       mirrorCart();
+      // Already paid: the screen may have missed the payment (a dropped link) — send it again so it offers the receipt.
+      if (totals.settled && tenders.length > 0) send("kiosk_checkout_payment_result", { success: true, total: totals.total, appointmentId: ticket.id, ...settlementAfter(0) });
       // Still waiting on the customer: their screen lost the tip request when it dropped, so send it again.
       if ((awaitingTip || cards.awaitingFrontdesk) && lastTipRequest.current) send("kiosk_checkout_tip_request", lastTipRequest.current);
       return;
@@ -919,6 +937,8 @@ export function CheckoutMode(p: Props) {
   // CARD is the payment type, like CASH: tapping it charges nothing. (With the salon's own provider the panel
   // becomes "Card Payment Approved".)
   const takeCard = () => {
+    // The salon takes no cards (front desk setup › Card payments): CARD is off.
+    if (cardProvider === "none") return say(CARDS_OFF, "error");
     if (!paying) return beginPaying();
     setPayType("card");
     if (cardProvider !== "own") say("TYPE THE CARD AMOUNT AND PRESS ENTER", "info");
@@ -926,6 +946,7 @@ export function CheckoutMode(p: Props) {
   // ENTER with CARD selected: the reader starts for the typed amount, or for the balance when nothing is typed.
   // The customer's screen shows the card animation while this device's reader waits.
   const chargeCard = () => {
+    if (cardProvider === "none") return say(CARDS_OFF, "error");
     if (cardProvider === "own") return recordOwnCard();
     if (cardBusy) return;
     const value = Math.min(wanted(), rest());
@@ -942,7 +963,7 @@ export function CheckoutMode(p: Props) {
   const payCheckout = () => {
     if (totals.settled) return finish();
     if (!paying) return beginPaying();
-    say(payType === "card" && cardProvider === "own" ? "TAP CARD PAYMENT APPROVED ONCE YOUR TERMINAL APPROVES IT" : payType === "card" ? "TYPE THE CARD AMOUNT AND PRESS ENTER" : "TYPE THE CASH AMOUNT AND PRESS ENTER, OR TAP CARD", "info");
+    say(cardProvider === "none" ? "TYPE THE CASH AMOUNT AND PRESS ENTER" : payType === "card" && cardProvider === "own" ? "TAP CARD PAYMENT APPROVED ONCE YOUR TERMINAL APPROVES IT" : payType === "card" ? "TYPE THE CARD AMOUNT AND PRESS ENTER" : "TYPE THE CASH AMOUNT AND PRESS ENTER, OR TAP CARD", "info");
   };
   // The customer's screen follows what staff are looking at. Leaving the POS tab, or the screen locking, sends it
   // back to its welcome page; coming back shows the order again. A card being taken keeps it where it is.
@@ -1083,7 +1104,11 @@ export function CheckoutMode(p: Props) {
   // for a card sale), or 'both' (cash — no signature needed, nothing held back).
   // Why the last receipt print failed, as the tablet app reported it — shown to staff.
   const lastPrintError = useRef<string | null>(null);
-  const nativePrintReceipt = (copy: 'salon' | 'customer' | 'both', reprint?: LastReceipt): Promise<boolean> => new Promise((resolve) => {
+  const nativePrintReceipt = (asked: 'salon' | 'customer' | 'both', reprint?: LastReceipt): Promise<boolean> => new Promise((resolve) => {
+    // The salon chose not to print its own copy (front desk setup → Printing): only the customer's copy prints.
+    const salonCopy = printSettings().salonCopy;
+    if (!salonCopy && asked === "salon") { resolve(true); return; }
+    const copy = !salonCopy && asked === "both" ? "customer" : asked;
     const requestId = `pr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     let finished = false;
     const finishWait = (ok: boolean, error?: string) => {
@@ -1107,8 +1132,9 @@ export function CheckoutMode(p: Props) {
         storeCityStateZip: p.storeCityStateZip,
         storePhone: p.storePhone,
         // A ticket made offline has no number from the server yet; its place in this tablet's own list is printed instead.
-        ticketNumber: ticket.ticketNumber ?? Math.abs(ticket.id),
-        dateIso: new Date().toISOString(),
+        ticketNumber: ticket.ticketNumber ?? Math.abs(ticket.id) % 1_000_000,
+        // The salon's clock time: the app prints the time in the tablet's own zone (lib/salonClock.ts).
+        dateIso: salonNowForPrint(),
         clientName: ticket.client.name,
         staffName: ticket.staff?.name,
         items: receiptItems(),
@@ -1169,6 +1195,12 @@ export function CheckoutMode(p: Props) {
     // A card sale already auto-printed the salon (signature) copy the moment it settled — this
     // button only owes the customer their own copy. Cash never auto-prints, so it still owes both.
     const copy = lastCardPaymentIntentId.current ? "customer" : "both";
+    // The salon (signature) copy first, if it hasn't gone out yet: a receipt asked for on the customer's screen
+    // the moment a card sale settles used to race it, and only the customer copy came out (2026-11-02).
+    if (copy === "customer" && canNativePrint && !salonCopyAutoPrinted.current) {
+      salonCopyAutoPrinted.current = true;
+      await nativePrintReceipt("salon");
+    }
     const ok = await printReceiptNow(copy);
     setReceiptBusy(null);
     if (!ok) return say(`RECEIPT DID NOT PRINT — ${(lastPrintError.current || "CHECK THE PRINTER AND TRY AGAIN").toUpperCase()}`, "error");
@@ -1487,7 +1519,7 @@ export function CheckoutMode(p: Props) {
                 ) : (
                 <div className="pay-methods">
                   <button type="button" className={`pay-cash ${paying && payType === "cash" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "cash"} aria-disabled={p.cashAllowed === false} style={p.cashAllowed === false ? { opacity: 0.4 } : undefined} onClick={chooseCash} data-testid="nail-pay-cash"><Banknote size={26} /><span>{tx("cash")}</span></button>
-                  <button type="button" className={`pay-card ${paying && payType === "card" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "card"} disabled={cardBusy && cardProvider !== "own"} onClick={takeCard} data-testid="nail-pay-card">
+                  <button type="button" className={`pay-card ${paying && payType === "card" ? "pay-type-on" : ""}`} aria-pressed={paying && payType === "card"} disabled={cardBusy && cardProvider === "stripe"} aria-disabled={cardProvider === "none"} style={cardProvider === "none" ? { opacity: 0.4 } : undefined} onClick={takeCard} data-testid="nail-pay-card">
                     {cardBusy && cardProvider !== "own" ? <Loader2 size={26} className="spin" /> : <CreditCard size={26} />}<span>{cardProvider === "own" || cardLabel === "CARD" ? tx("card") : cardLabel}</span>
                   </button>
                   <button type="button" className="pay-gift" onClick={() => openGift("pay")} data-testid="nail-pay-gift"><Gift size={26} /><span>{tx("giftCard")}</span></button>

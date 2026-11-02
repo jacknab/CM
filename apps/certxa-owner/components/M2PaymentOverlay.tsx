@@ -51,6 +51,8 @@ export interface M2CompleteExtra {
   last4?:           string;
   /** Full card details from the reader — kept in the app so the receipt printer can print the card block. */
   cardDetails?:     unknown;
+  /** Taken with no internet: kept on this tablet and sent to Stripe later (lib/offlineCard.ts). */
+  offlineRef?:      string;
 }
 
 interface Props {
@@ -130,7 +132,7 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
       if (cancelRef.current) return;
 
       const payMethod = isTap ? 'tap_to_pay' : 'm2';
-      const { cardDetails, paymentIntentId } = await payment.run(
+      const { cardDetails, paymentIntentId, offlineRef } = await payment.run(
         data.amountCents,
         data.appointmentId,
         data.clientName,
@@ -148,6 +150,7 @@ export function M2PaymentOverlay({ visible, data, onComplete, onError, onCancel 
         paymentIntentId,
         last4: (cardDetails as any)?.last4,
         cardDetails,
+        offlineRef,
       });
     } catch (err: any) {
       if (cancelRef.current) return;

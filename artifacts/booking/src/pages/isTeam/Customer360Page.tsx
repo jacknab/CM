@@ -38,7 +38,7 @@ function useLocalTime(timezone: string) {
   }
 }
 
-const TABS = ["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "POS"];
+const TABS = ["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "Devices"];
 
 export default function TeamCustomer360Page() {
   const { id } = useParams();
@@ -208,10 +208,10 @@ export default function TeamCustomer360Page() {
         {activeTab === "Communications" && (
           <CommunicationsTab accountId={accountId} />
         )}
-        {activeTab === "POS" && (
+        {activeTab === "Devices" && (
           <PosTab accountId={accountId} />
         )}
-        {!["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "POS"].includes(activeTab) && (
+        {!["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "Devices"].includes(activeTab) && (
           <div className="p-6 flex items-center justify-center h-64">
             <p className="text-slate-400 text-sm">{activeTab} — coming soon</p>
           </div>

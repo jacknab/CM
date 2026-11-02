@@ -136,7 +136,7 @@ export function StationsFullBanner({ show }: { show: boolean }) {
   return (
     <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-[150] max-w-lg w-[calc(100%-1.5rem)] rounded-xl bg-amber-50 border border-amber-300 px-4 py-2.5 text-xs text-amber-900 shadow-lg">
       Every front desk station already belongs to another tablet, so this one isn't linked to a customer screen.
-      The owner can add a station or release an unused one in Settings → POS Stations.
+      A manager can put this tablet on its station in the Manager menu (Change Station), or add a station in Settings → POS Stations.
     </div>
   );
 }

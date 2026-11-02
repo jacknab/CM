@@ -17,7 +17,8 @@ export interface Extra { id: number; label: string; price: number; kind: ExtraKi
  * cash · m2 (Stripe M2 reader) · tap (Tap to Pay) — the calendar's own tender names — · gift (a gift card, `code` says which;
  * it is only charged when the sale closes) · card (recorded by hand for a payment taken elsewhere; the Nail POS no longer offers it).
  */
-export interface Tender { id: number; method: "cash" | "card" | "m2" | "tap" | "gift"; amount: number; code?: string; paymentIntentId?: string }
+/** `offlineRef`: an M2 card taken with no internet — saved on the tablet, sent to Stripe later (no PaymentIntent yet). */
+export interface Tender { id: number; method: "cash" | "card" | "m2" | "tap" | "gift"; amount: number; code?: string; paymentIntentId?: string; offlineRef?: string }
 export type DiscountInput = { type: "percent" | "dollar"; value: number } | null;
 
 /** The store's POS tax settings (locations.sales_tax_rate / tax_services_taxable / tax_products_taxable). */

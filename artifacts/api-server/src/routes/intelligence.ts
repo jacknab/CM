@@ -1516,14 +1516,20 @@ export async function buildAssistantSnapshot(storeId: number) {
     SELECT
       COALESCE(SUM(CASE WHEN date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz})
                         THEN CAST(total_paid AS DECIMAL(10,2)) END), 0)::float AS this_month,
-      COALESCE(SUM(CASE WHEN date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz}) - INTERVAL '1 month'
-                        THEN CAST(total_paid AS DECIMAL(10,2)) END), 0)::float AS last_month,
+      COALESCE(SUM(CASE WHEN date AT TIME ZONE ${tz} >= (NOW() AT TIME ZONE ${tz}) - INTERVAL '30 days'
+                          AND date AT TIME ZONE ${tz} <= NOW() AT TIME ZONE ${tz}
+                        THEN CAST(total_paid AS DECIMAL(10,2)) END), 0)::float AS last_30_days,
+      COALESCE(SUM(CASE WHEN date AT TIME ZONE ${tz} >= (NOW() AT TIME ZONE ${tz}) - INTERVAL '60 days'
+                          AND date AT TIME ZONE ${tz} < (NOW() AT TIME ZONE ${tz}) - INTERVAL '30 days'
+                        THEN CAST(total_paid AS DECIMAL(10,2)) END), 0)::float AS previous_30_days,
       COUNT(*) FILTER (WHERE date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz}))::int AS visits_this_month,
-      COUNT(*) FILTER (WHERE date_trunc('month', date AT TIME ZONE ${tz}) = date_trunc('month', NOW() AT TIME ZONE ${tz}) - INTERVAL '1 month')::int AS visits_last_month,
-      EXTRACT(DAY FROM (NOW() AT TIME ZONE ${tz}))::int AS day_of_month
+      COUNT(*) FILTER (WHERE date AT TIME ZONE ${tz} >= (NOW() AT TIME ZONE ${tz}) - INTERVAL '30 days'
+                          AND date AT TIME ZONE ${tz} <= NOW() AT TIME ZONE ${tz})::int AS visits_last_30_days,
+      COUNT(*) FILTER (WHERE date AT TIME ZONE ${tz} >= (NOW() AT TIME ZONE ${tz}) - INTERVAL '60 days'
+                          AND date AT TIME ZONE ${tz} < (NOW() AT TIME ZONE ${tz}) - INTERVAL '30 days')::int AS visits_previous_30_days
     FROM appointments
     WHERE store_id = ${storeId} AND status = 'completed'
-      AND date >= NOW() - INTERVAL '70 days'
+      AND date >= NOW() - INTERVAL '61 days'
   `);
   const r: any = (revenue as any).rows?.[0] ?? {};
 
@@ -1626,13 +1632,15 @@ export async function buildAssistantSnapshot(storeId: number) {
   return {
     salon: store?.name ?? "the salon",
     revenue: {
-      thisMonthSoFar: round(r.this_month), lastFullMonth: round(r.last_month),
-      // Worked out here so the wording is always right: "up 136%" / "down 12%" against last month's total.
-      changeVsLastMonth: Number(r.last_month) > 0
-        ? `${Number(r.this_month) >= Number(r.last_month) ? "up" : "down"} ${Math.abs(Math.round((Number(r.this_month) - Number(r.last_month)) / Number(r.last_month) * 100))}%`
+      calendarMonthToDate: round(r.this_month),
+      last30Days: round(r.last_30_days), previous30Days: round(r.previous_30_days),
+      // Compare equal rolling windows so a new calendar month is never compared with a completed month.
+      changeVsPrevious30Days: Number(r.previous_30_days) > 0
+        ? `${Number(r.last_30_days) >= Number(r.previous_30_days) ? "up" : "down"} ${Math.abs(Math.round((Number(r.last_30_days) - Number(r.previous_30_days)) / Number(r.previous_30_days) * 100))}%`
         : null,
-      visitsThisMonthSoFar: visits, visitsLastMonth: r.visits_last_month ?? 0,
-      dayOfMonth: r.day_of_month ?? null,
+      visitsThisMonthSoFar: visits,
+      visitsLast30Days: r.visits_last_30_days ?? 0,
+      visitsPrevious30Days: r.visits_previous_30_days ?? 0,
       averageTicketThisMonth: visits ? round(Number(r.this_month) / visits) : 0,
       tipsThisMonth: round(extras?.tips), retailSalesThisMonth: round(extras?.retail),
     },
@@ -1781,10 +1789,10 @@ WHO IS WHO: you are talking to ${ownerFullName}. Team members in the data are ot
 
 PERSONALITY: warm, upbeat and polite, like a friendly business partner who is genuinely glad to see them. A little personality is good: celebrate good news ("Nice!", "Great month so far!"), be kind about bad news ("No-shows sting —"), and sound human, never robotic. Plain words, short sentences, no jargon, no hype, no emojis.
 GREETING: it is ${partOfDay} on ${weekday} at the salon. The first message of a visit (the briefing) opens with a short, friendly greeting${firstName ? ` using ${firstName}'s first name` : ""} that fits the time of day — vary it, for example ${firstName ? `"Good ${partOfDay}, ${firstName}!", "Hi ${firstName}, happy ${weekday}!", "Hey ${firstName}, hope your ${partOfDay}'s going well."` : `"Good ${partOfDay}!", "Hi, happy ${weekday}!"`} — and ends by warmly inviting them to ask for anything specific they'd like to know or see, worded naturally and differently each time (for example "Anything you'd like me to dig into? Just ask." or "Want to see anything in more detail? I'm right here."). Never end with a task. When answering a follow-up question, skip the greeting and answer warmly and directly.
-TONE EXAMPLE — the voice to use, NOT the facts (its numbers are made up; always use the salon data): "Good evening, Maria! It's quiet right now — no one's in the salon. No-shows sting: 2 today, about $90 in lost bookings, but Certxa has already followed up with both. Nice work this month: $8,200, up 12% from last month's $7,300. Anything you'd like me to dig into? Just ask."
+TONE EXAMPLE — the voice to use, NOT the facts (its numbers are made up; always use the salon data): "Good evening, Maria! It's quiet right now — no one's in the salon. No-shows sting: 2 today, about $90 in lost bookings, but Certxa has already followed up with both. Nice work over the last 30 days: $8,200, up 12% from the previous 30 days' $7,300. Anything you'd like me to dig into? Just ask."
 
 WHAT THE OWNER CARES ABOUT, in this order:
-1. Money: revenue this month, average ticket, tips, retail sales.
+1. Money: revenue over the last 30 days, average ticket, tips, retail sales.
 2. What's coming: today's bookings, the next 7 days, the busiest day ahead.
 3. Clients: new clients, clients coming back, reviews.
 4. The team: who is doing well, top services.
@@ -1797,7 +1805,7 @@ Certxa automatically texts clients who are due to rebook, brings back clients wh
 
 RULES:
 - Use only the numbers in the salon data. Never invent figures, names or dates. If the data can't answer, say plainly that it isn't tracked yet.
-- This month is partial (revenue.dayOfMonth): if it is behind last month, don't call it a drop — the month isn't over. Never mention the day number, and never use words from these instructions like "fairly", "partial", "reported" or "data".
+- Revenue comparisons use two consecutive, equally sized 30-day periods in the salon's local time. Use revenue.last30Days and revenue.changeVsPrevious30Days exactly as given, and compare only with revenue.previous30Days. Never compare calendarMonthToDate with a full prior month or call a new month's calendar-to-date total a drop. If changeVsPrevious30Days is null, don't state a percentage or comparison.
 - Never use these words: utilization, churn, drifting, at-risk, leakage, slots, dead seats, growth score, engagement. Say "clients who haven't been back", "open times".
 - Money in whole dollars like $6,563. Skip any number that is 0 or missing instead of reporting it.
 - Answer the owner's question first and directly, in the question's own terms. Don't repeat the briefing.
@@ -1812,12 +1820,12 @@ RULES:
   - Whenever there are no-shows or cancellations, give the estimated revenue lost to them with the count (for example "4 no-shows, about $180 in lost bookings"), from totals.estimatedRevenueLostToNoShows / estimatedRevenueLostToCancellations. Call it an estimate.
   - Then what Certxa and Autumn did that same day. Always say what Certxa's texts were for, by purpose, never a bare count (for example "Certxa followed up with the 4 clients who missed their appointment and sent 1 rebooking reminder"). Then Autumn's calls (businessDay.autumn).
   - Leave out anything that is 0 or not in the data — never say "no clients booked", "made no bookings", "$0", or that something "isn't shown". If nothing happened yet today, say so in plain words.
-  Then one short line on this month: revenue so far and revenue.changeVsLastMonth exactly as given, with last month's total (for example "This month: $6,563, up 136% from last month's $2,778.").
+  Then one short line on the last 30 days: revenue.last30Days and revenue.changeVsPrevious30Days exactly as given, with revenue.previous30Days when a comparison is available (for example "Over the last 30 days: $6,563, up 12% from the previous 30 days' $5,860."). Never describe this as "this month" or compare it to a calendar-month total.
 - Every number in businessDay is for that one day only. Never present a day's number as a month or all-time figure, and never mix numbers from different periods in one sentence.
 - Only state things the data shows. Never claim Autumn or Certxa did something the numbers don't show (for example, don't say Autumn booked appointments when businessDay.autumn.bookingsMade is 0 — just leave bookings out).
 
 Reply with a JSON object: {"reply": string (under 95 words, real numbers),
-"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} — the first card is about the business day (open: revenue so far today, or the next booking; otherwise that day's revenue with services done in the detail, labeled "Today" or "Yesterday"), then cards an owner is glad to see: revenue this month, bookings in the next 7 days, top service or top team member, clients who booked after Certxa's texts that day, Autumn's calls that day, average rating. Never a card about a problem,
+"highlights": up to 4 of {"label": string, "value": string, "detail": string (optional)} — the first card is about the business day (open: revenue so far today, or the next booking; otherwise that day's revenue with services done in the detail, labeled "Today" or "Yesterday"), then cards an owner is glad to see: revenue over the last 30 days, bookings in the next 7 days, top service or top team member, clients who booked after Certxa's texts that day, Autumn's calls that day, average rating. Never a card about a problem,
 "actions": up to 2 of {"id": one of ${Object.keys(ASSISTANT_LINKS).join(" | ")}} — only links that let the owner look at something useful}.
 
 SALON DATA (JSON):

@@ -1,8 +1,14 @@
-import { useCallback, useMemo, useState } from "react";
+import { staffApi } from "@/lib/staffScreenApi";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useBarcodeScanner } from "@/hooks/use-barcode-scanner";
+import { KEYPAD_CODE, scanKeypadCode } from "@/lib/keypadCode";
 import { QRCodeSVG } from "qrcode.react";
 import { Loader2, Printer, QrCode, X, AlertCircle, CheckCircle } from "lucide-react";
 import { buildTechIdSlip, buildQrConfirmationSlip } from "@/lib/thermalPrinter";
-import { printNativeTechId } from "@/lib/native-tech-id";
+import { nativeAppWithoutBadgePrint, printNativeTechId } from "@/lib/native-tech-id";
+
+const NEEDS_APP_UPDATE = "This tablet's Certxa app needs its latest update to print this. Close the app and open it again twice, then try again.";
 
 interface PrintableTech {
   id: number;
@@ -24,6 +30,7 @@ export function TechIdPrintSheet({
   savingKeypad,
   onKeypadVisibleChange,
   thermalPrint,
+  managerPin,
   onClose,
 }: {
   techs: PrintableTech[];
@@ -31,6 +38,8 @@ export function TechIdPrintSheet({
   savingKeypad: boolean;
   onKeypadVisibleChange: (visible: boolean) => void;
   thermalPrint?: (bytes: Uint8Array) => Promise<void>;
+  /** The manager PIN (or manager badge) that opened the Manager menu: approves printing a manager badge. */
+  managerPin?: string | null;
   onClose: () => void;
 }) {
   const list = useMemo(
@@ -44,17 +53,62 @@ export function TechIdPrintSheet({
   const selected = list.find((tech) => tech.id === selectedId) ?? list[0] ?? null;
   const techId = selected?.barberNumber ?? null;
   const qrValue = techId == null ? "" : `TECH:${techId}`;
+  // The owner and Managers can also have a manager badge (lib/managerPin.ts).
+  const [badgeHolders, setBadgeHolders] = useState<number[]>([]);
+  useEffect(() => {
+    let live = true;
+    fetch(staffApi("/manager-badges"), { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live && Array.isArray(d?.holders)) setBadgeHolders(d.holders.map((h: any) => Number(h.staffId))); })
+      .catch(() => { /* offline: no manager badges to print */ });
+    return () => { live = false; };
+  }, []);
+  const canHaveBadge = selected != null && badgeHolders.includes(selected.id);
 
+  /** Prints on the owner app's printer, else on a receipt printer connected to this page. */
+  const printCode = async (caption: string, code: string, slip: () => Uint8Array) => {
+    const native = await printNativeTechId({ id: techId ?? 0, name: caption }, code);
+    if (native) { if (!native.ok) throw new Error(native.error); return; }
+    if (nativeAppWithoutBadgePrint()) throw new Error(NEEDS_APP_UPDATE);
+    if (!thermalPrint) throw new Error("Connect the receipt printer from the Manager menu, then try again.");
+    await thermalPrint(slip());
+  };
+
+  /** The manager badge just printed, shown on screen (its code is made when it is printed). */
+  const [printed, setPrinted] = useState<{ staffId: number; code: string } | null>(null);
+  const printManagerBadge = async () => {
+    if (!selected || printing) return;
+    setPrinting(true);
+    setMessage("");
+    try {
+      const res = await fetch(staffApi(`/manager-badges/${selected.id}`), {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...(managerPin ? { "X-Manager-Pin": managerPin } : {}) },
+        body: "{}",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "Could not make the manager badge.");
+      const caption = `${selected.name} - MANAGER`;
+      await printCode(caption, data.code, () => buildTechIdSlip({ id: data.techId, name: caption }, data.code));
+      setPrinted({ staffId: selected.id, code: data.code });
+      setMessage(`Printed ${selected.name}'s Tech ID. It signs in at the lock screen and works as the manager PIN. Older badges for ${selected.name} no longer work as the manager PIN.`);
+    } catch (error: any) {
+      setMessage(error?.message || "Could not print the manager badge.");
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  // One badge (owner, 2026-11-02): the owner's and a Manager's Tech ID is their manager badge — the same QR signs
+  // them in at the lock screen and stands in for the manager PIN. Everyone else gets the plain Tech ID.
   const printTechId = async () => {
+    if (canHaveBadge) { await printManagerBadge(); return; }
     if (!selected || techId == null || printing) return;
     setPrinting(true);
     setMessage("");
     try {
-      const printedNatively = await printNativeTechId({ id: techId, name: selected.name });
-      if (!printedNatively) {
-        if (!thermalPrint) throw new Error("Connect the receipt printer from the Manager menu, then try again.");
-        await thermalPrint(buildTechIdSlip({ id: techId, name: selected.name }));
-      }
+      await printCode(selected.name, qrValue, () => buildTechIdSlip({ id: techId, name: selected.name }));
       setMessage(`Printed ${selected.name}'s Tech ID.`);
     } catch (error: any) {
       setMessage(error?.message || "Could not print this Tech ID.");
@@ -64,13 +118,9 @@ export function TechIdPrintSheet({
   };
 
   const generateQrConfirmation = useCallback(async () => {
-    if (!thermalPrint) {
-      setMessage("Connect the receipt printer from the Manager menu, then try again.");
-      return;
-    }
     try {
       setMessage("Generating QR code…");
-      const res = await fetch("/api/nail/qr-code/generate", {
+      const res = await fetch(staffApi("/qr-code/generate"), {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -79,13 +129,34 @@ export function TechIdPrintSheet({
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "Could not generate QR code");
       setQrConfirmation({ token: data.token, expiresAt: data.expiresAt, printing: true, message: "Printing QR code…" });
-      await thermalPrint(buildQrConfirmationSlip({ storeName: "Salon", token: data.token, setting: "Hide Keypad" }));
+      // The owner app's printer first (the page's own printer is only for a browser): until 2026-11-02 this asked only
+      // the page's, so on the tablets it never printed.
+      // The salon's KEYPAD QR: scanned it hides the keypad (the confirmation) and later shows it again.
+      const native = await printNativeTechId({ id: 0, name: "KEYPAD" }, data.token);
+      if (native && !native.ok) throw new Error(native.error);
+      if (!native) {
+        if (nativeAppWithoutBadgePrint()) throw new Error(NEEDS_APP_UPDATE);
+        if (!thermalPrint) throw new Error("Connect the receipt printer from the Manager menu, then try again.");
+        await thermalPrint(buildQrConfirmationSlip({ storeName: "Salon", token: data.token, setting: "Keypad" }));
+      }
       setQrConfirmation((prev) => prev ? { ...prev, printing: false, message: "QR code printed. Scan it to confirm." } : null);
     } catch (error: any) {
       setQrConfirmation(null);
       setMessage(error?.message || "Could not generate QR code.");
     }
   }, [thermalPrint]);
+
+  // The KEYPAD QR scanned while this screen waits for it: the keypad is hidden (the scan proves the scanner works).
+  const queryClient = useQueryClient();
+  useBarcodeScanner((raw) => {
+    if (!qrConfirmation || !KEYPAD_CODE.test(raw.trim())) return;
+    void scanKeypadCode(raw, queryClient).then((r) => {
+      if (!r.ok) { setMessage(r.error); return; }
+      if (r.keypadVisible) { setMessage("Keypad shown."); return; }
+      setQrConfirmation(null);
+      setMessage("Keypad hidden. Scan the same KEYPAD QR at the lock screen to show it again.");
+    });
+  }, !!qrConfirmation);
 
   const cancelQrConfirmation = useCallback(() => {
     setQrConfirmation(null);
@@ -120,8 +191,8 @@ export function TechIdPrintSheet({
             <div className="mb-4 text-center">
               <AlertCircle className="h-12 w-12 text-amber-400 mx-auto" />
               <h3 className="mt-3 text-xl font-bold">Confirm Keypad Hide</h3>
-              <p className="mt-2 text-slate-300">A QR code has been printed. Scan it with the lock screen scanner to confirm hiding the keypad.</p>
-              <p className="mt-1 text-xs text-slate-500">The QR code expires in 5 minutes.</p>
+              <p className="mt-2 text-slate-300">A KEYPAD QR code has been printed. Scan it now to hide the keypad.</p>
+              <p className="mt-1 text-xs text-slate-500">Keep it: scanning the same QR at the lock screen shows the keypad again.</p>
             </div>
             <div className="flex flex-col items-center justify-center flex-1 bg-white p-6 text-slate-950 rounded-xl">
               <div className="rounded-xl border-4 border-slate-950 bg-white p-3"><QRCodeSVG value={qrConfirmation.token} size={190} level="M" marginSize={0} /></div>
@@ -147,19 +218,19 @@ export function TechIdPrintSheet({
             <div className="border-b border-slate-700 bg-slate-950/50 px-5 py-4">
               <div className="flex items-center justify-between gap-5 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3">
                 <div>
-                  <p className="font-semibold">Show keypad on lock screen</p>
+                  <p className="font-semibold">Keypad on lock screen</p>
                   <p className="mt-0.5 text-xs text-slate-400">When hidden, technicians must scan their printed ID.</p>
                 </div>
+                {/* One button: it says what a tap will do, and stays pressed in while the keypad is hidden. */}
                 <button
                   type="button"
-                  role="switch"
-                  aria-checked={keypadVisible}
+                  aria-pressed={!keypadVisible}
                   disabled={savingKeypad}
                   onClick={() => handleKeypadToggle(!keypadVisible)}
-                  className={`relative h-8 w-14 shrink-0 rounded-full transition ${keypadVisible ? "bg-emerald-500" : "bg-slate-600"} disabled:opacity-60`}
+                  className={`min-w-[150px] shrink-0 rounded-xl border px-5 py-3 font-bold transition disabled:opacity-60 ${keypadVisible ? "border-slate-600 bg-slate-800 text-white hover:bg-slate-700" : "border-white bg-white text-slate-950 hover:bg-slate-200"}`}
                   data-testid="tech-id-keypad-toggle"
                 >
-                  <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition-transform ${keypadVisible ? "translate-x-6" : "translate-x-1"}`} />
+                  {savingKeypad ? "Saving…" : keypadVisible ? "Hide Keypad" : "Show Keypad"}
                 </button>
               </div>
             </div>
@@ -189,9 +260,11 @@ export function TechIdPrintSheet({
               <div className="flex flex-col items-center justify-center bg-white p-6 text-slate-950">
                 {selected && techId != null ? (
                   <>
-                    <div className="rounded-xl border-4 border-slate-950 bg-white p-3"><QRCodeSVG value={qrValue} size={190} level="M" marginSize={0} /></div>
+                    {(!canHaveBadge || printed?.staffId === selected.id) && (
+                      <div className="rounded-xl border-4 border-slate-950 bg-white p-3"><QRCodeSVG value={canHaveBadge ? printed!.code : qrValue} size={190} level="M" marginSize={0} /></div>
+                    )}
                     <p className="mt-4 text-center text-2xl font-black">{selected.name}</p>
-                    <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500"><QrCode className="h-3.5 w-3.5" /> Tech ID {techId}</p>
+                    <p className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500"><QrCode className="h-3.5 w-3.5" /> {canHaveBadge ? `Tech ID ${techId} · Manager` : `Tech ID ${techId}`}</p>
                     <button type="button" disabled={printing} onClick={() => void printTechId()} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-3.5 font-bold text-white hover:bg-slate-800 disabled:opacity-60" data-testid="print-tech-id">
                       {printing ? <Loader2 className="h-5 w-5 animate-spin" /> : <Printer className="h-5 w-5" />}
                       {printing ? "Printing…" : "Print Tech ID"}

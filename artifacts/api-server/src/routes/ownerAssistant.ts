@@ -1,7 +1,7 @@
 /**
  * The /manage assistant (owner, 2026-11-01): a chat the salon owner can trust with their account.
  *
- * It LOOKS THINGS UP with tools (reports, clients, the schedule, team, account, front desk settings) and it can
+ * It LOOKS THINGS UP with tools (reports, clients, the schedule, payroll, commissions, team, account, front desk settings) and it can
  * CHANGE account and front desk settings (sales tax, CARD button, cash price, tips, turn rotation, Tech ID lock,
  * cash drawers, opening hours) — but never bookings, payments or refunds.
  *
@@ -25,6 +25,8 @@ import { formatInTimeZone } from "date-fns-tz";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { currentPayrollPeriod } from "../lib/payrollPeriods";
+import { computeLines } from "./payrollRuns.js";
 import { TURN_MODES, TURN_PRESETS, isDollarMode, type TurnMode } from "@shared/turnRules";
 
 const router = Router();
@@ -98,6 +100,14 @@ const READ_TOOLS = [
       from: { type: "string", description: "First day, YYYY-MM-DD (salon's local date)." },
       to: { type: "string", description: "Last day, YYYY-MM-DD." },
     }, required: ["report", "from", "to"] } },
+  { name: "payroll_overview", description: "Read-only payroll lookup. Returns the current pay period and pay date, completed commission and tips earned so far in that period, plus recent saved payroll runs. When a staffName is supplied, includes that staff member's approved net pay, deductions, commission, tips, and run status. Use for upcoming pay dates, current paycheck estimates, and finalized paycheck questions. Current-period earnings are not final net pay.",
+    parameters: { type: "object", properties: { staffName: { type: "string", description: "Optional team member name to narrow the results." } }, required: [] } },
+  { name: "commission_report", description: "Commission earned by commission-enabled staff for an exact date range, calculated using payroll's commission rules. Returns service and product revenue, rates, commission, tips, appointment counts, and the Commission Report page. Use YYYY-MM-DD dates and ask the owner for a date range if they have not specified one.",
+    parameters: { type: "object", properties: {
+      from: { type: "string", description: "First day, YYYY-MM-DD, in the salon's local date." },
+      to: { type: "string", description: "Last day, YYYY-MM-DD, in the salon's local date." },
+      staffName: { type: "string", description: "Optional team member name to narrow the results." },
+    }, required: ["from", "to"] } },
   { name: "find_clients", description: "Find clients by name or phone. Returns each client's id, name, phone, visits, total spent, last visit, next appointment and loyalty points (worked out from their appointments).",
     parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
   { name: "client_history", description: "One client's appointments (most recent 15), with service, technician, status and amount paid, plus their notes.",
@@ -151,6 +161,144 @@ async function runReadTool(req: Request, storeId: number, name: string, a: any):
     if (!path) return { error: "Unknown report" };
     const r = await asOwner(req, "GET", `/api/reports/${path}?from=${encodeURIComponent(a.from)}&to=${encodeURIComponent(a.to)}`);
     return r.ok ? { report: a.report, from: a.from, to: a.to, data: r.data, page: "/reports" } : { error: r.data?.message ?? "Could not load the report" };
+  }
+  if (name === "payroll_overview") {
+    const [scheduleResult, runsResult] = await Promise.all([
+      pool.query(
+        `SELECT frequency, anchor_date, period_end_offset_days, check_percent
+           FROM pay_schedules WHERE store_id = $1`,
+        [storeId],
+      ),
+      pool.query(
+        `SELECT id, period_start, period_end, pay_date, status, net_total
+           FROM payroll_runs
+          WHERE store_id = $1 AND status <> 'void'
+          ORDER BY period_start DESC
+          LIMIT 8`,
+        [storeId],
+      ),
+    ]);
+    const schedule = scheduleResult.rows[0] ?? null;
+    const wantedName = String(a.staffName ?? "").trim().toLocaleLowerCase();
+    const matchesName = (name: string) => !wantedName || name.toLocaleLowerCase().includes(wantedName);
+    const runs = runsResult.rows;
+    const runIds = runs.map((run) => Number(run.id));
+    const itemsResult = runIds.length
+      ? await pool.query(
+        `SELECT payroll_run_id, staff_name, commission_amount, tips, other_earnings,
+                booth_rent, other_deductions, net_pay
+           FROM payroll_run_items
+          WHERE payroll_run_id = ANY($1::int[])
+          ORDER BY staff_name`,
+        [runIds],
+      )
+      : { rows: [] };
+    const itemsByRun = new Map<number, typeof itemsResult.rows>();
+    for (const item of itemsResult.rows) {
+      const list = itemsByRun.get(Number(item.payroll_run_id)) ?? [];
+      list.push(item);
+      itemsByRun.set(Number(item.payroll_run_id), list);
+    }
+
+    let currentPeriod: ReturnType<typeof currentPayrollPeriod> | null = null;
+    let currentEarnings: Awaited<ReturnType<typeof computeLines>> = [];
+    if (schedule) {
+      const today = formatInTimeZone(new Date(), tz, "yyyy-MM-dd");
+      currentPeriod = currentPayrollPeriod(
+        schedule.frequency,
+        String(schedule.anchor_date).slice(0, 10),
+        Number(schedule.period_end_offset_days),
+        today,
+      );
+      if (today >= currentPeriod.periodStart) {
+        currentEarnings = await computeLines(storeId, currentPeriod.periodStart, today < currentPeriod.periodEnd ? today : currentPeriod.periodEnd);
+      }
+    }
+    const periodLines = currentEarnings.filter((line) => matchesName(line.staffName));
+
+    return {
+      schedule: schedule ? {
+        frequency: schedule.frequency,
+        checkPercent: Number(schedule.check_percent),
+      } : null,
+      currentPeriod: currentPeriod ? {
+        ...currentPeriod,
+        ...(wantedName
+          ? { earningsToDate: periodLines.map((line) => ({
+            staffName: line.staffName,
+            appointmentCount: line.appointmentCount,
+            commissionRate: line.commissionRate,
+            productCommissionRate: line.productCommissionRate,
+            commission: line.commissionAmount,
+            tips: line.tips,
+          })) }
+          : { earningsToDate: {
+            staffCount: periodLines.length,
+            appointments: periodLines.reduce((sum, line) => sum + line.appointmentCount, 0),
+            commission: periodLines.reduce((sum, line) => sum + Number(line.commissionAmount), 0).toFixed(2),
+            tips: periodLines.reduce((sum, line) => sum + Number(line.tips), 0).toFixed(2),
+          } }),
+        note: "Completed appointments only; current-period amounts are estimates before payroll adjustments and deductions, not final net pay.",
+      } : null,
+      recentRuns: runs.map((run) => ({
+        periodStart: run.period_start,
+        periodEnd: run.period_end,
+        payDate: run.pay_date,
+        status: run.status,
+        netTotal: run.status === "approved" ? run.net_total : null,
+        ...(wantedName && run.status === "approved"
+          ? { staff: (itemsByRun.get(Number(run.id)) ?? []).filter((item) => matchesName(item.staff_name)).map((item) => ({
+            name: item.staff_name,
+            commission: item.commission_amount,
+            tips: item.tips,
+            otherEarnings: item.other_earnings,
+            boothRent: item.booth_rent,
+            otherDeductions: item.other_deductions,
+            netPay: item.net_pay,
+          })) }
+          : {}),
+      })),
+      page: "/payroll",
+    };
+  }
+  if (name === "commission_report") {
+    const validDate = (value: unknown): value is string => {
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const timestamp = Date.parse(`${value}T00:00:00Z`);
+      return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value;
+    };
+    if (!validDate(a.from) || !validDate(a.to) || a.from > a.to) {
+      return { error: "Give a valid date range using YYYY-MM-DD, with the start on or before the end." };
+    }
+    if ((Date.parse(`${a.to}T00:00:00Z`) - Date.parse(`${a.from}T00:00:00Z`)) / 86_400_000 > 366) {
+      return { error: "The commission report date range cannot exceed 367 days." };
+    }
+    const { rows: eligibleStaff } = await pool.query(
+      `SELECT id FROM staff
+        WHERE store_id = $1 AND commission_enabled = TRUE
+          AND COALESCE(status, 'active') NOT IN ('removed', 'deactivated')`,
+      [storeId],
+    );
+    const eligibleIds = new Set(eligibleStaff.map((member) => Number(member.id)));
+    const lines = await computeLines(storeId, a.from, a.to);
+    const wantedName = String(a.staffName ?? "").trim().toLocaleLowerCase();
+    return {
+      from: a.from,
+      to: a.to,
+      staff: lines.filter((line) => eligibleIds.has(line.staffId) && (!wantedName || line.staffName.toLocaleLowerCase().includes(wantedName))).map((line) => ({
+        name: line.staffName,
+        appointmentCount: line.appointmentCount,
+        serviceRevenue: line.serviceRevenue,
+        productRevenue: line.productRevenue,
+        commissionRate: line.commissionRate,
+        productCommissionRate: line.productCommissionRate,
+        serviceCommission: line.serviceCommission,
+        productCommission: line.productCommission,
+        commission: line.commissionAmount,
+        tips: line.tips,
+      })),
+      page: "/commission-report",
+    };
   }
   if (name === "find_clients") {
     const q = String(a.query ?? "").trim();
@@ -226,7 +374,7 @@ async function runReadTool(req: Request, storeId: number, name: string, a: any):
     const t = turns.data ?? {};
     return {
       salesTax: pos.ok ? { ratePercent: Number(pos.data.salesTaxRate ?? 0) * 100, services: pos.data.taxServicesTaxable, addons: pos.data.taxAddonsTaxable, products: pos.data.taxProductsTaxable, giftCards: pos.data.taxGiftCardsTaxable } : null,
-      cardButton: card.ok ? (card.data?.provider === "own" ? "the salon's own card machine" : "the Certxa card reader (Stripe)") : null,
+      cardButton: card.ok ? (card.data?.provider === "own" ? "the salon's own card machine" : card.data?.provider === "none" ? "off: the salon does not accept card payments" : "the Certxa card reader (Stripe)") : null,
       cashPricePercentOff: Number(cash.rows[0]?.cash_discount_percent ?? 0),
       tipChoices: tips.ok ? (tips.data?.presets ?? tips.data) : null,
       turnRotation: turns.ok ? { mode: t.turnMode, label: TURN_PRESETS[t.turnMode as TurnMode]?.label, dollarsPerTurn: t.turnValueThreshold, smallerTicketEarns: t.partialTurnValue } : null,
@@ -390,7 +538,8 @@ TRUST — THE MOST IMPORTANT RULES:
 - Team members are other people, even one who shares the owner's first name${o.ownerName ? ` (you are talking to ${o.ownerName})` : ""}.
 
 WHAT YOU CAN DO:
-- Look things up: any report for any dates (get_report), clients (find_clients, client_history), the schedule (list_appointments, read only), the team, the account and plan, and all front desk settings.
+- Look things up: any report for any dates (get_report), clients (find_clients, client_history), the schedule (list_appointments, read only), the team, the account and plan, front desk settings, payroll pay dates and saved payroll runs (payroll_overview), and commission for an exact date range (commission_report).
+- Payroll and commission questions: use the payroll or commission lookup tools; never say you cannot see payroll or commission. When asked about a named team member, pass their name to payroll_overview or commission_report. Give the pay period and pay date when available. Clearly label current-period commission and tips as completed earnings to date, not a final paycheck. Only call net pay final when the saved payroll run is approved; its net pay includes payroll adjustments and deductions. For a commission question without dates, ask which period they mean or use the current period from payroll_overview and say so.
 - Change account and front desk settings: sales tax, the CARD button, cash price, tip choices, turn rotation, the Tech ID lock screen, cash drawers and their starting cash, opening hours. You only PROPOSE a change with a change_ tool; it shows the owner a Confirm button and happens only when they tap it. Before proposing, check the current setting with front_desk_settings, and ask for anything you need instead of guessing (for example the exact tax rate). After proposing, tell them in one sentence what will change and to tap Confirm.
 - Guide setup: walk the owner through setting up the front desk one step at a time (sales tax, card payments, cash price, cash drawer, tips, turns, Tech IDs).
 

@@ -1,16 +1,17 @@
 import type { BoardDayBooking, BoardMarker, BoardTicket } from "./barberApi";
 
-export type DetailKind = "walk-ins" | "completed";
+export type DetailKind = "appointments" | "no-shows" | "walk-ins" | "completed";
 
 const isNoShow = (status: string) => status === "no_show" || status === "no-show";
 
-/** Keep the four detail tabs mutually exclusive so a completed/no-show visit is not duplicated. */
+/** The visits behind each detail tile. Walk-ins lists every walk-in of the day whatever became of it, the
+ *  same set its tile counts, so a finished walk-in shows under both Walk-ins and Completed (as it is counted
+ *  in both). Appointments, Completed and No-shows don't overlap. */
 export function bookingsForDetail(bookings: BoardDayBooking[], kind: DetailKind): BoardDayBooking[] {
   if (kind === "completed") return bookings.filter((booking) => booking.status === "completed");
-  if (kind === "walk-ins") {
-    return bookings.filter((booking) => booking.isWalkIn && booking.status !== "completed" && !isNoShow(booking.status));
-  }
-  return [];
+  if (kind === "no-shows") return bookings.filter((booking) => isNoShow(booking.status));
+  if (kind === "walk-ins") return bookings.filter((booking) => booking.isWalkIn);
+  return bookings.filter((booking) => !booking.isWalkIn && booking.status !== "completed" && !isNoShow(booking.status));
 }
 
 /** Older board responses can include glance totals without dayBookings. Recover today's
@@ -23,6 +24,9 @@ export interface CalendarBoardBooking {
   status: string | null;
   createdAt?: string | null;
   checkedInAt?: string | null;
+  completedAt?: string | null;
+  totalPaid?: number | null;
+  servicePrice?: number | null;
   customer?: { fullName?: string | null } | null;
   service?: { name?: string | null } | null;
   staff?: { name?: string | null } | null;
@@ -85,4 +89,14 @@ export function hasNewWaitingEntityForPhone(
   ) || markers.some((marker) =>
     !baseline.has(`marker:${marker.id}`) && normalizePhoneDigits(marker.phone) === digits,
   );
+}
+
+/** Where a walk-in is now, for its card. Appointment statuses and kiosk check-in statuses (a check-in that
+ *  never got a ticket) both come through here. */
+export function walkInState(status: string): string {
+  if (status === "completed") return "Completed";
+  if (status === "started" || status === "serving") return "In service";
+  if (isNoShow(status)) return "No-show";
+  if (status === "expired") return "Never served";
+  return "Waiting";
 }

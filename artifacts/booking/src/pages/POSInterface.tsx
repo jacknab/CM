@@ -22,6 +22,7 @@ import { actionQueueDB } from "@/lib/action-queue-db";
 import { useSnapshot } from "@/hooks/use-snapshot";
 import { useFeatureFlags } from "@/hooks/use-features";
 
+import { keepSocketAlive } from "@/lib/ws-keepalive";
 const SWIPE_REVEAL_PX = 72;
 const SWIPE_THRESHOLD_PX = 48;
 
@@ -414,6 +415,7 @@ export default function POSInterface(props: { initialClientId?: number | null } 
       if (destroyed) return;
       const protocol = window.location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${protocol}://${window.location.host}/ws/notifications?storeId=${selectedStore.id}`);
+      keepSocketAlive(ws);
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);

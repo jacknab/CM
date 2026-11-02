@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { salonTimeZone } from "@/lib/salonClock";
 import { gridZoomRef } from "./gridZoom";
 import { useNailText, type NailTextKey } from "./i18n";
 import { Clock } from "lucide-react";
@@ -10,7 +11,7 @@ import { techLabel } from "./techName";
 type Status = "in-service" | "assigned" | "available" | "break" | "off";
 
 
-const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" });
 
 /**
  * What the front desk needs to know about each technician, right now.
