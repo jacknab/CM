@@ -214,6 +214,8 @@ export function useActiveRegisterId(storeId: number | undefined) {
 
   return {
     registerId,
+    /** The station above is the server's answer (or the salon has none), not the 0 shown while that loads. */
+    registerKnown: registerList !== undefined && (!isMultiStation || station !== undefined),
     needsPicker: false,
     registers: [] as RegisterOption[],
     takenRegisters: [] as RegisterOption[],

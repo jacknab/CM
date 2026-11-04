@@ -401,7 +401,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans relative pb-20" style={siteStyle(store.bookingSite)}>
       {view === "home" && <SiteHeader store={store} />}
 
-      <main className="flex-1 px-4 -mt-2 z-20 overflow-y-auto">
+      <main className="flex-1 px-4 z-20 overflow-y-auto">
         {preselectedStaff && (
           <div className="mb-4 mt-4 bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             {preselectedStaff.avatarUrl ? (

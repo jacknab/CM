@@ -379,3 +379,31 @@ export async function retrieveTerminalPaymentIntent(
   const stripe = getPlatformStripe();
   return stripe.paymentIntents.retrieve(paymentIntentId, {}, { stripeAccount: connectedAccountId });
 }
+
+/**
+ * Refund a card payment taken on a business's Stripe account (Tap to Pay or the M2 reader; owner, 2026-11-03: full or
+ * partial, from the Certxa Pro app). The payment is found by its id, or — for a payment from before ids were kept on
+ * the appointment — by the appointment id the app put in its metadata. Certxa's own fee is not refunded (Stripe's
+ * default). `idempotencyKey` makes a repeated tap one refund.
+ */
+export async function refundCardPayment(
+  connectedAccountId: string,
+  args: { paymentIntentId: string | null; appointmentId: number; amountCents: number; reason?: string | null; idempotencyKey: string },
+): Promise<{ refundId: string; paymentIntentId: string; status: string }> {
+  const stripe = getPlatformStripe();
+  let piId = args.paymentIntentId;
+  if (!piId) {
+    const found = await stripe.paymentIntents.search(
+      { query: `metadata['appointment_id']:'${args.appointmentId}' AND status:'succeeded'`, limit: 1 },
+      { stripeAccount: connectedAccountId },
+    );
+    piId = found.data[0]?.id ?? null;
+  }
+  if (!piId) throw Object.assign(new Error("The card payment for this booking wasn't found at Stripe."), { status: 404 });
+  const refund = await stripe.refunds.create(
+    { payment_intent: piId, amount: args.amountCents, reason: "requested_by_customer",
+      metadata: { appointment_id: String(args.appointmentId), ...(args.reason ? { note: args.reason.slice(0, 200) } : {}) } },
+    { stripeAccount: connectedAccountId, idempotencyKey: args.idempotencyKey },
+  );
+  return { refundId: refund.id, paymentIntentId: piId, status: refund.status ?? "pending" };
+}

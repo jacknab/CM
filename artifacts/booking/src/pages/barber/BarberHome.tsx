@@ -68,7 +68,7 @@ import { setTechRoster, techLabel } from "./techName";
 import { waitUrgency } from "./urgency";
 import { getNowInTimezone } from "@/lib/timezone";
 import {
-  ApiError, boardKey, cancelServicedTicket, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchClient, fetchUpcoming,
+  ApiError, boardKey, cancelServicedTicket, cancelTicket, checkoutRequestKey, claimKioskPrintJob, completeTicket, createTicket, fetchBoard, fetchCalendarBoardBookings, fetchProPricing, fetchClient, fetchUpcoming,
   addTicketAddon, addTicketLine, startRetailSale, addTicketPackage, addTicketService, discardRingingUp, removeTicketAddon, removeTicketLine, removeTicketServiceLine,
   saveRingingUp, startRingingUp, ticketNo, clockInTech, clockOutTech, textClientReady, fetchNailConfig, fetchPosGrid, fetchScreenSettings, fetchTurn, reassignTicket, savePosGrid, saveScreenSettings, removeMarker, resolveMarkerClient, startTicket, updateTicket,
   assignMarker, type BoardMarker, type BoardTicket, type ClientSummary, type FinalizeData, type TechSignIn, type TurnEarned, type TurnTech,
@@ -99,6 +99,8 @@ import { BottomNav, type NailTab } from "./BottomNav";
 import { PosSetupWizard } from "./PosSetupWizard";
 import { BarberIdGate } from "./BarberIdGate";
 import { MarkerPopup } from "./MarkerPopup";
+import { OnlineLineSheet } from "./OnlineLineSheet";
+import { LINE_SETTINGS_KEY, type LineSettings } from "@/pages/line/OnlineLineSettings";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
 import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
@@ -109,6 +111,8 @@ import { GridEditor } from "./GridEditor";
 import { RegisterPicker } from "./RegisterPicker";
 import { PairCustomerScreenDialog, StationsFullBanner } from "@/components/pos/PairCustomerScreen";
 import { MoreMenu } from "./MoreMenu";
+import { ManagerScreen } from "@/components/staff-screen/ManagerScreen";
+import { PairCustomerScreen } from "@/components/pos/PairCustomerScreen";
 import { staffMenus } from "@/components/staff-screen/staffMenus";
 import { calendarBookingsForBoard, hasNewWaitingEntityForPhone, waitingEntityKeys } from "./boardView";
 import { printNativeCheckinTicket, slipServiceNames } from "@/lib/native-checkin-ticket";
@@ -183,7 +187,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   usePrintSettings();
   const navigate = useNavigate();
   const {
-    registerId, needsPicker: needsRegisterPicker, registers: registerOptions, takenRegisters, selectRegister,
+    registerId, registerKnown, needsPicker: needsRegisterPicker, registers: registerOptions, takenRegisters, selectRegister,
     isMultiStation, currentRegisterName, resetRegister, stationsFull, isMainStation,
   } = useActiveRegisterId(storeId);
   // The main POS is preferred for the local hub; another station takes over if the main tablet goes offline.
@@ -276,6 +280,15 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   const [queueView, setQueueView] = useState<QueueView | null>(null);
   // The More popup: its own tiles, or — behind the manager PIN — the Manager tab's.
   const [showMore, setShowMore] = useState<false | "more" | "manager">(false);
+  // The page open in the full-screen Manager screen (ManagerScreen.tsx); null = its tiles.
+  type ManagerPage = "pair" | "pick" | "stationdrawer" | "managerpin" | "turns" | "servicetimes" | "idprint" | "cash" | "onlineline";
+  const [managerPage, setManagerPage] = useState<ManagerPage | null>(null);
+  // Whether the lock screen is on (worked out further down), for closing the Manager screen when the screen locks.
+  const lockEnabledRef = useRef(true);
+  const closeManager = () => { setShowMore(false); setManagerPage(null); managerPinRef.current = null; };
+  // The screen locked (back to the ID keypad): the Manager screen closes, so the next person needs the PIN.
+  useEffect(() => { if (!tech && lockEnabledRef.current && showMore === "manager") closeManager(); // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tech]);
   const [showGift, setShowGift] = useState(false);
   const [showBook, setShowBook] = useState(false);
   const [showCheckIn, setShowCheckIn] = useState(false);
@@ -355,6 +368,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     refreshSettings();
     queryClient.invalidateQueries({ queryKey: ["/api/barber/screen-settings"] });
     queryClient.invalidateQueries({ queryKey: ["/api/barber/pos-grid"] });
+    queryClient.invalidateQueries({ queryKey: LINE_SETTINGS_KEY });
     // The main station may have changed (Settings → POS Stations): it decides which tablet runs the salon hub.
     queryClient.invalidateQueries({ queryKey: [`/api/registers?storeId=${storeId}`] });
     // A station's cash drawer may have changed (Manager › Station Drawer on another tablet, or Settings).
@@ -362,7 +376,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   }, [refreshSettings, queryClient, storeId]);
   // This is the salon's main screen: inside the Android app it accepts the customer screen and kiosk over
   // the salon's own Wi-Fi, so they keep working with it when the internet is down.
-  useEffect(() => { void localHub.start(storeId, hubRole, registerId); }, [storeId, hubRole, registerId]);
+  useEffect(() => { void localHub.start(storeId, hubRole, registerId, registerKnown); }, [storeId, hubRole, registerId, registerKnown]);
   // This tablet's offline-mode health, reported to the server every 2 minutes (lib/deviceHealth.ts; support's Devices tab).
   useEffect(() => startDeviceHealth({ role: hubRole, storeId, registerId, usesOfflineQueue: true }), [storeId, hubRole, registerId]);
   // The salon's whole account, copied to this tablet and kept in sync, for working with no internet.
@@ -375,7 +389,9 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     // The station where the technician just signed in already shows "Your next client" for this.
     if (signInNoticeUp.current) return;
     try {
-      const fresh = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
+      // Directly, not through the board query, whose fetch the refreshes around a new ticket can cancel.
+      const fresh = await fetchBoard();
+      queryClient.setQueryData(boardKey(storeId), fresh);
       const t = fresh.tickets.find((x) => x.id === appointmentId);
       if (!t || !t.staff || t.status !== "confirmed") return;
       setWaitingAssigned({ appointmentId, ticketNumber: t.ticketNumber, clientName: t.client.name, serviceName: t.service.name, staffName: t.staff.name });
@@ -500,7 +516,8 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   // Tickets that sit too long (urgency.ts): is any of them red right now?
   const [urgentTick, setUrgentTick] = useState(() => Date.now());
   useEffect(() => { const iv = setInterval(() => setUrgentTick(Date.now()), 30_000); return () => clearInterval(iv); }, []);
-  const anyRedTicket = [...tickets, ...markers].some((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red");
+  // A client a barber has taken is in the chair, not waiting: never red.
+  const anyRedTicket = [...tickets, ...markers.filter((m) => m.staffId == null)].some((x) => waitUrgency(x.wait, urgentTick + clockOffsetMs) === "red");
   // The red alarm (owner, 2026-10-29): stays on until every ticket that set it off is dealt with — a tap doesn't stop it.
   const showRedAlarm = anyRedTicket;
   // While the alarm is on, look at the board every 10 seconds, so it stops within seconds of the last red ticket being
@@ -546,6 +563,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     placeholderData: () => { try { return localStorage.getItem(lockKey) === "off" ? { lockScreen: false, keypadVisible: true } : undefined; } catch { return undefined; } },
   });
   const lockEnabled = screenSettings?.lockScreen !== false;
+  lockEnabledRef.current = lockEnabled;
   const keypadVisible = screenSettings?.keypadVisible !== false;
   useEffect(() => {
     if (!screenSettings) return;
@@ -582,8 +600,11 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   const { data: services } = useServices();
   // Pricing levels (Catalog › Pricing Levels): the keys show the signed-in barber's prices — their own price, else
   // their level's, else the standard price — the same price the server charges at checkout.
+  // The shop's Online Check-In Line (plans/online-checkin-line.md): the Manager tile says whether phone check-in is open.
+  const { data: lineSettings } = useQuery<{ settings: LineSettings; link: string }>({ queryKey: LINE_SETTINGS_KEY, staleTime: 60_000, retry: false });
   const { data: proPricing } = useQuery<{ prices: { staffId: number; serviceId: number; price: number }[] }>({
-    queryKey: [`/api/public/store/${bookingSlug}/pro-pricing`], enabled: !!bookingSlug, staleTime: 60_000, retry: false,
+    queryKey: [`/api/public/store/${bookingSlug}/pro-pricing`], queryFn: () => fetchProPricing(bookingSlug), enabled: !!bookingSlug, staleTime: 60_000, retry: false,
+    networkMode: "always",
   });
   const barberPrice = (serviceId: number) => (tech ? proPricing?.prices.find((p) => p.staffId === tech.id && p.serviceId === serviceId)?.price : undefined);
   const { data: categories } = useServiceCategories();
@@ -1107,7 +1128,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       const r = await startRetailSale(tech.id, customs.map((c) => ({ label: c.label, price: c.price })));
       resetDraft();
       invalidateBoard();
-      void openTicketForCheckout(r.appointmentId);
+      openTicketForCheckout(r.appointmentId);
     } catch (err: any) {
       toast({ title: "Couldn't start the sale", description: err?.message, variant: "destructive" });
     } finally {
@@ -1127,7 +1148,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       invalidateBoard();
       const savedClient = client?.name;
       resetDraft();
-      if (thenPay) { void openTicketForCheckout(t.id); return; }
+      if (thenPay) { openTicketForCheckout(t.id); return; }
       say(r.staffName ? `Ticket #${r.ticketNumber ?? t.id} · ${techLabel(r.staffName)}` : `Ticket #${r.ticketNumber ?? t.id} is waiting · no barber free yet`);
       // The barber's ticket starts with them (the server starts it on assign): back to the lock screen.
       void savedClient;
@@ -1380,7 +1401,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       }
       const shouldPay = payAfterCreate.current;
       payAfterCreate.current = false;
-      if (shouldPay) void openTicketForCheckout(r.appointmentId);
+      if (shouldPay) openTicketForCheckout(r.appointmentId);
       else setTab("queue");
       say(r.staffName
         ? `Ticket #${r.ticketNumber} · ${techLabel(r.staffName)} · ${r.waiting ? `waiting, starts about ${new Date(r.startsAt).toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" })}` : r.status === "started" ? "in service" : "assigned"}`
@@ -1429,7 +1450,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     },
     onSuccess: (r, v) => {
       invalidateBoard(); setAssigning(null); setAssignError(null); setAssignNeedsReason(false); say(`Moved to ${techLabel(r.staffName, r.staffId)}`);
-      if (payAfterAssign.current === v.id) { payAfterAssign.current = null; void openTicketForCheckout(v.id); }
+      if (payAfterAssign.current === v.id) { payAfterAssign.current = null; openTicketForCheckout(v.id); }
     },
     onError: (err: any) => {
       // The salon asks for a reason when the client goes to someone other than the next technician.
@@ -1478,15 +1499,33 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     setTab("pos");
   }, []);
 
-  // A ticket that was just made: fetch it fresh from the board, then pay it here.
-  const openTicketForCheckout = async (id: number) => {
-    try {
-      const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
-      const t = b.tickets.find((x) => x.id === id);
-      if (t) void requestCheckout(t);
-      else toast({ title: "Ticket created", description: "Open it from the Queue to take payment.", variant: "destructive" });
-    } catch { toast({ title: "Ticket created", description: "Open it from the Queue to take payment.", variant: "destructive" }); }
+  // A ticket that was just made (a barbershop makes it at checkout, owner 2026-11-03): its payment opens as soon as the
+  // board has it. The board is asked again every second until then; nothing depends on one particular read (a single
+  // read could be cancelled by the refreshes a new ticket sets off, and the barber was told "Open it from the Queue").
+  const [payWhenOnBoard, setPayWhenOnBoard] = useState<{ id: number; since: number } | null>(null);
+  const openTicketForCheckout = (id: number) => {
+    setPayWhenOnBoard({ id, since: Date.now() });
+    invalidateBoard();
   };
+  useEffect(() => {
+    if (!payWhenOnBoard) return;
+    const t = tickets.find((x) => x.id === payWhenOnBoard.id);
+    if (t) { setPayWhenOnBoard(null); void requestCheckout(t); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets, payWhenOnBoard]);
+  useEffect(() => {
+    if (!payWhenOnBoard) return;
+    const iv = setInterval(() => {
+      if (Date.now() - payWhenOnBoard.since > 15_000) {
+        setPayWhenOnBoard(null);
+        toast({ title: "Ticket created", description: "Open it from the Queue to take payment." });
+        return;
+      }
+      invalidateBoard();
+    }, 1000);
+    return () => clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payWhenOnBoard]);
 
   const requestCheckout = async (t: BoardTicket) => {
     // One visit, one payment (owner, 2026-10-28): opening any ticket of the visit pays all of its tickets together
@@ -1761,6 +1800,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     multiStation: isMultiStation, stationName: currentRegisterName, registerId, stationDrawerName: stationDrawer?.name ?? null,
     offline, drawerOpen: !!openDrawerSession, lockScreen: { on: lockEnabled, saving: saveLock.isPending },
     printer: { available: thermalPrinter.isAvailable, connected: thermalPrinter.isConnected, deviceName: thermalPrinter.deviceName ?? null, status: thermalPrinter.status },
+    onlineLine: lineSettings ? { enabled: lineSettings.settings.enabled, paused: !!lineSettings.settings.paused } : null,
     run: {
       book: () => { setFrontdeskPhone(""); setShowBook(true); },
       clients: () => setSheet("clients"),
@@ -1772,22 +1812,23 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       language: () => {},
       manager: () => setSheet("manager"),
       // The customer screen's pairing code is typed here; a tablet with no station is sent to the station list.
-      station: () => { if (currentRegisterName) setPairScreenOpen(true); else { setShowMore(false); setSheet("stationpin"); } },
+      // In the Manager screen: pair the customer screen, or (a tablet with no station) pick one.
+      station: () => setManagerPage(currentRegisterName ? "pair" : "pick"),
       refresh: () => { void hardRefresh(); },
       settings: () => navigate(appPage("/settings")!),
-      posSetup: () => { setShowMore(false); setSetupOpen(true); },
-      cashDrawer: () => setShowOpenRegister(true),
+      posSetup: () => setSetupOpen(true),
+      cashDrawer: () => setManagerPage("cash"),
       messages: () => navigate(appPage("/sms-inbox")!),
       keyGrid: () => setGridEditor("open"),
-      turnRotation: () => setSheet("turns"),
-      serviceTimes: () => setSheet("servicetimes"),
-      managerPin: () => { setShowMore(false); setPinChange(true); },
+      turnRotation: () => setManagerPage("turns"),
+      serviceTimes: () => setManagerPage("servicetimes"),
+      managerPin: () => setManagerPage("managerpin"),
       lockScreen: () => { if (!saveLock.isPending) saveLock.mutate(!lockEnabled); },
       printer: () => { void (thermalPrinter.isConnected ? thermalPrinter.disconnect() : thermalPrinter.connect()); },
-      changeStation: () => { setShowMore(false); setStationPicker(true); },
-      stationDrawer: () => { setShowMore(false); setStationDrawerOpen(true); },
-      idPrint: () => { setShowMore(false); setTechIdPrint(true); },
+      stationDrawer: () => setManagerPage("stationdrawer"),
+      idPrint: () => setManagerPage("idprint"),
       reports: () => navigate(appPage("/reports")!),
+      onlineLine: () => setManagerPage("onlineline"),
     },
   });
 
@@ -1876,7 +1917,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       const t = editing!;
       checkoutStart.current = fn;
       if (t.ringingUp) void saveLive(t, true);
-      else { resetDraft(); void openTicketForCheckout(t.id); }
+      else { resetDraft(); openTicketForCheckout(t.id); }
       return;
     }
     if (editing) { say("Update the ticket first, then open it to pay"); return; }
@@ -2041,7 +2082,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     // Their client from the front desk check-in has no ticket yet: go straight to making it.
     if (who.activeMarker?.clientId) { setTab("pos"); void pickClient(who.activeMarker.clientId, who.activeMarker.id); }
     // Their client already has a ticket in service: show that ticket over the queue (checkout, reassign, ticket, cancel).
-    else if (who.activeTicketId != null) void openTicketForCheckout(who.activeTicketId);
+    else if (who.activeTicketId != null) openTicketForCheckout(who.activeTicketId);
   };
   // The lock screen's turn queue: clocked-in technicians in turn order — the free ones first, numbered
   // (1 is next up), then those busy or on break.
@@ -2222,7 +2263,25 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       {showMore === "more" && <MoreMenu tiles={moreTiles} onClose={() => setShowMore(false)} />}
       {slipAsk && <SlipTechIdSheet onClose={() => setSlipAsk(false)} onSlip={(who) => { setSlipAsk(false); setSlipFor(who); }} onSignedIn={(who) => { setSlipAsk(false); onTechSignedIn(who); }} />}
       {slipFor && <TechSlipSheet staffId={slipFor.id} staffName={slipFor.name} timezone={timezone} onClose={() => setSlipFor(null)} />}
-      {showMore === "manager" && <MoreMenu title="Manager" tiles={managerTiles} onClose={() => setShowMore(false)} onBack={() => setShowMore("more")} />}
+      {showMore === "manager" && (() => {
+        const back = () => setManagerPage(null);
+        const title = managerTiles.find((t) => ({ pair: "station", pick: "station", stationdrawer: "stationdrawer", managerpin: "managerpin", turns: "turnrotation",
+          servicetimes: "servicetimes", idprint: "techidprint", cash: "register", onlineline: "onlineline" } as Record<string, string>)[managerPage ?? ""] === t.key)?.label ?? "Manager";
+        const content = managerPage === "pair" ? <div className="mx-auto max-w-md rounded-2xl bg-white p-6"><PairCustomerScreen stationName={currentRegisterName} onDone={back} /></div>
+          : managerPage === "pick" ? <StationPickerSheet onChoose={async (id) => { const r = await selectRegister(id); if (r.ok) say("This tablet's station changed"); return r; }} onClose={back} />
+          : managerPage === "stationdrawer" ? <StationDrawerSheet storeId={storeId} registerId={registerId} stationName={currentRegisterName ?? "This POS"} onClose={back} />
+          : managerPage === "managerpin" ? <ChangeManagerPinSheet onClose={back} onDone={() => { back(); say("Manager PIN changed"); }} />
+          : managerPage === "turns" ? <TurnRotationSheet storeId={storeId} onClose={back} onSaved={() => { back(); say("Turn rotation saved"); }} />
+          : managerPage === "servicetimes" ? <ServiceTimesSheet onClose={back} />
+          : managerPage === "onlineline" ? <OnlineLineSheet onClose={back} />
+          : managerPage === "idprint" ? <TechIdPrintSheet inline techs={(turnStaffList as any[] | undefined) ?? []} keypadVisible={keypadVisible} savingKeypad={saveKeypad.isPending}
+              onKeypadVisibleChange={(visible) => saveKeypad.mutate(visible)} thermalPrint={thermalPrinter.isConnected ? thermalPrinter.print : undefined}
+              managerPin={managerPinRef.current} onClose={back} />
+          : managerPage === "cash" ? <OpenRegisterModal inline open onClose={back} storeId={storeId} drawerId={drawerId}
+              userName={(user as any)?.firstName || (user as any)?.email || "Staff"} />
+          : null;
+        return <ManagerScreen tiles={managerTiles} page={managerPage ? { title, content } : null} onBack={back} onClose={closeManager} testIdPrefix="barber" />;
+      })()}
 
       {showCheckIn && (
         <CheckInLookup

@@ -460,6 +460,7 @@ app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 app.use("/api/solo/login", authLimiter);
 app.use("/api/solo/register", authLimiter);
+app.use("/api/solo/phone", authLimiter);
 app.use("/api/auth/logout", authLimiter);
 app.use("/api/auth/resume", authLimiter);
 app.use("/api/auth/forgot-password", authLimiter);
@@ -587,7 +588,9 @@ app.get("/api/health", async (_req, res) => {
 // using the app's screens from a PC. It signs in and calls the API at certxa.com like the phone app does.
 {
   const proWebDir = _cjsDirname ? path.resolve(_cjsDirname, "pro-web") : path.resolve(process.cwd(), "dist/pro-web");
-  const proStatic = express.static(proWebDir, { index: false, maxAge: "7d" });
+  // dotfiles "allow": Expo puts the fonts under assets/__node_modules/.pnpm/… — the default ("ignore") served the page
+  // instead, so the browser had no icons and no Inter font (found 2026-11-03). Only this build folder is served this way.
+  const proStatic = express.static(proWebDir, { index: false, maxAge: "7d", dotfiles: "allow" });
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.hostname !== "pro.certxa.com" || req.path.startsWith("/api/") || req.path.startsWith("/ws")) return next();
     proStatic(req, res, () => {
@@ -1470,9 +1473,19 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   const { startWeeklyDigestScheduler } = await import("./intelligence/weekly-digest-email");
   startWeeklyDigestScheduler();
 
-  // Start lapsed client re-engagement scheduler (checks hourly, sends at 10am)
-  const { startLapsedClientScheduler } = await import("./lapsed-client-scheduler");
-  startLapsedClientScheduler();
+  // Win-back texts (lib/winBack.ts; replaces lapsed-client-scheduler.ts, 2026-11-03): hourly, sends at 10 AM shop time
+  // to businesses that switched it on.
+  const { startWinBackJob } = await import("./lib/winBack");
+  startWinBackJob();
+  // Business Phone: $10/month renewals, failed payments, releasing cancelled or unpaid numbers.
+  const { startBusinessPhoneBilling } = await import("./lib/businessPhoneBilling");
+  startBusinessPhoneBilling();
+  // App announcements scheduled in /isAdmin: sent as push notifications when due.
+  const { startAppAnnouncements } = await import("./lib/appAnnouncements");
+  startAppAnnouncements();
+  // Website gift cards and packages paid but not delivered (the page closed): checked and delivered.
+  const { startSiteOrderSweep } = await import("./routes/siteShop");
+  startSiteOrderSweep();
 
   // Start scheduled campaign dispatcher (checks every 5 minutes for due campaigns)
   const { startCampaignScheduler } = await import("./services/campaign-scheduler");

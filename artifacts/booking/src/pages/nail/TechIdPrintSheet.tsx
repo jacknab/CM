@@ -32,8 +32,11 @@ export function TechIdPrintSheet({
   thermalPrint,
   managerPin,
   onClose,
+  inline = false,
 }: {
   techs: PrintableTech[];
+  /** Shown as a page of the Manager screen (ManagerScreen.tsx): no backdrop, no close button, not floating. */
+  inline?: boolean;
   keypadVisible: boolean;
   savingKeypad: boolean;
   onKeypadVisibleChange: (visible: boolean) => void;
@@ -175,14 +178,14 @@ export function TechIdPrintSheet({
 
   return (
     <>
-      <div className="fixed inset-0 z-[520] bg-slate-950/75 backdrop-blur-sm" onClick={onClose} />
-      <section className="fixed inset-4 z-[521] mx-auto flex max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-white shadow-2xl sm:inset-8" role="dialog" aria-modal="true" aria-labelledby="tech-id-print-title" data-testid="tech-id-print-sheet">
+      {!inline && <div className="fixed inset-0 z-[520] bg-slate-950/75 backdrop-blur-sm" onClick={onClose} />}
+      <section className={inline ? "mx-auto flex max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-white" : "fixed inset-4 z-[521] mx-auto flex max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 text-white shadow-2xl sm:inset-8"} role="dialog" aria-modal="true" aria-labelledby="tech-id-print-title" data-testid="tech-id-print-sheet">
         <header className="flex items-center justify-between gap-4 border-b border-slate-700 px-5 py-4">
           <div>
             <h2 id="tech-id-print-title" className="text-xl font-bold">Print Tech ID</h2>
             <p className="mt-1 text-sm text-slate-400">Print a scanner badge for the selected technician.</p>
           </div>
-          <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800" aria-label="Close"><X /></button>
+          {!inline && <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800" aria-label="Close"><X /></button>}
         </header>
 
         {qrConfirmation ? (

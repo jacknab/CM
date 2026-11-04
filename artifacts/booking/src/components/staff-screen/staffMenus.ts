@@ -6,11 +6,12 @@
  * salon has switched on, and what each tile does. A tile is left out only by the same rule on every wrapper:
  * Book Appointment with the Booking System on, Turn Rotation with the Turn System on, the station tiles in a salon
  * with stations, Retail Sale where there is a retail screen, Hard Refresh while online. The one tile that depends on the
- * wrapper is Language: only a translated wrapper has it (/nail; /barber is English only, owner 2026-11-02).
+ * wrapper is Language: only a translated wrapper has it (/nail; /barber is English only, owner 2026-11-02). Online Check-In
+ * shows only where the business has the Online Check-In Line (barbershops and haircut studios, 2026-11-03).
  */
 import {
   BarChart3, Bell, CalendarPlus, ClipboardList, Clock, CreditCard, Gift, KeyRound, Languages, LayoutGrid, Lock, Printer,
-  Receipt, RefreshCw, RotateCcw, Search, Settings, ShoppingBag, Wallet,
+  Receipt, RefreshCw, RotateCcw, Search, Settings, ShoppingBag, Smartphone, Wallet,
 } from "lucide-react";
 
 export interface StaffMenuTile {
@@ -44,12 +45,14 @@ export interface StaffMenuContext {
   drawerOpen: boolean;
   lockScreen: { on: boolean; saving: boolean };
   printer: { available: boolean; connected: boolean; deviceName: string | null; status: string };
+  /** The shop's Online Check-In Line (barbershops, haircut studios), or null where there is none (every nail salon). */
+  onlineLine?: { enabled: boolean; paused: boolean } | null;
   run: {
     book: () => void; clients: () => void; voucher: () => void; timeclock: () => void; retail: () => void; mySlip: () => void;
     language: () => void; manager: () => void; station: () => void; refresh: () => void;
     settings: () => void; posSetup: () => void; cashDrawer: () => void; messages: () => void; keyGrid: () => void;
     turnRotation: () => void; serviceTimes: () => void; managerPin: () => void; lockScreen: () => void; printer: () => void;
-    changeStation: () => void; stationDrawer: () => void; idPrint: () => void; reports: () => void;
+    stationDrawer: () => void; idPrint: () => void; reports: () => void; onlineLine?: () => void;
   };
 }
 
@@ -74,6 +77,9 @@ export function staffMenus(c: StaffMenuContext): { more: StaffMenuTile[]; manage
     { key: "keygrid", label: "Key Grid", sub: "Arrange the front desk keys", icon: LayoutGrid, run: r.keyGrid },
     ...(c.turnSystem ? [{ key: "turnrotation", label: "Turn Rotation", sub: "How turns are counted", icon: RotateCcw, run: r.turnRotation }] : []),
     { key: "servicetimes", label: "Service Times", sub: "Actual vs planned", icon: Clock, run: r.serviceTimes },
+    // Pause or open phone check-in from the front desk (a shop with the Online Check-In Line only).
+    ...(c.onlineLine && r.onlineLine ? [{ key: "onlineline", label: "Online Check-In", icon: Smartphone, run: r.onlineLine,
+      sub: !c.onlineLine.enabled ? "Off" : c.onlineLine.paused ? "Paused" : "Open" }] : []),
     { key: "managerpin", label: "Manager PIN", sub: "Change the PIN for this menu", icon: KeyRound, run: r.managerPin },
     { key: "lockscreen", label: "Lock Screen", icon: Lock, keepOpen: true, run: r.lockScreen,
       sub: c.lockScreen.saving ? "Saving…" : c.lockScreen.on ? `On · ${c.idName} to use the front desk` : "Off · no sign-in" },
@@ -83,7 +89,6 @@ export function staffMenus(c: StaffMenuContext): { more: StaffMenuTile[]; manage
     }] : []),
     // Pairing this station's customer screen (owner, 2026-11-02: in the Manager menu, not More).
     ...(c.multiStation ? [{ key: "station", icon: CreditCard, label: "Station", sub: c.stationName ?? "None", run: r.station }] : []),
-    ...(c.multiStation ? [{ key: "mystation", label: "Change Station", sub: c.stationName ?? "None", icon: CreditCard, run: r.changeStation }] : []),
     ...(c.pos && c.multiStation && c.registerId > 0 ? [{ key: "stationdrawer", label: "Station Drawer", sub: c.stationDrawerName ?? "None", icon: Wallet, run: r.stationDrawer }] : []),
     { key: "techidprint", label: `${c.idName} Print`, icon: Printer, run: r.idPrint },
     { key: "reports", label: "Reports", icon: BarChart3, run: r.reports },

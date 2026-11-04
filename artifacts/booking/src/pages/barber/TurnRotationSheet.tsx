@@ -11,7 +11,7 @@ import { confirm } from "@/lib/confirm";
 
 const PREVIEW = [15, 30, 45, 60, 75, 90];
 /** The turn settings belong to the salon's owner account; a tablet signed in some other way can't change them. */
-const OWNER_ONLY = "This tablet isn't signed in with the salon owner's account, so the turn settings can't be changed here.";
+const OWNER_ONLY = "This tablet isn't signed in with the shop owner's account, so the turn settings can't be changed here.";
 const PARTIALS = [0.25, 0.5, 0.75, 1];
 const partialLabel = (v: number) => (v === 0.25 ? "¼" : v === 0.5 ? "½" : v === 0.75 ? "¾" : "1");
 

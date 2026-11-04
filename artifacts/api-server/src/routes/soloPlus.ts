@@ -1,5 +1,5 @@
 /**
- * Certxa Pro Plus — $3/month (owner, 2026-10-30; plans/certxa-pro-sms.md phase 3).
+ * Certxa Pro Plus — $5/month (owner, 2026-10-30, $3 until 2026-11-04; plans/certxa-pro-sms.md phase 3).
  *
  * Apple only lets a US app send people to a website to buy a digital subscription, so the app's Plus card opens
  * certxa.com/pro-plus, already signed in through a one-time link:
@@ -19,8 +19,9 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { stripe, isStripeConfigured } from "../lib/stripe";
-import { soloPlanCode } from "../lib/soloSmsCredits";
+import { setSmsPlus, soloPlanCode } from "../lib/soloSmsCredits";
 import { startInHouseSubscription, setCancelAtPeriodEnd } from "../services/saas-billing";
+import { pushPlanChange } from "../lib/ownerPush";
 
 const router = Router();
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
@@ -172,7 +173,10 @@ router.post("/api/solo/plus/subscribe", isAuthenticated, async (req: Request, re
       paymentMethodId,
     });
     if (!result.ok) return res.status(result.httpStatus).json({ error: result.error });
+    // Plus's switch for texts: notification texts are free from now on (lib/soloSmsCredits.ts).
+    await setSmsPlus(storeId, true);
     console.log(`[solo-plus] storeId=${storeId} Plus started, next charge ${result.nextChargeAt.toISOString().slice(0, 10)}`);
+    void pushPlanChange(storeId, "plus");
     return res.json({ ok: true, plus: true, nextChargeAt: result.nextChargeAt });
   } catch (err: any) {
     console.error("[solo-plus/subscribe]", err?.message ?? err);

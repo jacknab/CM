@@ -185,11 +185,11 @@ export function setupAuth(app: Express) {
     try {
       const { password, firstName, lastName, keepSignedIn } = req.body;
       const email = typeof req.body.email === "string" ? req.body.email.toLowerCase().trim() : req.body.email;
-      // The phone that was already OTP-verified in an earlier registration
-      // step (see owner-request-otp / owner-verify-otp) — passed through
-      // here so it's actually persisted instead of being discarded after
-      // verification succeeds.
-      const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : undefined;
+      // The mobile number proved by a texted code in the step before (owner-request-otp / owner-verify-otp),
+      // with the one-time pass owner-verify-otp handed back. Every sign-up needs one: a mobile line no Certxa
+      // account has ever had (owner, 2026-11-03; lib/proPhoneVerification.ts).
+      const phone = typeof req.body.phone === "string" ? req.body.phone.trim() : "";
+      const phoneToken = typeof req.body.phoneToken === "string" ? req.body.phoneToken : "";
 
       if (!email || !password) {
         res.status(400).json({ message: "Email and password are required" });
@@ -207,6 +207,17 @@ export function setupAuth(app: Express) {
         return;
       }
 
+      const phoneCheck = await import("./lib/proPhoneVerification");
+      const verifiedPhone = phone && phoneToken ? await phoneCheck.findVerifiedPhone(phone, phoneToken) : null;
+      if (!verifiedPhone) {
+        res.status(400).json({ field: "phone", message: "Verify your mobile number first. If the code has expired, go back and send a new one." });
+        return;
+      }
+      if (await phoneCheck.phoneNumberOwner(verifiedPhone.phone)) {
+        res.status(409).json({ field: "phone", message: "This mobile number is already linked to a Certxa account. Use a different number, or sign in to your account." });
+        return;
+      }
+
       const hashedPassword = await bcrypt.hash(password, 10);
       const [user] = await db
         .insert(users)
@@ -215,9 +226,15 @@ export function setupAuth(app: Express) {
           password: hashedPassword,
           firstName: firstName || null,
           lastName: lastName || null,
-          phone: phone || null,
+          phone: verifiedPhone.phone.slice(2),
         })
         .returning();
+      // One number, one account, for good: the list's primary key settles two sign-ups racing for one number.
+      if (!(await phoneCheck.claimPhoneNumber(verifiedPhone, user.id))) {
+        await db.delete(users).where(eq(users.id, user.id));
+        res.status(409).json({ field: "phone", message: "This mobile number is already linked to a Certxa account. Use a different number, or sign in to your account." });
+        return;
+      }
 
       // Start the 60-day free trial immediately on registration
       await TrialService.setupTrialForUser(user.id);
@@ -426,9 +443,12 @@ export function setupAuth(app: Express) {
         }
       }
 
-      // 3) Brand-new account — Google sign-up. Password column is NOT NULL, so we
-      // fill it with a random bcrypt hash the user can never type; they can set a
-      // real password later from account settings if they want email/password login too.
+      // 3) No account: Google never creates one. Every account signs up with an e-mail and a mobile number proved
+      //    by a texted code (owner, 2026-11-03), then can link Google by signing in with it.
+      if (!user) {
+        console.log("[Google Login] no account for this Google address — sign-up refused");
+        return res.redirect(`/auth?error=google_no_account${suffix}`);
+      }
       let isNewUser = false;
       if (!user) {
         isNewUser = true;
@@ -741,14 +761,11 @@ export function setupAuth(app: Express) {
         }
       }
 
-      // Check phone against owner_phone_otps (used_at IS NOT NULL = completed a prior signup)
+      // A number any account has ever had is taken (account_phone_numbers, never deleted from).
       if (rawPhone) {
         const normalized = toE164US(rawPhone);
         if (normalized) {
-          const { rows } = await pool.query(
-            `SELECT id FROM owner_phone_otps WHERE phone = $1 AND used_at IS NOT NULL LIMIT 1`,
-            [normalized]
-          );
+          const { rows } = await pool.query(`SELECT 1 FROM account_phone_numbers WHERE phone = $1`, [normalized]);
           if (rows.length > 0) {
             res.json({ available: false });
             return;
@@ -767,62 +784,16 @@ export function setupAuth(app: Express) {
   /**
    * POST /api/auth/owner-request-otp
    *
-   * Step 1 of owner signup phone verification. Generates a 6-digit code, stores
-   * it in owner_phone_otps, and sends it via SMS to the supplied phone number.
-   * Rate-limited to 1 per 2 minutes per phone to prevent abuse.
+   * Step 1 of website sign-up phone verification: the same checks as the Certxa Pro app (a mobile line no
+   * account has ever had, then a texted code; lib/proPhoneVerification.ts).
    */
   app.post("/api/auth/owner-request-otp", async (req, res) => {
     try {
-      const { phone, email } = req.body as { phone?: string; email?: string };
-      if (!phone?.trim() || !email?.trim()) {
-        res.status(400).json({ message: "Phone and email are required." });
-        return;
-      }
-
-      const normalized = toE164US(phone);
-      if (!normalized) {
-        res.status(400).json({ message: "Please enter a valid 10-digit US phone number." });
-        return;
-      }
-
-      // Discard legacy non-6-digit signup codes so they cannot be reused by
-      // the resend/email paths after the UI has moved to six digits.
-      await pool.query(
-        `UPDATE owner_phone_otps SET used_at = NOW()
-         WHERE phone = $1 AND used_at IS NULL AND char_length(code) <> 6`,
-        [normalized]
-      );
-
-      // Rate limit: 1 OTP per 2 minutes per phone
-      const { rows: recent } = await pool.query(
-        `SELECT id FROM owner_phone_otps
-         WHERE phone = $1 AND created_at > NOW() - INTERVAL '2 minutes' LIMIT 1`,
-        [normalized]
-      );
-      if (recent.length > 0) {
-        res.status(429).json({ message: "A code was already sent recently. Please wait a moment before requesting again." });
-        return;
-      }
-
-      const code      = generateOwnerOtp();
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
-
-      await pool.query(
-        `INSERT INTO owner_phone_otps (phone, email, code, expires_at) VALUES ($1, $2, $3, $4)`,
-        [normalized, email.trim().toLowerCase(), code, expiresAt]
-      );
-
-      const otpBody = `${code} is your Certxa verification code. Valid for 15 minutes. Do not share this code.`;
-      const { sendTwilioSms } = await import("./sms");
-      const result = await sendTwilioSms(normalized, otpBody);
-      if (!result.success) {
-        console.error(
-          "[owner-request-otp] SMS delivery failed for", normalized,
-          "— reason:", result.error,
-          "| Ensure TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + (TWILIO_MESSAGING_SERVICE_SID or TWILIO_PHONE_NUMBER) are set."
-        );
-      }
-
+      const { startPhoneVerification } = await import("./lib/proPhoneVerification");
+      const { getClientIp } = await import("./lib/salonNetworkGuard");
+      const email = typeof req.body?.email === "string" ? req.body.email : undefined;
+      const result = await startPhoneVerification(String(req.body?.phone ?? ""), getClientIp(req), email);
+      if (!result.ok) { res.status(result.status).json({ message: result.message }); return; }
       res.json({ success: true, message: "Verification code sent." });
     } catch (error) {
       console.error("[owner-request-otp] Error:", error);
@@ -831,142 +802,25 @@ export function setupAuth(app: Express) {
   });
 
   /**
-   * POST /api/auth/owner-request-otp-email
-   *
-   * Fallback for owners who can't receive the SMS. Finds the most recent
-   * unexpired OTP for the given phone (so SMS and email always share the same
-   * code) and sends it to the owner's email address.
-   */
-  /**
    * POST /api/auth/owner-verify-otp
    *
-   * Step 2 of owner signup phone verification. Validates the submitted code
-   * against owner_phone_otps, marks it used, and returns success so the
-   * frontend can advance to the password-creation step.
+   * Step 2: checks the code and hands back the one-time pass /api/auth/register needs.
    */
   app.post("/api/auth/owner-verify-otp", async (req, res) => {
     try {
-      const { phone, code } = req.body as { phone?: string; code?: string };
-      if (!phone?.trim() || !code?.trim()) {
-        res.status(400).json({ message: "Phone and code are required." });
-        return;
-      }
-
-      const normalized = toE164US(phone);
-      if (!normalized) {
-        res.status(400).json({ message: "Invalid phone number." });
-        return;
-      }
-
-      const trimmedCode = code.trim();
-      if (!/^\d{6}$/.test(trimmedCode)) {
-        res.status(400).json({ message: "Enter the 6-digit verification code." });
-        return;
-      }
-
-      // Find a matching, unexpired, unused OTP
-      const { rows } = await pool.query(
-        `SELECT id FROM owner_phone_otps
-         WHERE phone = $1
-           AND code = $2
-           AND expires_at > NOW()
-           AND used_at IS NULL
-         ORDER BY created_at DESC
-         LIMIT 1`,
-        [normalized, trimmedCode]
-      );
-
-      if (rows.length === 0) {
-        res.status(400).json({ message: "Invalid or expired code. Please try again or request a new one." });
-        return;
-      }
-
-      // Mark as used so it can't be replayed
-      await pool.query(
-        `UPDATE owner_phone_otps SET used_at = NOW() WHERE id = $1`,
-        [rows[0].id]
-      );
-
-      res.json({ success: true });
+      const { checkPhoneCode } = await import("./lib/proPhoneVerification");
+      const result = await checkPhoneCode(String(req.body?.phone ?? ""), String(req.body?.code ?? "").trim());
+      if (!result.ok) { res.status(result.status).json({ message: result.message }); return; }
+      res.json({ success: true, phoneToken: result.token });
     } catch (error) {
       console.error("[owner-verify-otp] Error:", error);
       res.status(500).json({ message: "Verification failed. Please try again." });
     }
   });
 
-  app.post("/api/auth/owner-request-otp-email", async (req, res) => {
-    try {
-      const { phone, email } = req.body as { phone?: string; email?: string };
-      if (!phone?.trim() || !email?.trim()) {
-        res.status(400).json({ message: "Phone and email are required." });
-        return;
-      }
-
-      const normalized = toE164US(phone);
-      if (!normalized) {
-        res.status(400).json({ message: "Invalid phone number." });
-        return;
-      }
-      const toEmail = email.trim().toLowerCase();
-
-      // Rate limit email path: 1 per minute per phone
-      const { rows: recentEmail } = await pool.query(
-        `SELECT id FROM owner_phone_otps
-         WHERE phone = $1 AND created_at > NOW() - INTERVAL '1 minute'
-         ORDER BY created_at DESC LIMIT 2`,
-        [normalized]
-      );
-      if (recentEmail.length >= 2) {
-        res.status(429).json({ message: "Too many requests. Please wait before requesting another code." });
-        return;
-      }
-
-      // Reuse the most recent live OTP; generate a new one if all have expired
-      const { rows } = await pool.query(
-        `SELECT code FROM owner_phone_otps
-         WHERE phone = $1 AND expires_at > NOW() AND used_at IS NULL
-           AND char_length(code) = 6
-         ORDER BY created_at DESC LIMIT 1`,
-        [normalized]
-      );
-      let code: string;
-      if (rows.length > 0) {
-        code = rows[0].code as string;
-      } else {
-        code = generateOwnerOtp();
-        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-        await pool.query(
-          `INSERT INTO owner_phone_otps (phone, email, code, expires_at) VALUES ($1, $2, $3, $4)`,
-          [normalized, toEmail, code, expiresAt]
-        );
-      }
-
-      const html = [
-        emailText(`<strong style="font-size:18px;">Verify your account</strong>`),
-        emailText("Enter this code on the Certxa sign-up page to verify your account."),
-        emailCode(code, "Valid for 15 minutes. Do not share this code."),
-        emailNote("If you didn't request this, you can safely ignore this e-mail."),
-      ].join("");
-
-      const result = await sendEmail(
-        0,
-        toEmail,
-        `${code} is your Certxa verification code`,
-        html,
-        `Your Certxa verification code is: ${code} (valid for 15 minutes)`
-      );
-
-      if (!result.success) {
-        console.error("[owner-request-otp-email] Email send failed:", result.error, "| to:", toEmail);
-        res.status(500).json({ message: "Failed to send code to email. Please check your email address or try SMS again." });
-        return;
-      }
-
-      res.json({ success: true, message: "Code sent to your email." });
-    } catch (error) {
-      console.error("[owner-request-otp-email] Error:", error);
-      res.status(500).json({ message: "Failed to send code to email. Please try again." });
-    }
+  // The sign-up code is texted only: an e-mailed code would not prove the mobile number (owner, 2026-11-03).
+  app.post("/api/auth/owner-request-otp-email", (_req, res) => {
+    res.status(410).json({ message: "Verification codes are sent by text message only." });
   });
 
   // ── Remembered devices ──────────────────────────────────────────────────────────────────────────

@@ -626,7 +626,8 @@ export class NailOffline {
           }
           reply = markerId == null
             ? { status: 409, body: { message: "The server already had this client checked in another way: give them to the barber on the front desk" } }
-            : await transport.send("POST", `/api/nail/markers/${markerId}/assign`, { staffId: rec.staff.id }, op.idempotencyKey);
+            // takenAt: the barber's service started when they took the client here, not when the connection came back.
+            : await transport.send("POST", `/api/nail/markers/${markerId}/assign`, { staffId: rec.staff.id, takenAt: rec.createdAt }, op.idempotencyKey);
           if (reply.status < 300) patch = { syncedAt: this.now().toISOString() } as Partial<TakeRecord>;
         } else if (op.type === "ticket.create" && rec.kind === "ticket") {
           // 0 = a walk-in by name only (no client record); it goes with its check-in.

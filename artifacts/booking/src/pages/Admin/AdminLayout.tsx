@@ -19,6 +19,7 @@ import {
   Mails,
   UserCog,
   Newspaper,
+  BellRing,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -45,6 +46,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     { path: '/isadmin/status', label: 'SERVICE STATUS', icon: Activity },
     { path: '/isadmin/blog', label: 'BLOG', icon: BookOpen },
     { path: '/isadmin/platform-emails', label: 'PLATFORM EMAIL', icon: Mails },
+    { path: '/isadmin/app-announcements', label: 'APP ANNOUNCEMENTS', icon: BellRing },
     { path: '/isadmin/agents', label: 'AGENT ACCOUNTS', icon: UserCog },
     { path: '/isadmin/support-feed', label: 'SUPPORT FEED', icon: Newspaper },
   ];

@@ -77,7 +77,7 @@ router.get("/feed/:ref", async (req: Request, res: Response) => {
     }>(
       `SELECT a.id, a.date, a.duration, a.status, a.notes,
               svc.name AS service_name,
-              cl.first_name AS client_first, cl.last_name AS client_last,
+              COALESCE(cl.first_name, a.customer_name) AS client_first, cl.last_name AS client_last,
               stf.name AS staff_name,
               loc.name AS loc_name, loc.address AS loc_address
          FROM appointments a

@@ -15,6 +15,7 @@ const SEGMENT_ORDER = [
   "ai_receptionist",
   "online_presence",
   "kiosk_waitlist",
+  "front_desk",
 ];
 
 interface HealthRun {

@@ -18,7 +18,7 @@ describe("the More and Manager menus are the same on every wrapper (owner, 2026-
     expect(keys(ctx())).toEqual({
       more: ["book", "clients", "voucher", "timeclock", "retail", "myslip", "language", "manager", "refresh"],
       manager: ["settings", "possetup", "register", "messages", "keygrid", "turnrotation", "servicetimes", "managerpin", "lockscreen",
-        "printer", "station", "mystation", "stationdrawer", "techidprint", "reports"],
+        "printer", "station", "stationdrawer", "techidprint", "reports"],
     });
   });
 
@@ -37,6 +37,14 @@ describe("the More and Manager menus are the same on every wrapper (owner, 2026-
     const k = keys(ctx({ bookingSystem: false, turnSystem: false, multiStation: false, retailPage: null, offline: true, printer: { available: false, connected: false, deviceName: null, status: "idle" } }));
     expect(k.more).toEqual(["clients", "voucher", "timeclock", "myslip", "language", "manager"]);
     expect(k.manager).toEqual(["settings", "possetup", "register", "messages", "keygrid", "servicetimes", "managerpin", "lockscreen", "techidprint", "reports"]);
+  });
+
+  it("Online Check-In is a Manager tile only where the shop has the line (barbershops), after Service Times", () => {
+    const run = { ...ctx().run, onlineLine: noop };
+    expect(keys(ctx({ onlineLine: null, run })).manager).not.toContain("onlineline");
+    const m = staffMenus(ctx({ onlineLine: { enabled: true, paused: true }, run })).manager;
+    expect(m.map((t) => t.key).slice(6, 8)).toEqual(["servicetimes", "onlineline"]);
+    expect(m.find((t) => t.key === "onlineline")!.sub).toBe("Paused");
   });
 
   it("every wrapper builds its menus from this list, not its own", () => {

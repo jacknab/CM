@@ -5,9 +5,12 @@ import type { Server } from "node:http";
 const state = vi.hoisted(() => ({
   query: vi.fn(), createCustomer: vi.fn(),
   bookings: [] as Record<string, any>[], customers: [] as Record<string, any>[], ownStaff: null as number | null,
+  cancelTexts: [] as number[],
 }));
 vi.mock("../db", () => ({ pool: { query: state.query } }));
-vi.mock("../storage", () => ({ storage: { createCustomer: state.createCustomer } }));
+vi.mock("../storage", () => ({ storage: { createCustomer: state.createCustomer, getAppointment: async (id: number) => ({ id, storeId: 7 }) } }));
+// The cancellation text (sms.ts): recorded here instead of sent.
+vi.mock("../sms", () => ({ sendCancellationNotice: async (a: { id: number }) => { state.cancelTexts.push(a.id); return { sent: true }; } }));
 vi.mock("../auth", () => ({ isAuthenticated: (_req: unknown, _res: unknown, next: () => void) => next() }));
 vi.mock("../lib/sessionStore", () => ({ resolveSessionStoreId: async () => 7 }));
 vi.mock("../lib/soloAuth", () => ({ verifySoloToken: () => ({ userId: "owner", type: "solo" }) }));
@@ -35,6 +38,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(err => err ? reject(err) : resolve())); });
 beforeEach(() => {
+  state.cancelTexts = [];
   state.bookings.length = 0; state.customers.length = 0; state.ownStaff = null;
   state.customers.push(customer);
   state.createCustomer.mockReset().mockImplementation(async () => ({ id: 1 }));
@@ -47,7 +51,9 @@ beforeEach(() => {
         && Date.parse(b.date) < to && Date.parse(b.date) + b.duration * 60000 > from).map(() => ({})) };
     }
     if (sql.includes("FROM clients c WHERE c.id=$1")) return { rows: state.customers.filter(c => c.id === values[0]) };
-    if (sql.includes("FROM clients c WHERE c.store_id=$1")) return { rows: state.customers };
+    if (sql.includes("FROM clients c WHERE c.store_id=$1") || (sql.includes("FROM clients c") && sql.includes("LEFT JOIN LATERAL"))) return { rows: state.customers };
+    // The paid-booking lock reads the status alone.
+    if (sql.includes("SELECT status FROM appointments WHERE id=$1")) return { rows: state.bookings.filter(b => b.id === values[0]).map(b => ({ status: b.status })) };
     if (sql.includes("FROM services WHERE store_id=$1")) return { rows: [service] };
     if (sql.includes("SELECT id FROM services")) return { rows: values[0] === service.id ? [service] : [] };
     if (sql.includes("INSERT INTO appointments")) {
@@ -115,7 +121,9 @@ describe("Certxa Pro API", () => {
   it("soft cancels idempotently, retaining original booking and reason", async () => {
     await request("/appointments", "POST", create);
     const first = await request("/appointments/10/cancel", "POST", { notifyClient: true, reason: "Requested" });
-    expect(first.body.notification).toEqual({ requested: true, status: "not_configured" });
+    // "Notify client" sends the cancellation text (2026-11-03).
+    expect(first.body.notification).toEqual({ requested: true, status: "sent" });
+    expect(state.cancelTexts).toEqual([10]);
     expect(first.body.appointment).toMatchObject({ date, status: "cancelled", cancellationReason: "Requested" });
     const second = await request("/appointments/10/cancel", "POST", { reason: "Different" });
     expect(second.body.appointment.cancellationReason).toBe("Requested");

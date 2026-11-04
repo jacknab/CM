@@ -1209,7 +1209,7 @@ router.post("/terminal/offline-forwarded", async (req: Request, res: Response) =
     }
     if (status === "declined" && before?.status !== "declined") {
       const ticket: any = row.appointment_id
-        ? (await pool.query(`SELECT a.ticket_number, c.first_name, c.last_name FROM appointments a LEFT JOIN clients c ON c.id = a.customer_id
+        ? (await pool.query(`SELECT a.ticket_number, COALESCE(c.first_name, a.customer_name) AS first_name, c.last_name FROM appointments a LEFT JOIN clients c ON c.id = a.customer_id
              WHERE a.id = $1 AND a.store_id = $2`, [row.appointment_id, storeId])).rows[0]
         : null;
       const dollars = `$${(((row.amount_cents ?? amount) || 0) / 100).toFixed(2)}`;
@@ -1543,6 +1543,8 @@ export async function finalizeCapturedTerminalPayment(
         ...(rec.tipAmount      !== undefined ? { tipAmount:      rec.tipAmount }      : {}),
         ...(rec.discountAmount !== undefined ? { discountAmount: rec.discountAmount } : {}),
         completedAt:   new Date(),
+        // Kept so the payment can be refunded later (Certxa Pro Refund).
+        stripePaymentIntentId: pi.id,
         ...(snap.servicePrice   !== undefined ? { servicePrice:   snap.servicePrice }   : {}),
         ...(snap.commissionRate !== undefined ? { commissionRate: snap.commissionRate } : {}),
       }).where(and(
@@ -1556,6 +1558,8 @@ export async function finalizeCapturedTerminalPayment(
       } else {
         recorded = true;
         console.log(`[terminal/capture] Appointment ${apptId} marked completed — ${rec.totalPaid} via ${method}`);
+        // Certxa Pro: the review text right after a card payment (lib/reviewAfterPayment.ts).
+        void import("../lib/reviewAfterPayment").then((m) => m.reviewRightAfterPayment(apptId)).catch(() => {});
         void recordCommissionAccrual(completedApt).catch(() => {});
         void awardLoyaltyForCompletion({
           storeId,

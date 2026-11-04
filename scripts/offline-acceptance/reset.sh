@@ -17,7 +17,11 @@ if [ "$(psql "$T" -Atc "select count(*) from wb_templates where name = 'Nail Sal
   COLS=$(psql "$T" -Atc "select string_agg(quote_ident(column_name), ',') from information_schema.columns where table_name='wb_templates' and column_name not in ('id','name','files_path')")
   psql "$T" -q -c "insert into wb_templates (name, files_path, $COLS) select 'Nail Salon — Bloom', files_path || '-bloom', $COLS from wb_templates where category = 'nail_salon' limit 1"
 fi
-curl -s -o /dev/null -H "X-Forwarded-Proto: https" -X POST $B/api/auth/register -H "Content-Type: application/json" -d '{"email":"offline-test@example.test","password":"test-only-123456","firstName":"Test","lastName":"Owner"}'
+# Sign-up needs a mobile number proved by a texted code (lib/proPhoneVerification.ts); the test server has no Twilio,
+# so the scratch database gets an already-checked number and its pass.
+PT=$(python3 -c "print('7e57' * 16)")
+psql "$T" -q -c "insert into pro_phone_verifications (phone, code_hash, line_type, ip, expires_at, verified_at, token_hash) values ('+16025550100', 'test', 'mobile', 'test', now() + interval '10 min', now(), encode(sha256('$PT'::bytea), 'hex'))"
+curl -s -o /dev/null -H "X-Forwarded-Proto: https" -X POST $B/api/auth/register -H "Content-Type: application/json" -d "{\"email\":\"offline-test@example.test\",\"password\":\"test-only-123456\",\"firstName\":\"Test\",\"lastName\":\"Owner\",\"phone\":\"6025550100\",\"phoneToken\":\"$PT\"}"
 curl -s -D $S/e2e/h.txt -o /dev/null -H "X-Forwarded-Proto: https" -X POST $B/api/auth/login -H "Content-Type: application/json" -d '{"email":"offline-test@example.test","password":"test-only-123456"}'
 grep -i "^set-cookie" $S/e2e/h.txt | sed -E 's/^[Ss]et-[Cc]ookie: ([^;]*);.*/\1/' | tr '\n' ';' | sed 's/;$//; s/;/; /g' > $S/e2e/cookie; chmod 600 $S/e2e/cookie
 HOURS=$(python3 -c "import json; print(json.dumps([{'dayOfWeek':d,'openTime':'00:00','closeTime':'23:59','isClosed':False} for d in range(7)]))")

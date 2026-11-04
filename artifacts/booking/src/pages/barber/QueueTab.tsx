@@ -52,10 +52,17 @@ function LiveTimer({ since, until, stoppedAt, offsetMs, testId }: { since: numbe
   return <span className="tt-timer" data-testid={testId} data-seconds={secs}>{pad(Math.floor(secs / 3600))}:{pad(Math.floor((secs % 3600) / 60))}:{pad(secs % 60)}</span>;
 }
 
+/** A waiting client's badge. Online Check-In Line: ON THE WAY until they are here, LATE · HELD once skipped. */
+function waitingPill(m: BoardMarker): { sub: string; subKind: "walkin" | "away" } {
+  if (m.online && !m.online.here) return { sub: m.online.lateStage === 1 || m.online.lateStage === 3 ? "LATE · HELD" : "ON THE WAY", subKind: "away" };
+  if (m.online) return { sub: "HERE", subKind: "walkin" };
+  return { sub: m.requestedCategory ? m.requestedCategory.toUpperCase() : "WALK-IN", subKind: "walkin" };
+}
+
 /** One client card: waiting (kiosk walk-in or a ticket not started yet) or in the chair. */
 type ClientRow = {
   key: string; state: "waiting" | "service"; since: string; name: string; ticketNumber: number | null; sub: string;
-  subKind: "walkin" | "assigned" | "unassigned" | "service"; /** null = no technician yet */ tech: string | null; /** "" = no service yet */ service: string; open: () => void;
+  subKind: "walkin" | "assigned" | "unassigned" | "service" | "away"; /** null = no technician yet */ tech: string | null; /** "" = no service yet */ service: string; open: () => void;
   assign?: () => void; /** waiting with a technician: start the service */ start?: () => void; testId: string; markerId?: number; remove?: () => void;
   /** Made or changed on this tablet while offline and not confirmed by the server yet: its place and technician are not final. */
   provisional?: boolean;
@@ -69,6 +76,8 @@ type ClientRow = {
   endsAt?: number | null;
   /** The technician pressed DONE at this time: the clock stops there and the card says COMPLETED. */
   doneAt?: number | null;
+  /** Checked in online and not here yet: never "up next" while someone who is here is waiting. */
+  onTheWay?: boolean;
 };
 
 const QUEUE_PER_PAGE = 8;
@@ -216,14 +225,21 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
     const fromMarkers = markers.map<ClientRow>((m) => ({
       // The marker already has the number printed with its check-in QR code, even though its
       // appointment/ticket record has not been created yet.
-      // A front-desk check-in may already carry what the client came for (a category, not a service yet)
-      // and the technician the turn system handed them to.
-      key: `m${m.id}`, state: "waiting", since: m.createdAt, name: fullName(m.clientName), ticketNumber: m.ticketNumber, service: "",
-      sub: m.requestedCategory ? m.requestedCategory.toUpperCase() : "WALK-IN",
-      subKind: m.staffName ? "assigned" : "walkin", tech: m.staffName ? techLabel(m.staffName, m.staffId) : null,
+      // A front-desk check-in may already carry what the client came for (a category, not a service yet).
+      // A client a barber has taken is in the chair (owner, 2026-11-03): the service starts when they are taken and
+      // runs to checkout, where the ticket is made — so the card says IN CHAIR and its timer counts from the take.
+      key: `m${m.id}`, name: fullName(m.clientName), ticketNumber: m.ticketNumber, service: "",
+      ...(m.staffId != null
+        ? { state: "service" as const, since: m.assignedAt ?? m.createdAt, sub: "IN CHAIR", subKind: "service" as const }
+        : { state: "waiting" as const, since: m.createdAt, ...waitingPill(m) }),
+      onTheWay: m.staffId == null && !!m.online && !m.online.here,
+      // Waiting for the barber they asked for when they checked in online.
+      tech: m.staffName ? techLabel(m.staffName, m.staffId)
+        : m.online?.preferredStaffId != null ? `Asked: ${techLabel(techs.find((t) => t.id === m.online!.preferredStaffId)?.name ?? "a barber", m.online.preferredStaffId)}` : null,
       open: () => onMarker(m), assign: m.staffId == null && onMarkerAssign ? () => onMarkerAssign(m) : undefined,
       testId: `barber-queue-wait-marker-${m.id}`, markerId: m.id, provisional: m.offline === true,
-      remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined, wait: m.wait,
+      // In the chair: no "waiting too long" warning.
+      remove: onMarkerRemove ? () => onMarkerRemove(m) : undefined, wait: m.staffId != null ? undefined : m.wait,
     }));
     // One service at a time: a client in a chair (started, DONE not pressed) holds back their other tickets.
     const inChairByClient = new Map<number, number>();
@@ -268,7 +284,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
       if (b.ticketNumber != null) return 1;
       return +new Date(a.since) - +new Date(b.since);
     });
-  }, [tickets, markers, onMarker, onMarkerAssign, onMarkerRemove, onTicket, onTicketTap, onAssignTicket, onStartTicket]);
+  }, [tickets, markers, techs, onMarker, onMarkerAssign, onMarkerRemove, onTicket, onTicketTap, onAssignTicket, onStartTicket]);
   // Urgent cards first (owner, 2026-10-29): red, then orange, the longest wait first. Every other card keeps its place
   // in ticket-number order, and an urgent card goes back there once it's started.
   const urgencyOf = (r: ClientRow) => waitUrgency(r.wait, now);
@@ -281,7 +297,9 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
   const waitingCount = clientRows.filter((r) => r.state === "waiting").length;
   const inServiceCount = clientRows.length - waitingCount;
   // Up next = the lowest-numbered client still waiting, wherever their card sits.
-  const upNextKey = clientRows.find((r) => r.state === "waiting" && r.blockedBy == null)?.key ?? null;
+  // A client still on their way (checked in online) is passed over while someone who is here waits.
+  const upNextKey = (clientRows.find((r) => r.state === "waiting" && r.blockedBy == null && !r.onTheWay)
+    ?? clientRows.find((r) => r.state === "waiting" && r.blockedBy == null))?.key ?? null;
   // Visits with more than one ticket on screen: those cards carry the yellow bar that joins them.
   // Where each linked card sits in its visit: the bar is on the side that faces the next card of the same
   // visit (the first card's right edge, the last card's left edge, both for one in the middle).
@@ -398,7 +416,7 @@ export function QueueTab({ techs, tickets, markers, dayBookings, upcoming, timez
         const inChair = r.state === "service";
         const urgency = urgencyOf(r);
         return (
-          <div key={r.key} data-urgency={urgency ?? undefined} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${urgency ? `q-urgent q-urgent-${urgency}` : ""} ${linkSide.has(r.key) ? `q-visit-linked q-visit-${linkSide.get(r.key)}` : ""}`} data-testid={r.testId} data-state={r.state} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
+          <div key={r.key} data-urgency={urgency ?? undefined} className={`q-booking-card q-unified-card q-wait-card ${upNext ? "q-up-next" : ""} ${urgency ? `q-urgent q-urgent-${urgency}` : ""} ${linkSide.has(r.key) ? `q-visit-linked q-visit-${linkSide.get(r.key)}` : ""}`} data-testid={r.testId} data-state={r.state} data-away={r.onTheWay ? "true" : undefined} role="button" tabIndex={0} aria-label={`Open ticket for ${r.name}`} onKeyDown={(event) => activateOnKeyboard(event, r.open)} onClick={r.open}>
             {/* Cancelling a check-in is in the client's popup (tap the card), not a small X here. */}
             <div className="q-booking-client q-booking-client-top q-unified-head">
               {/* A ticket made offline shows its ticket number like any other; NOT SENT only when it has none yet. */}

@@ -22,6 +22,7 @@ import {
 interface PlatformSettings {
   trialPeriodDays: number;
   soloFreeSmsCredits?: number;
+  soloCreditPacks?: { id: string; credits: number; priceCents: number }[];
   mailgun: {
     apiKey: string;
     domain: string;
@@ -107,6 +108,9 @@ export const PlatformSettingsManager: React.FC = () => {
   const [testEmail, setTestEmail] = useState<string>('');
   const [soloCredits, setSoloCredits] = useState<string>('');
   const [soloSaving, setSoloSaving] = useState(false);
+  // The credit packages the Certxa Pro app sells (PUT /api/admin/solo-credit-packs). Edited as text: credits and dollars.
+  const [packs, setPacks] = useState<{ id: string; credits: string; price: string }[]>([]);
+  const [packsSaving, setPacksSaving] = useState(false);
 
   useEffect(() => {
     fetchSettings();
@@ -125,6 +129,7 @@ export const PlatformSettingsManager: React.FC = () => {
       const settingsData = await response.json();
       setSettings(settingsData);
       setSoloCredits(String(settingsData.soloFreeSmsCredits ?? ''));
+      setPacks((settingsData.soloCreditPacks ?? []).map((p: any) => ({ id: String(p.id), credits: String(p.credits), price: (Number(p.priceCents) / 100).toFixed(2) })));
     } catch (err: any) {
       // No more silent fall-back to mock 30-day trial — that's exactly what
       // was hiding the real env value. Surface the error to the admin instead.
@@ -204,6 +209,26 @@ export const PlatformSettingsManager: React.FC = () => {
       void appAlert(`Failed to save: ${err?.message ?? "unknown error"}`, "Error");
     } finally {
       setSoloSaving(false);
+    }
+  };
+
+  const savePacks = async () => {
+    setPacksSaving(true);
+    try {
+      const response = await fetch('/api/admin/solo-credit-packs', {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packs: packs.map((p) => ({ id: p.id || undefined, credits: Number(p.credits), priceCents: Math.round(Number(p.price) * 100) })) }),
+      });
+      const body = await response.json().catch(() => ({} as any));
+      if (!response.ok) throw new Error(body?.message ?? `HTTP ${response.status}`);
+      setPacks(body.packs.map((p: any) => ({ id: String(p.id), credits: String(p.credits), price: (Number(p.priceCents) / 100).toFixed(2) })));
+      void appAlert('The app now sells these credit packages.', 'Saved');
+    } catch (err: any) {
+      void appAlert(`Failed to save: ${err?.message ?? 'unknown error'}`, 'Error');
+    } finally {
+      setPacksSaving(false);
     }
   };
 
@@ -348,6 +373,37 @@ export const PlatformSettingsManager: React.FC = () => {
               </div>
               <div className="mt-2 p-2 bg-white border border-[#7F9DB9] text-[9px] text-gray-600">
                 Each new Solo plan account starts with this many free text message credits. 1 credit = 1 text to a client.
+              </div>
+
+              {/* Credit packages sold in the app's Credit balance screen and on certxa.com/pro-credits. */}
+              <div className="mt-3 text-[11px] font-bold">Credit packages for sale</div>
+              <div className="mt-1 space-y-1" data-testid="admin-credit-packs">
+                {packs.map((p, i) => (
+                  <div key={p.id || `new-${i}`} className="flex items-center gap-2">
+                    <div className="text-[11px] text-right min-w-[120px]">Package {i + 1}:</div>
+                    <input type="number" min={1} max={100000} value={p.credits} aria-label={`Package ${i + 1} credits`}
+                      onChange={(e) => setPacks((all) => all.map((x, j) => (j === i ? { ...x, credits: e.target.value } : x)))}
+                      className="bg-white border border-[#7F9DB9] px-1 py-0.5 text-[11px] h-[20px] outline-none w-20" />
+                    <span className="text-[11px]">credits for $</span>
+                    <input type="number" min={0.5} max={1000} step={0.01} value={p.price} aria-label={`Package ${i + 1} price`}
+                      onChange={(e) => setPacks((all) => all.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))}
+                      className="bg-white border border-[#7F9DB9] px-1 py-0.5 text-[11px] h-[20px] outline-none w-20" />
+                    <button onClick={() => setPacks((all) => all.filter((_, j) => j !== i))} disabled={packs.length <= 1}
+                      className="px-2 py-0.5 border border-white shadow-[1px_1px_#000000] bg-[#D4D0C8] hover:bg-[#E1E1E1] text-[11px] disabled:opacity-50">Remove</button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <div className="min-w-[120px]" />
+                <button onClick={() => setPacks((all) => [...all, { id: '', credits: '', price: '' }])} disabled={packs.length >= 6}
+                  className="px-3 py-0.5 border border-white shadow-[1px_1px_#000000] bg-[#D4D0C8] hover:bg-[#E1E1E1] text-[11px] disabled:opacity-50">Add package</button>
+                <button onClick={savePacks} disabled={packsSaving || packs.length === 0 || packs.some((p) => !p.credits || !p.price)}
+                  className="px-3 py-0.5 border border-white shadow-[1px_1px_#000000] bg-[#D4D0C8] hover:bg-[#E1E1E1] text-[11px] font-bold disabled:opacity-50">
+                  {packsSaving ? 'Saving…' : 'Save packages'}
+                </button>
+              </div>
+              <div className="mt-2 p-2 bg-white border border-[#7F9DB9] text-[9px] text-gray-600">
+                Shown in this order in the Certxa Pro app (More › Credit balance). Up to 6 packages; each 1–100,000 credits for $0.50–$1,000. Changes show the next time a pro opens the screen.
               </div>
             </div>
           </div>

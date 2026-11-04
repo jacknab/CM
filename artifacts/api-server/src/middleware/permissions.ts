@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { db } from "../db";
 import { users } from "@shared/models/auth";
 import { staff } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   computePermissions,
   hasPermission,
@@ -11,6 +11,7 @@ import {
   type Role,
 } from "@shared/permissions";
 import { verifySoloToken } from "../lib/soloAuth";
+import { isProAccount } from "@shared/proAccount";
 
 export interface AuthContext {
   userId?: string;
@@ -32,17 +33,28 @@ declare global {
  * and attaches it to req.auth. Skips silently if there is no session — the
  * existing /api auth gate handles 401s for unauthenticated requests.
  */
-export const attachAuthContext: RequestHandler = async (req, _res, next) => {
+/** When the pro last used the app (locations.pro_app_seen_at), written at most once an hour per account. */
+const appSeen = new Map<string, number>();
+function noteAppSeen(userId: string): void {
+  const now = Date.now();
+  if ((appSeen.get(userId) ?? 0) > now - 60 * 60 * 1000) return;
+  appSeen.set(userId, now);
+  Promise.resolve().then(() => db.execute(sql`UPDATE locations SET pro_app_seen_at = now() WHERE user_id = ${userId}`)).catch(() => appSeen.delete(userId));
+}
+
+export const attachAuthContext: RequestHandler = async (req, res, next) => {
   // certxa-solo native app: bridge its stateless Bearer JWT into the same
   // req.session fields a cookie login would set, so every existing
   // session-based check (isAuthenticated, resolveSessionStoreId,
   // requireActiveTrial, ownStaffScope, etc.) works unchanged. The token is
   // self-contained, so this session is never persisted — save() is a no-op.
+  let fromAppToken = false;
   if (!(req.session as any)?.userId && !(req.session as any)?.staffId) {
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith("Bearer ")) {
       const payload = verifySoloToken(authHeader.slice(7));
       if (payload) {
+        fromAppToken = true;
         (req.session as any).userId = payload.userId;
         if (payload.staffId) (req.session as any).staffId = payload.staffId;
         (req.session as any).save = (cb?: (err?: unknown) => void) => cb?.(undefined);
@@ -56,6 +68,18 @@ export const attachAuthContext: RequestHandler = async (req, _res, next) => {
   try {
     if (sessionUserId) {
       const [user] = await db.select().from(users).where(eq(users.id, sessionUserId));
+      // The app signs in only accounts created in the app (owner, 2026-11-04). Its sign-in already refuses the
+      // others; this also ends an app sign-in an older account still had saved on a phone (it lasts 30 days).
+      if (fromAppToken && !isProAccount(user?.accountType)) {
+        delete (req.session as any).userId;
+        delete (req.session as any).staffId;
+        res.status(401).json({
+          code: "NOT_AN_APP_ACCOUNT",
+          message: "This account was created on the Certxa website, so it signs in at certxa.com. To use this app, create an account here.",
+        });
+        return;
+      }
+      if (fromAppToken && user) noteAppSeen(user.id);
       if (user) {
         const role = normalizeRole(user.role);
         req.auth = {

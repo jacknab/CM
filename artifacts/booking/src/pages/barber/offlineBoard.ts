@@ -83,6 +83,6 @@ export function overlayBoard(board: NailBoard | null | undefined, records: Local
   }
   return { ...base, tickets: unique, markers: markers.map((m) => {
     const t = byMarker.get(m.id);
-    return t ? { ...m, staffId: t.staff.id, staffName: t.staff.name, offline: true } : m;
+    return t ? { ...m, staffId: t.staff.id, staffName: t.staff.name, assignedAt: t.createdAt, offline: true } : m;
   }) };
 }

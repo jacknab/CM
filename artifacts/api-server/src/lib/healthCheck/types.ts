@@ -49,6 +49,7 @@ export const SEGMENT_IDS = [
   "ai_receptionist",
   "online_presence",
   "kiosk_waitlist",
+  "front_desk",
 ] as const;
 
 export type SegmentId = typeof SEGMENT_IDS[number];

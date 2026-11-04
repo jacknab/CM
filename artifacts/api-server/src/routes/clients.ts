@@ -465,7 +465,8 @@ router.get("/:id", isAuthenticated, async (req, res) => {
         FROM appointments
         WHERE customer_id = ${clientId}
           AND store_id    = ${client.storeId}
-          AND status      = 'completed'
+          -- A visit paid in the Certxa Pro app is saved as 'paid' (it wasn't counted, 2026-11-04).
+          AND status IN ('completed', 'paid')
       `),
     ]);
 
@@ -478,7 +479,9 @@ router.get("/:id", isAuthenticated, async (req, res) => {
       totalVisits:     Number(stats.total_visits ?? 0),
       totalSpentCents: Number(stats.total_spent_cents ?? 0),
       spent12mCents:   Number(stats.spent_12m_cents ?? 0),
-      lastVisitAt:     stats.last_visit_at ?? null,
+      // A raw query returns Postgres's own text ("2026-11-03 09:01:02.531+00"), which the iPhone app can't read
+      // ("Invalid Date"): send ISO like every other date.
+      lastVisitAt:     stats.last_visit_at ? new Date(stats.last_visit_at).toISOString() : null,
       emails,
       phones,
       addresses,
@@ -532,6 +535,10 @@ router.patch("/:id", isAuthenticated, async (req, res) => {
 
     const storeId = updated.storeId;
     await auditLog(storeId, "updated", { clientId, actorUserId: getUserId(req), metadata: { fields: Object.keys(updates) } });
+    if (updates.fullName !== undefined) {
+      const { refreshAiSummaryAfterRename } = await import("../storage");
+      refreshAiSummaryAfterRename(clientId);
+    }
 
     return res.json(updated);
   } catch (err) {

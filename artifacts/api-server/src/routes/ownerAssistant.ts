@@ -32,16 +32,17 @@ import { TURN_MODES, TURN_PRESETS, isDollarMode, type TurnMode } from "@shared/t
 const router = Router();
 
 // The verified "where things are" guide (knowledge-base-owner/certxa-help.md, checked against the code 2026-11-01).
-const HELP_GUIDE = (() => {
+export function loadGuide(file: string): string {
   try {
     const here = dirname(fileURLToPath(import.meta.url));
     const root = here.includes("/src") ? join(here, "..", "..") : join(here, "..");
-    return readFileSync(join(root, "knowledge-base-owner", "certxa-help.md"), "utf-8");
+    return readFileSync(join(root, "knowledge-base-owner", file), "utf-8");
   } catch (err) {
-    console.error("[assistant] help guide not loaded:", (err as Error).message);
+    console.error(`[assistant] help guide ${file} not loaded:`, (err as Error).message);
     return "";
   }
-})();
+}
+const HELP_GUIDE = loadGuide("certxa-help.md");
 const LOG = "[assistant]";
 const MODEL = () => process.env.OWNER_ASSISTANT_MODEL || process.env.MEMBERS_ASSISTANT_MODEL || "gpt-5.6-luna";
 const MAX_TOOL_ROUNDS = 8;
@@ -57,7 +58,7 @@ const REPORTS: Record<string, string> = {
 
 // ─── Who may use it ────────────────────────────────────────────────────────────
 
-async function ownerContext(req: Request, res: Response): Promise<{ storeId: number; userId: string } | null> {
+export async function ownerContext(req: Request, res: Response): Promise<{ storeId: number; userId: string } | null> {
   const userId = (req.session as any)?.userId as string | undefined;
   if (!userId || (req.session as any)?.staffId) { res.status(403).json({ message: "The assistant is for the salon owner's login." }); return null; }
   const storeId = await resolveSessionStoreId(req);
@@ -69,12 +70,14 @@ async function ownerContext(req: Request, res: Response): Promise<{ storeId: num
 
 // ─── Calling the app's own endpoints as the owner ──────────────────────────────
 
-async function asOwner(req: Request, method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any }> {
+export async function asOwner(req: Request, method: string, path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: any }> {
   const port = process.env.PORT || "9200";
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method,
     headers: {
       cookie: String(req.headers.cookie ?? ""),
+      // The Certxa Pro app signs in with a token, not a cookie (its Business AI uses this assistant too).
+      ...(req.headers.authorization ? { authorization: String(req.headers.authorization) } : {}),
       "Content-Type": "application/json",
       "X-Forwarded-Proto": "https",
       "X-Forwarded-For": String(req.headers["x-forwarded-for"] ?? req.socket.remoteAddress ?? ""),
@@ -93,7 +96,7 @@ const money = (n: unknown) => `$${Number(n ?? 0).toFixed(2)}`;
 
 // ─── Tools the model can use ───────────────────────────────────────────────────
 
-const READ_TOOLS = [
+export const READ_TOOLS = [
   { name: "get_report", description: "Any of the salon's reports for a date range — the same numbers as the Reports pages. Use for revenue, sales, payments, sales tax collected, tips, gift cards, staff performance, hours worked, turns, client retention, clients who haven't been back, top clients, no-shows, loyalty, appointments, wait times, service times, busy times, services, cancellations after service, reviews, texts and Autumn's calls.",
     parameters: { type: "object", properties: {
       report: { type: "string", enum: Object.keys(REPORTS) },
@@ -122,7 +125,7 @@ const READ_TOOLS = [
     parameters: { type: "object", properties: {}, required: [] } },
 ];
 
-const CHANGE_TOOLS = [
+export const CHANGE_TOOLS = [
   { name: "change_sales_tax", description: "Propose changing the sales tax rate and what it applies to.",
     parameters: { type: "object", properties: {
       ratePercent: { type: "number", description: "0 to 25, e.g. 8.7" },
@@ -154,7 +157,7 @@ const CHANGE_TOOLS = [
 const ALL_TOOLS = [...READ_TOOLS, ...CHANGE_TOOLS].map((t) => ({ type: "function", name: t.name, description: t.description, parameters: t.parameters }));
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-async function runReadTool(req: Request, storeId: number, name: string, a: any): Promise<unknown> {
+export async function runReadTool(req: Request, storeId: number, name: string, a: any): Promise<unknown> {
   const tz = (await pool.query(`SELECT timezone FROM locations WHERE id = $1`, [storeId])).rows[0]?.timezone || "UTC";
   if (name === "get_report") {
     const path = REPORTS[String(a.report)];
@@ -307,8 +310,9 @@ async function runReadTool(req: Request, storeId: number, name: string, a: any):
     const { rows } = await pool.query(
       `SELECT c.id, COALESCE(NULLIF(c.full_name, ''), TRIM(CONCAT_WS(' ', c.first_name, c.last_name))) AS name, c.loyalty_points,
               (SELECT p.display_phone FROM client_phones p WHERE p.client_id = c.id ORDER BY p.is_primary DESC NULLS LAST LIMIT 1) AS phone,
-              (SELECT COUNT(*) FROM appointments a WHERE a.customer_id = c.id AND a.status = 'completed')::int AS visits,
-              (SELECT COALESCE(SUM(a.total_paid), 0) FROM appointments a WHERE a.customer_id = c.id AND a.status = 'completed')::float AS spent,
+              -- Counted like the client profile (GET /api/clients/:id): a visit once however many tickets, spend without tips.
+              (SELECT COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id)) FROM appointments a WHERE a.customer_id = c.id AND a.store_id = c.store_id AND a.status = 'completed')::int AS visits,
+              (SELECT COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)), 0) FROM appointments a WHERE a.customer_id = c.id AND a.store_id = c.store_id AND a.status = 'completed')::float AS spent,
               (SELECT MAX(a.date) FROM appointments a WHERE a.customer_id = c.id AND a.status = 'completed') AS last_visit,
               (SELECT MIN(a.date) FROM appointments a WHERE a.customer_id = c.id AND a.date > now() AND COALESCE(a.status, '') NOT IN ('cancelled', 'canceled', 'no_show', 'no-show', 'completed')) AS next_appointment
          FROM clients c
@@ -389,7 +393,7 @@ async function runReadTool(req: Request, storeId: number, name: string, a: any):
 }
 
 /** Checks a proposed change and writes it down as pending, with a plain summary. Nothing is changed here. */
-async function proposeChange(req: Request, ctx: { storeId: number; userId: string }, name: string, a: any): Promise<{ actionId?: number; summary?: string; error?: string }> {
+export async function proposeChange(req: Request, ctx: { storeId: number; userId: string }, name: string, a: any): Promise<{ actionId?: number; summary?: string; error?: string }> {
   let summary = "";
   let payload: Record<string, unknown> = {};
   const pct = (n: number) => `${Number(n.toFixed(3))}%`;
@@ -486,6 +490,19 @@ async function proposeChange(req: Request, ctx: { storeId: number; userId: strin
       summary = `Change opening hours — ${lines.join("; ")}.`;
       break;
     }
+    case "change_booking_approval":
+      if (!["auto", "manual"].includes(a.mode)) return { error: "Choose 'auto' or 'manual'." };
+      payload = { bookingApproval: a.mode };
+      summary = a.mode === "manual" ? "Review each online booking first (clients send a request; you approve, offer other times, or decline)." : "Accept online bookings automatically.";
+      break;
+    case "change_about_text": {
+      const text = String(a.text ?? "").trim();
+      if (text.length < 20) return { error: "Write the About text first." };
+      if (text.length > 600) return { error: "Keep the About text to 600 characters." };
+      payload = { about: text };
+      summary = `Put this on your website's About page:\n\n${text}`;
+      break;
+    }
     default:
       return { error: `Unknown change ${name}` };
   }
@@ -516,6 +533,8 @@ async function executeChange(req: Request, storeId: number, kind: string, p: any
       case "add_cash_drawer": await call("POST", "/api/cash-drawers", p); break;
       case "edit_cash_drawer": await call("PUT", `/api/cash-drawers/${p.drawerId}`, p.patch); break;
       case "change_opening_hours": await call("PUT", "/api/business-hours", { storeId, hours: p.hours }); break;
+      case "change_booking_approval": await call("PUT", "/api/work-places", { bookingApproval: p.bookingApproval }); break;
+      case "change_about_text": await call("PUT", "/api/booking-site", { site: { about: p.about } }); break;
       default: return { ok: false, message: "Unknown change." };
     }
     return { ok: true, message: "Done." };
@@ -555,6 +574,75 @@ HELP GUIDE:
 ${HELP_GUIDE}`;
 }
 
+/**
+ * One question and its answer: the conversation so far (this channel), the model with its tools until it answers,
+ * proposed changes kept for Confirm, the answer saved and fact-checked afterwards. Used by the /manage assistant
+ * ('web') and the Certxa Pro app's Business AI ('app').
+ */
+export async function assistantTurn(req: Request, ctx: { storeId: number; userId: string }, o: {
+  message: string; system: string; key: string; channel: "web" | "app"; tools: any[];
+  isChange: (name: string) => boolean;
+  /** Tools of the caller's own; return undefined for the shared ones. */
+  ownTool?: (name: string, args: any) => Promise<unknown | undefined>;
+  guide?: string;
+}): Promise<{ messageId: number; reply: string; actions: { id: number; summary: string; status: "pending" }[]; toolResults: { name: string; args: any; out: unknown }[] }> {
+  const past = (await pool.query(
+    `SELECT role, content FROM assistant_messages WHERE user_id = $1 AND store_id = $2 AND channel = $3 ORDER BY id DESC LIMIT 12`,
+    [ctx.userId, ctx.storeId, o.channel])).rows.reverse();
+  await pool.query(`INSERT INTO assistant_messages (store_id, user_id, role, content, channel) VALUES ($1, $2, 'user', $3, $4)`, [ctx.storeId, ctx.userId, o.message, o.channel]);
+
+  const input: any[] = [...past.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: o.message }];
+  const proposed: { id: number; summary: string }[] = [];
+  const toolResults: { name: string; args: any; out: unknown }[] = [];
+  let reply = "";
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const model = MODEL();
+    const thinking = /^(gpt-5|o\d)/.test(model);
+    const r = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${o.key}` },
+      body: JSON.stringify({ model, instructions: o.system, input, tools: o.tools, tool_choice: "auto",
+        ...(thinking ? { reasoning: { effort: "low" } } : { temperature: 0.3 }), max_output_tokens: 6000 }),
+      signal: AbortSignal.timeout(90_000),
+    });
+    const data: any = await r.json();
+    if (data.error) throw new Error(data.error.message);
+    const output: any[] = Array.isArray(data.output) ? data.output : [];
+    input.push(...output);
+    const calls = output.filter((x) => x.type === "function_call");
+    if (!calls.length) {
+      reply = output.filter((x) => x.type === "message").flatMap((x) => (x.content ?? []).filter((c: any) => c.type === "output_text").map((c: any) => c.text)).join("\n").trim();
+      break;
+    }
+    for (const call of calls) {
+      let args: any = {};
+      try { args = JSON.parse(call.arguments || "{}"); } catch { /* empty */ }
+      let out: unknown;
+      try {
+        if (o.isChange(call.name)) {
+          const p = await proposeChange(req, ctx, call.name, args);
+          if (p.actionId) { proposed.push({ id: p.actionId, summary: p.summary! }); out = { proposed: true, waitingForOwnerToConfirm: true, summary: p.summary }; }
+          else out = { error: p.error };
+        } else {
+          out = (o.ownTool ? await o.ownTool(call.name, args) : undefined) ?? await runReadTool(req, ctx.storeId, call.name, args);
+        }
+      } catch (e: any) {
+        out = { error: e?.message ?? "That lookup failed." };
+      }
+      toolResults.push({ name: call.name, args, out });
+      console.log(`${LOG} store ${ctx.storeId} ${o.channel} tool ${call.name}`);
+      input.push({ type: "function_call_output", call_id: call.call_id, output: clip(out) });
+    }
+  }
+  reply = reply.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, ""); // plain text on the page
+  if (!reply) reply = proposed.length ? "Here's the change — tap Confirm to make it." : "Sorry, I couldn't finish that. Could you ask it another way?";
+  const saved = await pool.query(`INSERT INTO assistant_messages (store_id, user_id, role, content, action_ids, channel) VALUES ($1, $2, 'assistant', $3, $4::jsonb, $5) RETURNING id`,
+    [ctx.storeId, ctx.userId, reply, JSON.stringify(proposed.map((p) => p.id)), o.channel]);
+  // Checked afterwards, so the owner isn't kept waiting (owner, 2026-11-01: "truthful insight and facts").
+  void factCheckAnswer(saved.rows[0].id, o.message, reply, input, o.key, o.guide ?? HELP_GUIDE);
+  return { messageId: saved.rows[0].id, reply, actions: proposed.map((p) => ({ id: p.id, summary: p.summary, status: "pending" as const })), toolResults };
+}
+
 router.post("/api/assistant/chat", isAuthenticated, async (req: Request, res: Response) => {
   const ctx = await ownerContext(req, res); if (!ctx) return;
   const message = String(req.body?.message ?? "").trim().slice(0, 2000);
@@ -573,58 +661,8 @@ router.post("/api/assistant/chat", isAuthenticated, async (req: Request, res: Re
       today: formatInTimeZone(new Date(), tz, "MMMM d, yyyy (yyyy-MM-dd)"), weekday: formatInTimeZone(new Date(), tz, "EEEE"),
       partOfDay: hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening",
     });
-    const past = (await pool.query(
-      `SELECT role, content FROM assistant_messages WHERE user_id = $1 AND store_id = $2 ORDER BY id DESC LIMIT 12`, [ctx.userId, ctx.storeId])).rows.reverse();
-    await pool.query(`INSERT INTO assistant_messages (store_id, user_id, role, content) VALUES ($1, $2, 'user', $3)`, [ctx.storeId, ctx.userId, message]);
-
-    const input: any[] = [...past.map((m) => ({ role: m.role, content: m.content })), { role: "user", content: message }];
-    const proposed: { id: number; summary: string }[] = [];
-    let reply = "";
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const model = MODEL();
-      const thinking = /^(gpt-5|o\d)/.test(model);
-      const r = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model, instructions: system, input, tools: ALL_TOOLS, tool_choice: "auto",
-          ...(thinking ? { reasoning: { effort: "low" } } : { temperature: 0.3 }), max_output_tokens: 6000 }),
-        signal: AbortSignal.timeout(90_000),
-      });
-      const data: any = await r.json();
-      if (data.error) throw new Error(data.error.message);
-      const output: any[] = Array.isArray(data.output) ? data.output : [];
-      input.push(...output);
-      const calls = output.filter((o) => o.type === "function_call");
-      if (!calls.length) {
-        reply = output.filter((o) => o.type === "message").flatMap((o) => (o.content ?? []).filter((c: any) => c.type === "output_text").map((c: any) => c.text)).join("\n").trim();
-        break;
-      }
-      for (const call of calls) {
-        let args: any = {};
-        try { args = JSON.parse(call.arguments || "{}"); } catch { /* empty */ }
-        let out: unknown;
-        try {
-          if (CHANGE_TOOLS.some((t) => t.name === call.name)) {
-            const p = await proposeChange(req, ctx, call.name, args);
-            if (p.actionId) { proposed.push({ id: p.actionId, summary: p.summary! }); out = { proposed: true, waitingForOwnerToConfirm: true, summary: p.summary }; }
-            else out = { error: p.error };
-          } else {
-            out = await runReadTool(req, ctx.storeId, call.name, args);
-          }
-        } catch (e: any) {
-          out = { error: e?.message ?? "That lookup failed." };
-        }
-        console.log(`${LOG} store ${ctx.storeId} tool ${call.name}`);
-        input.push({ type: "function_call_output", call_id: call.call_id, output: clip(out) });
-      }
-    }
-    reply = reply.replace(/\*\*(.+?)\*\*/g, "$1").replace(/^#+\s*/gm, ""); // plain text on the page
-    if (!reply) reply = proposed.length ? "Here's the change — tap Confirm to make it." : "Sorry, I couldn't finish that. Could you ask it another way?";
-    const saved = await pool.query(`INSERT INTO assistant_messages (store_id, user_id, role, content, action_ids) VALUES ($1, $2, 'assistant', $3, $4::jsonb) RETURNING id`,
-      [ctx.storeId, ctx.userId, reply, JSON.stringify(proposed.map((p) => p.id))]);
-    // Checked afterwards, so the owner isn't kept waiting (owner, 2026-11-01: "truthful insight and facts").
-    void factCheckAnswer(saved.rows[0].id, message, reply, input, key);
-    return res.json({ reply, actions: proposed.map((p) => ({ id: p.id, summary: p.summary, status: "pending" })) });
+    const turn = await assistantTurn(req, ctx, { message, system, key, channel: "web", tools: ALL_TOOLS, isChange: (n) => CHANGE_TOOLS.some((t) => t.name === n) });
+    return res.json({ reply: turn.reply, actions: turn.actions });
   } catch (err: any) {
     console.error(`${LOG} chat failed:`, err?.message);
     return res.status(500).json({ message: "The assistant is unavailable right now. Please try again shortly." });
@@ -635,7 +673,7 @@ router.post("/api/assistant/chat", isAuthenticated, async (req: Request, res: Re
  * After each answer a separate model compares it with what the tools returned and the help guide, and records any
  * statement that isn't supported (assistant_messages.fact_check). Read in the back office to fix gaps.
  */
-async function factCheckAnswer(messageId: number, question: string, reply: string, input: any[], key: string): Promise<void> {
+async function factCheckAnswer(messageId: number, question: string, reply: string, input: any[], key: string, guide: string): Promise<void> {
   try {
     const evidence = input
       .filter((i) => i?.type === "function_call_output")
@@ -650,7 +688,7 @@ async function factCheckAnswer(messageId: number, question: string, reply: strin
         temperature: 0,
         response_format: { type: "json_object" },
         messages: [
-          { role: "system", content: `You audit an assistant's answer to a salon owner. Every number, name, date, setting, or description of where something is in the app must be supported by the LOOKUP RESULTS or the HELP GUIDE below. List each statement that is not supported or contradicts them. Greetings, questions back to the owner, and "tap Confirm" lines are fine. Reply as JSON {"issues": [string]} — empty when everything is supported.\n\nHELP GUIDE:\n${HELP_GUIDE}\n\nLOOKUP RESULTS:\n${evidence || "(none)"}` },
+          { role: "system", content: `You audit an assistant's answer to a salon owner. Every number, name, date, setting, or description of where something is in the app must be supported by the LOOKUP RESULTS or the HELP GUIDE below. List each statement that is not supported or contradicts them. Greetings, questions back to the owner, and "tap Confirm" lines are fine. Reply as JSON {"issues": [string]} — empty when everything is supported.\n\nHELP GUIDE:\n${guide}\n\nLOOKUP RESULTS:\n${evidence || "(none)"}` },
           { role: "user", content: `OWNER ASKED: ${question}\n\nASSISTANT ANSWERED: ${reply}` },
         ],
       }),
@@ -669,7 +707,7 @@ async function factCheckAnswer(messageId: number, question: string, reply: strin
 router.get("/api/assistant/history", isAuthenticated, async (req: Request, res: Response) => {
   const ctx = await ownerContext(req, res); if (!ctx) return;
   const msgs = (await pool.query(
-    `SELECT id, role, content, action_ids, created_at FROM assistant_messages WHERE user_id = $1 AND store_id = $2 ORDER BY id DESC LIMIT 40`,
+    `SELECT id, role, content, action_ids, created_at FROM assistant_messages WHERE user_id = $1 AND store_id = $2 AND channel = 'web' ORDER BY id DESC LIMIT 40`,
     [ctx.userId, ctx.storeId])).rows.reverse();
   const ids = msgs.flatMap((m) => (Array.isArray(m.action_ids) ? m.action_ids : []));
   const acts = ids.length ? (await pool.query(`SELECT id, summary, status, result FROM assistant_actions WHERE id = ANY($1::int[]) AND user_id = $2`, [ids, ctx.userId])).rows : [];

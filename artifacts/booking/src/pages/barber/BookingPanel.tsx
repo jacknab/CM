@@ -85,7 +85,7 @@ export function BookingPanel(p: {
   const fromServerOr = async <T,>(url: string, fallbackMsg: string, onDevice: (d: NonNullable<Awaited<ReturnType<typeof loadOfflineBookingData>>>) => T): Promise<T> => {
     const local = async () => {
       const d = await offlineData();
-      if (!d) throw new Error("No connection, and this tablet does not have the salon's booking data yet.");
+      if (!d) throw new Error("No connection, and this tablet does not have the shop's booking data yet.");
       setOffline(true);
       return onDevice(d);
     };

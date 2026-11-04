@@ -229,7 +229,7 @@ export default function CustomerActionsCard({ accountId, store, owner }: Props) 
           </div>
         )}
 
-        {actions.map(a => (
+        {actions.filter((a) => !(owner.proApp && (a.id === "extend-trial" || a.id === "reset-sms"))).map(a => (
           <button key={a.id} onClick={() => setConfirmAction(a.id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-transparent transition text-left group ${a.bg}`}>
             <div className="w-7 h-7 rounded-lg bg-slate-50 group-hover:bg-white flex items-center justify-center flex-shrink-0 transition">{a.icon}</div>

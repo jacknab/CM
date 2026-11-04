@@ -16,7 +16,8 @@ import { bookingSlugAvailable, changeBookingSlug, slugFormatProblem, slugFromTex
 
 const router = Router();
 
-export const BOOKING_THEMES = ["bloom", "simple", "classic", "mobile"] as const;
+// "solo": the Certxa Pro app's copy of Bloom (booking SoloTheme.tsx, owner 2026-11-04).
+export const BOOKING_THEMES = ["bloom", "solo", "simple", "classic", "mobile"] as const;
 
 /** A photo the business uploaded through Certxa (POST /api/uploads/image), never an outside address. */
 const uploadedImage = z.string().trim().max(500).refine(
@@ -27,6 +28,8 @@ const siteInput = z.object({
   accent: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "Pick a colour.").or(z.literal("")).optional(),
   coverImage: uploadedImage.optional(),
   logoImage: uploadedImage.optional(),
+  /** The pro's own photo, on the About tab of the Solo website. */
+  aboutImage: uploadedImage.optional(),
   about: z.string().trim().max(600, "Keep the about text to 600 characters.").optional(),
   // "@studio.name", "studio.name" or an instagram.com link → "studio.name".
   instagram: z.string().trim().max(120).transform((value) => value.replace(/^https?:\/\/(www\.)?instagram\.com\//i, "").replace(/^@/, "").replace(/\/.*$/, ""))

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { proByLabel } from "../lib/proCraft";
 import { applySalonPage, salonFaq, salonHead, salonLlmsTxt, salonRobotsTxt, type SalonFacts } from "../lib/salonSeo";
 
 const facts = (over: Partial<SalonFacts> = {}): SalonFacts => ({
   slug: "tobys", name: "Toby’s", category: "Nail Salon", city: "Denver", state: "CO", cityState: "Denver, CO",
   streetAddress: "100 Main St", postcode: "80202", phone: "7202436886", email: "hi@tobys.example", latitude: 39.74, longitude: -104.99,
   canonical: "https://tobys.certxa.com/",
-  about: null, image: null, instagram: null, showPrices: true,
+  about: null, image: null, instagram: null, showPrices: true, onlineCheckin: null,
   services: [
     { name: "Gel Manicure", price: 35, duration: 45, category: "Manicure" },
     { name: "Pedicure", price: 40, duration: 50, category: "Pedicure" },
@@ -14,6 +15,7 @@ const facts = (over: Partial<SalonFacts> = {}): SalonFacts => ({
   hours: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day, i) => i === 0 ? { day, opens: null, closes: null } : { day, opens: "09:00", closes: "19:00" }),
   rating: null,
   solo: false,
+  byLabel: null,
   places: { ownPlace: "salon", houseCalls: false, radiusMiles: null },
   ...over,
 });
@@ -109,5 +111,39 @@ describe("a salon's booking page for search and AI engines", () => {
     const head = salonHead(facts({ solo: true, category: "Barbershop", name: "Toby's", services: [], places: { ownPlace: "salon", houseCalls: false, radiusMiles: null } }));
     expect(head.title).toBe("Toby's | Buzzcuts in Denver, CO");
     expect(head.description).toMatch(/^Toby's buzzcuts in Denver, CO\. In a salon suite\./);
+  });
+});
+
+describe("a barbershop with online check-in", () => {
+  it("says walk-ins can check in online, in the FAQ, the JSON-LD and llms.txt", () => {
+    const f = facts({ category: "Barbershop", onlineCheckin: "https://certxa.com/q/tobys" });
+    expect(salonFaq(f).find((x) => /check in online/i.test(x.q))?.a).toContain("https://certxa.com/q/tobys");
+    expect(JSON.stringify(salonHead(f).jsonLd)).toContain("JoinAction");
+    expect(salonLlmsTxt(f)).toContain("Walk-ins: check in online");
+    expect(JSON.stringify(salonHead(facts()).jsonLd)).not.toContain("JoinAction");
+  });
+
+  it("names a Solo pro the way pros are searched for: Nails by Toby", () => {
+    const f = facts({ solo: true, byLabel: "Nails by Toby" });
+    const head = salonHead(f);
+    expect(head.title).toBe("Nails by Toby in Denver, CO");
+    expect(head.description).toMatch(/^Nails by Toby in Denver, CO: Gel Manicure/);
+    expect(head.keywords).toContain("Nails by Toby");
+    const business = (head.jsonLd as any)["@graph"][0];
+    expect(business).toMatchObject({ name: "Toby’s", alternateName: "Nails by Toby" });
+    expect(salonFaq(f).map((x) => x.q)).toContain("How do I book an appointment with Nails by Toby?");
+    expect(salonLlmsTxt(f)).toMatch(/^# Nails by Toby\n/);
+    expect(applySalonPage(TEMPLATE, f)).toContain("<h1>Nails by Toby</h1>");
+    // A business name of its own stays in the title.
+    expect(salonHead(facts({ solo: true, byLabel: "Nails by Toby", name: "Glow Studio" })).title).toBe("Nails by Toby in Denver, CO | Glow Studio");
+  });
+
+  it("builds the label from the craft and the owner's first name", () => {
+    expect(proByLabel("Nail Salon", "toby", "Toby’s")).toBe("Nails by Toby");
+    expect(proByLabel("Hair Salon", "Kim Anh", "Glow")).toBe("Hair by Kim");
+    expect(proByLabel("Barbershop", "Sam", "Fades")).toBe("Cuts by Sam");
+    expect(proByLabel("Spa", "Lee", "Calm")).toBe("Beauty by Lee");
+    expect(proByLabel("Nail Salon", "", "Toby’s")).toBeNull();
+    expect(proByLabel("Nail Salon", "Toby", "Hair by Toby")).toBeNull();
   });
 });

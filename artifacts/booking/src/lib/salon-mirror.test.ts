@@ -94,4 +94,13 @@ describe("the salon's copy on the tablet", () => {
     expect(await mirrorGet(7, "clients", 4)).not.toBeNull();
     expect(JSON.parse(db.state.get(7)!)).toMatchObject({ complete: true, cursor: 60 });
   });
+
+  it("copies a table the server added after this tablet made its copy, once, without starting over", async () => {
+    db.state.set(9, JSON.stringify({ complete: true, cursor: 5, table: 2, afterId: 0, tables: ["clients", "appointments"], children: [], syncedAt: null }));
+    await syncSalonMirror(9);
+    expect((await mirrorGet(9, "appointment_addons", 101))?.appointment_id).toBe(12);
+    expect(await mirrorGet(9, "clients", 1)).toBeNull(); // nothing else copied again
+    expect(JSON.parse(db.state.get(9)!)).toMatchObject({ complete: true, tables: ["clients", "appointments", "appointment_addons"],
+      children: [{ table: "appointment_addons", parent: "appointments", fk: "appointment_id" }] });
+  });
 });

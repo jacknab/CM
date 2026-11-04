@@ -55,14 +55,17 @@ export default function CommunicationsTab({ accountId }: { accountId: number }) 
 
   const kpis = [
     { icon: MessageSquare, label: "Total SMS",   value: smsStats.total,    color: "text-indigo-600",  bg: "bg-indigo-50"  },
-    { icon: ArrowDownLeft, label: "Inbound",     value: smsStats.inbound,  color: "text-emerald-600", bg: "bg-emerald-50" },
-    { icon: ArrowUpRight,  label: "Outbound",    value: smsStats.outbound, color: "text-blue-600",    bg: "bg-blue-50"    },
+    { icon: ArrowDownLeft, label: "Received",    value: smsStats.inbound,  color: "text-emerald-600", bg: "bg-emerald-50" },
+    { icon: ArrowUpRight,  label: "Sent",        value: smsStats.outbound, color: "text-blue-600",    bg: "bg-blue-50"    },
     { icon: AlertCircle,   label: "Failed",      value: smsStats.failed,   color: "text-red-600",     bg: "bg-red-50"     },
     { icon: Clock,         label: "Last 30 Days",value: smsStats.last_30d, color: "text-violet-600",  bg: "bg-violet-50"  },
   ];
 
   return (
     <div className="p-6 space-y-5">
+
+      {/* Phone (Certxa Pro app): how this account takes calls, its calls, and texts on its number. */}
+      {data.phone && <PhoneSection data={data} />}
 
       {/* SMS KPI strip */}
       <div className="grid grid-cols-3 lg:grid-cols-5 gap-3">
@@ -176,3 +179,89 @@ export default function CommunicationsTab({ accountId }: { accountId: number }) 
     </div>
   );
 }
+
+const pretty = (n: string) => { const d = (n ?? "").replace(/\D/g, "").slice(-10); return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : n; };
+const CALL_STATUS: Record<string, { label: string; color: string }> = {
+  answered:    { label: "Answered",  color: "text-emerald-700" },
+  missed:      { label: "Missed",    color: "text-red-700" },
+  "no-answer": { label: "No answer", color: "text-amber-700" },
+  failed:      { label: "Failed",    color: "text-red-700" },
+  ringing:     { label: "Ringing",   color: "text-slate-500" },
+};
+
+/** The Certxa Pro app's phone: Business Phone number or Plus calling, recent calls, and texts with clients. */
+function PhoneSection({ data }: { data: CommunicationsData }) {
+  const phone = data.phone!;
+  const calls = data.calls ?? [];
+  const conversations = data.conversations ?? [];
+  const phoneTexts = data.phoneTexts ?? [];
+  const billing = phone.mode === "line"
+    ? phone.billingStatus === "free" ? "No charge (test line)"
+      : phone.billingStatus === "held" ? "Paused: payment failed"
+      : phone.billingStatus === "past_due" ? "Payment failed, retrying"
+      : `$10/month${phone.paidUntil ? ` · ${phone.cancelAtPeriodEnd ? "ends" : "renews"} ${fmtShort(phone.paidUntil)}` : ""}`
+    : "Included with Plus";
+  const card = "bg-white rounded-xl border border-slate-200 overflow-hidden";
+  const head = (title: string) => (
+    <div className="px-4 py-3 border-b border-slate-100"><h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">{title}</h3></div>
+  );
+  return (
+    <div className="space-y-5" data-testid="support-phone">
+      <div className={card}>
+        {head(phone.mode === "line" ? "Business Phone" : "Plus calling")}
+        <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div><div className="text-slate-500">{phone.mode === "line" ? "Business number" : "Shared Plus number"}</div><div className="font-semibold text-slate-800">{pretty(phone.number)}</div></div>
+          <div><div className="text-slate-500">Rings the app</div><div className="font-semibold text-slate-800">{phone.ring === "always" ? "Any time" : "During business hours"}</div></div>
+          <div><div className="text-slate-500">Billing</div><div className="font-semibold text-slate-800">{billing}</div></div>
+          <div><div className="text-slate-500">Who can call</div><div className="font-semibold text-slate-800">{phone.mode === "line" ? "Anyone (except blocked numbers)" : "Only the pro's clients"}</div></div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className={card}>
+          {head(`Calls (last ${calls.length})`)}
+          {calls.length === 0 ? <p className="px-4 py-6 text-center text-xs text-slate-400">No calls yet.</p> : (
+            <div className="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+              {calls.map((c) => {
+                const st = CALL_STATUS[c.status] ?? { label: c.status, color: "text-slate-600" };
+                return (
+                  <div key={c.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {c.direction === "incoming" ? <ArrowDownLeft size={12} className="text-slate-400 shrink-0" /> : <ArrowUpRight size={12} className="text-slate-400 shrink-0" />}
+                      <div className="min-w-0">
+                        <div className="text-slate-800 truncate">{c.client_name || pretty(c.other_number)}</div>
+                        <div className="text-slate-400">{c.direction === "incoming" ? "Incoming" : "Outgoing"} · {fmtShort(c.started_at)}</div>
+                      </div>
+                    </div>
+                    <div className={`shrink-0 font-medium ${st.color}`}>{st.label}{c.status === "answered" && c.duration_seconds ? ` · ${Math.max(1, Math.round(c.duration_seconds / 60))} min` : ""}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <div className={card}>
+          {head(`Texts with clients (last ${conversations.length + phoneTexts.length})`)}
+          {conversations.length + phoneTexts.length === 0 ? <p className="px-4 py-6 text-center text-xs text-slate-400">No texts with clients yet.</p> : (
+            <div className="divide-y divide-slate-50 max-h-96 overflow-y-auto">
+              {[
+                ...conversations.map((m) => ({ key: `c${m.id}`, who: m.client_name || pretty(m.client_phone), inbound: m.direction === "inbound", body: m.body, at: m.created_at, where: phone.mode === "plus" ? "Messages" : "Two-way texting" })),
+                ...phoneTexts.map((t) => ({ key: `p${t.id}`, who: pretty(t.from_number), inbound: true, body: t.body || (t.media_count ? "Sent a photo" : ""), at: t.received_at, where: "Business Phone" })),
+              ].sort((a, b) => b.at.localeCompare(a.at)).map((m) => (
+                <div key={m.key} className="px-4 py-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-1.5 text-slate-800 font-medium">
+                      {m.inbound ? <ArrowDownLeft size={12} className="text-slate-400" /> : <ArrowUpRight size={12} className="text-slate-400" />}{m.inbound ? m.who : `To ${m.who}`}
+                    </span>
+                    <span className="text-slate-400 shrink-0">{fmtShort(m.at)} · {m.where}</span>
+                  </div>
+                  <p className="text-slate-600 mt-0.5 line-clamp-2">{m.body}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

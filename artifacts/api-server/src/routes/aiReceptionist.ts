@@ -96,7 +96,7 @@ import { enqueueAvailabilityInvalidation } from "../lib/availabilityQueue";
 import { enqueueSlotRebuild, buildDateRange } from "../lib/slotQueue";
 import { broadcastNotification, broadcastSyncEvent } from "../notifications";
 import { sendSms } from "../sms";
-import { createBookingPaymentToken } from "../lib/bookingPaymentLinks";
+import { createBookingPaymentToken, depositFromRule, depositIsSet } from "../lib/bookingPaymentLinks";
 import { autoAssignResource } from "../services/resource-assignment";
 import { getRequiredResourceType } from "@shared/resourceMatching";
 import { scoreCallRisk, recordBlockedNumber } from "../services/spamProtection/callFilter";
@@ -1935,15 +1935,12 @@ async function createBookingViaBookingRules(
   // store can't actually collect against.
   const effectivePolicy = stripeConnected ? (storePolicy?.bookingPaymentPolicy ?? "none") : "none";
   const requiresPayment =
-    (effectivePolicy === "deposit" && !!storePolicy?.depositValue) || effectivePolicy === "card_on_file";
+    (effectivePolicy === "deposit" && !!storePolicy && depositIsSet({ type: storePolicy.depositType, value: storePolicy.depositValue })) || effectivePolicy === "card_on_file";
 
   let depositAmountCents: number | null = null;
   if (requiresPayment && effectivePolicy === "deposit") {
     const servicePriceCents = Math.round(Number(service.price ?? 0) * 100);
-    depositAmountCents = storePolicy!.depositType === "percentage"
-      ? Math.round(servicePriceCents * (Number(storePolicy!.depositValue) / 100))
-      : Math.round(Number(storePolicy!.depositValue) * 100);
-    if (depositAmountCents < 50) depositAmountCents = 50; // Stripe minimum
+    depositAmountCents = depositFromRule({ type: storePolicy!.depositType, value: storePolicy!.depositValue }, servicePriceCents);
   }
 
   const createResult = await atomicCreateBooking({

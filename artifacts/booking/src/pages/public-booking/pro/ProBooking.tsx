@@ -13,6 +13,7 @@
  * Up to two services per visit, as on the other booking pages. A business that takes a card or deposit when booking
  * keeps its usual booking page (`fallback`), whose prices the server also works out by professional.
  */
+import { WalkInBanner } from "@/pages/line/WalkInBanner";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatInTimeZone } from "date-fns-tz";
@@ -154,6 +155,7 @@ export default function ProBooking({ store, slug, fallback }: { store: StoreData
     <div className="min-h-screen bg-white text-gray-900" style={siteStyle(store.bookingSite)} data-testid="pro-booking">
       {step === "services" && <SiteHeader store={store} />}
       <main className="mx-auto max-w-2xl px-4 py-6 pb-32">
+        {step === "services" && <WalkInBanner slug={slug} />}
         {step === "services" && (
           <section data-testid="pro-step-services">
             <h2 className="text-xl font-bold mb-1">Choose your services</h2>

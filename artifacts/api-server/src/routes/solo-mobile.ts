@@ -15,6 +15,7 @@ import { db } from "../db";
 import { users } from "@shared/models/auth";
 import { eq } from "drizzle-orm";
 import { signSoloToken } from "../lib/soloAuth";
+import { logAuthEvent } from "../lib/authEvents";
 import { pool } from "../db";
 import { isExpoPushToken } from "../lib/ownerPush";
 import { isProAccount } from "@shared/proAccount";
@@ -50,6 +51,9 @@ router.post("/login", async (req, res) => {
       });
       return;
     }
+
+    // Recorded like a website sign-in, so support sees it (isTeam account page, Last Login).
+    logAuthEvent(user.id, "login", req, { source: "certxa_pro_app" });
 
     const token = signSoloToken({
       userId: user.id,

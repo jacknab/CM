@@ -78,6 +78,7 @@ const ServiceTimesReport = reportPage(() => import("@/pages/reports/OperationsRe
 const BusyTimesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "BusyTimesReport");
 const ServicesReport = reportPage(() => import("@/pages/reports/OperationsReports"), "ServicesReport");
 const CancelledAfterServiceReport = reportPage(() => import("@/pages/reports/OperationsReports"), "CancelledAfterServiceReport");
+const OnlineCheckinReport = reportPage(() => import("@/pages/reports/OperationsReports"), "OnlineCheckinReport");
 const ReviewsReport = reportPage(() => import("@/pages/reports/MarketingReports"), "ReviewsReport");
 const TextsReport = reportPage(() => import("@/pages/reports/MarketingReports"), "TextsReport");
 const AutumnReport = reportPage(() => import("@/pages/reports/MarketingReports"), "AutumnReport");
@@ -96,8 +97,9 @@ const QueueSettings = lazy(() => import("@/pages/queue/QueueSettings"));
 const TurnSystem = lazy(() => import("@/pages/TurnSystem"));
 const AppSettings = lazy(() => import("@/pages/app/AppSettings"));
 const AppSettingsSection = lazy(() => import("@/pages/app/AppSettings").then((m) => ({ default: m.AppSettingsSection })));
-const PublicCheckIn = lazy(() => import("@/pages/queue/PublicCheckIn"));
-const QueueDisplay = lazy(() => import("@/pages/queue/QueueDisplay"));
+const LinePage = lazy(() => import("@/pages/line/LinePage"));
+const SpotPage = lazy(() => import("@/pages/line/SpotPage"));
+const LineDisplay = lazy(() => import("@/pages/line/LineDisplay"));
 const KioskCheckIn = lazy(() => import("@/pages/KioskCheckIn"));
 const KioskSetup = lazy(() => import("@/pages/KioskSetup"));
 const KioskTicket = lazy(() => import("@/pages/KioskTicket"));
@@ -147,6 +149,8 @@ const ManageBooking = lazy(() => import("@/pages/public-booking/ManageBooking"))
 const PublicReceipt = lazy(() => import("@/pages/public-booking/PublicReceipt"));
 const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBooking"));
 const ProPlus = lazy(() => import("@/pages/ProPlus"));
+const ProCredits = lazy(() => import("@/pages/ProCredits"));
+const PayLink = lazy(() => import("@/pages/PayLink"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
 const StaffMenu = lazy(() => import("@/pages/StaffMenu"));
@@ -553,10 +557,16 @@ function AppRoutes() {
       <Route path="/complete-booking/:token" element={<CompleteBooking />} />
       {/* Certxa Pro Plus, opened from the app (routes/soloPlus.ts) */}
       <Route path="/pro-plus" element={<ProPlus />} />
+      {/* Certxa Pro text message credits, opened from the app (routes/soloCredits.ts) */}
+      <Route path="/pro-credits" element={<ProCredits />} />
+      {/* A booking paid from a link the business texted (routes/payLinks.ts) */}
+      <Route path="/pay/:token" element={<PayLink />} />
 
       {/* Public queue */}
-      <Route path="/q/:slug" element={<PublicCheckIn />} />
-      <Route path="/q/:slug/display" element={<QueueDisplay />} />
+      {/* Barbershops and haircut studios: the Online Check-In Line (other shops get the older page from LinePage). */}
+      <Route path="/q/:slug" element={<LinePage />} />
+      <Route path="/q/:slug/s/:token" element={<SpotPage />} />
+      <Route path="/q/:slug/display" element={<LineDisplay />} />
 
       {/* Self check-in kiosk */}
       <Route path="/checkin-kiosk" element={<Navigate to="/kiosk-settings" replace />} />
@@ -713,6 +723,7 @@ function AppRoutes() {
       <Route path="/reports/busy-times" element={<BusyTimesReport />} />
       <Route path="/reports/services" element={<ServicesReport />} />
       <Route path="/reports/cancelled-after-service" element={<CancelledAfterServiceReport />} />
+      <Route path="/reports/online-checkin" element={<OnlineCheckinReport />} />
       <Route path="/reports/reviews" element={<ReviewsReport />} />
       <Route path="/reports/texts" element={<TextsReport />} />
       <Route path="/reports/autumn-calls" element={<AutumnReport />} />

@@ -15,7 +15,7 @@
  * appointment_id makes a duplicate visit-note insert a harmless no-op rather
  * than something callers need to pre-check for.
  */
-import { db } from "../db";
+import { db, pool } from "../db";
 import { clientNotes, appointments, appointmentNailSelection, type AppointmentWithDetails } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { formatInSalonTime } from "./timezone";
@@ -122,6 +122,8 @@ export async function regenerateAiProfileNote(clientId: number, storeId: number)
     // the log — with several no-shows scattered through history, an LLM can
     // misjudge which one was actually most recent.
     const mostRecentWasNoShow = visitNotes[visitNotes.length - 1].status === "no_show";
+    // Counted, not left to the model: with none it once wrote "has no-showed a few times before" (2026-11-03).
+    const noShowCount = visitNotes.filter((n) => n.status === "no_show").length;
 
     const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -131,6 +133,11 @@ export async function regenerateAiProfileNote(clientId: number, storeId: number)
 
     const client = await storage.getCustomer(clientId);
     const clientFirst = firstName(client?.name) ?? "This client";
+    // The note is for whoever does the service: a nail tech, a barber, a lash artist… (Certxa Pro serves them all).
+    const { rows: [shop] } = await pool.query(`SELECT category FROM locations WHERE id = $1`, [storeId]);
+    const business = String(shop?.category ?? "").trim();
+    const isNails = /nail/i.test(business);
+    const who = isNails ? "a nail tech at a nail salon" : business ? `a beauty professional (${business})` : "a beauty professional";
 
     const { default: OpenAI } = await import("openai");
     const openai = new OpenAI({
@@ -142,7 +149,7 @@ export async function regenerateAiProfileNote(clientId: number, storeId: number)
     // screen, right before the client sits down — write for that moment, not
     // for a business-analytics dashboard.
     const prompt = [
-      `You are writing a client note for a nail tech at a nail salon, to read in the seconds before a client sits down.`,
+      `You are writing a client note for ${who}, to read in the seconds before a client sits down.`,
       `The client's first name is "${clientFirst}".`,
       ``,
       `Visit log (oldest to newest; a "No-show" entry means they booked but didn't come in):`,
@@ -150,6 +157,7 @@ export async function regenerateAiProfileNote(clientId: number, storeId: number)
       ``,
       `FACT (already verified, do not re-derive it from the log yourself — just use it): ${clientFirst}'s most recent`,
       `appointment ${mostRecentWasNoShow ? "WAS a no-show." : "was NOT a no-show — do not say or imply that it was, even though there may be earlier no-shows in the log above."}`,
+      `FACT: no-shows in the whole log: ${noShowCount}.${noShowCount === 0 ? ` ${clientFirst} has never missed an appointment — do NOT mention no-shows at all.` : ""}`,
       ``,
       `Write a 2-4 sentence note. Rules:`,
       `- Refer to the client by their first name (${clientFirst}), never as "the client" or "this client".`,
@@ -163,7 +171,7 @@ export async function regenerateAiProfileNote(clientId: number, storeId: number)
       `- Use the FACT above to decide whether to mention a no-show. If it says their most recent appointment WAS a`,
       `  no-show, say so plainly near the start of the note (e.g. "${clientFirst} no-showed their last appointment").`,
       `  If it says it was NOT a no-show, do not claim otherwise — you may still mention an older no-show only as part`,
-      `  of a genuine recurring pattern (e.g. "has no-showed a few times before"), never as if it just happened.`,
+      `  of a genuine recurring pattern (only with 2 or more no-shows in the log), never as if it just happened.`,
       `- Mention other genuinely useful recurring patterns if present: preferred technician, visit frequency, price`,
       `  sensitivity, special requests. Skip anything you don't have real evidence for.`,
       `- Do NOT just restate the most recent visit in isolation — synthesize across the whole history. If there's only`,

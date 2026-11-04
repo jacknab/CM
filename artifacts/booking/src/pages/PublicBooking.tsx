@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { StoreData } from "./public-booking/types";
 import BloomTheme from "./public-booking/BloomTheme";
+import SoloTheme from "./public-booking/SoloTheme";
 import ClassicTheme from "./public-booking/ClassicTheme";
 import MobileTheme from "./public-booking/MobileTheme";
 import SimpleTheme from "./public-booking/SimpleTheme";
@@ -59,7 +60,7 @@ export default function PublicBooking() {
 
   // ?previewTheme=<theme> shows the page in another design without saving it (the Certxa Pro app's "Preview").
   const previewTheme = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("previewTheme") : null;
-  const theme = previewTheme && ["bloom", "simple", "classic", "mobile"].includes(previewTheme) ? previewTheme : effectiveStore.bookingTheme;
+  const theme = previewTheme && ["bloom", "solo", "simple", "classic", "mobile"].includes(previewTheme) ? previewTheme : effectiveStore.bookingTheme;
 
   const themed = (() => { switch (theme) {
     case "classic":
@@ -76,6 +77,16 @@ export default function PublicBooking() {
           store={effectiveStore as StoreData}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
+        />
+      );
+    // Solo: the Certxa Pro app's own copy of Bloom (public-booking/SoloTheme.tsx).
+    case "solo":
+      return (
+        <SoloTheme
+          store={effectiveStore as StoreData}
+          slug={effectiveSlug!}
+          preselectedStaffId={preselectedStaffId}
+          preselectedServiceId={preselectedServiceId}
         />
       );
     case "simple":

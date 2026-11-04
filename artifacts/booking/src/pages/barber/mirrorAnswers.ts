@@ -89,6 +89,31 @@ async function mirrorUpcoming(storeId: number): Promise<any[]> {
 }
 
 /** An answer for `url` built from the copy, or undefined when it isn't one of these reads (or there is no copy). */
+/**
+ * Each barber's price for each service they do, as GET /api/public/store/:slug/pro-pricing returns `prices` (server:
+ * lib/pricingLevels.ts priceTable): their own price, else their level's, else the service's standard price.
+ */
+export async function mirrorProPricing(storeId: number): Promise<{ staff: unknown[]; prices: { staffId: number; serviceId: number; price: number }[]; ranges: unknown[] }> {
+  const [staff, services, levels, levelPrices] = await Promise.all([
+    mirrorAll(storeId, "staff"), mirrorAll(storeId, "services"), mirrorAll(storeId, "pricing_levels"), mirrorAll(storeId, "service_level_prices"),
+  ]);
+  const activeService = new Map(services.filter((s) => s.is_active !== false).map((s) => [Number(s.id), s]));
+  const activeLevel = new Set(levels.filter((l) => l.is_active !== false).map((l) => Number(l.id)));
+  const levelPrice = new Map(levelPrices.map((p) => [`${p.pricing_level_id}:${p.service_id}`, p.price]));
+  const prices: { staffId: number; serviceId: number; price: number }[] = [];
+  for (const st of staff) {
+    if (["removed", "deactivated"].includes(String(st.status ?? "active")) || st.show_on_calendar === false) continue;
+    const level = st.pricing_level_id != null && activeLevel.has(Number(st.pricing_level_id)) ? Number(st.pricing_level_id) : null;
+    for (const ss of await mirrorFind(storeId, "staff_services", "staff_id", Number(st.id))) {
+      const service = activeService.get(Number(ss.service_id));
+      if (!service) continue;
+      const price = ss.price_override ?? (level != null ? levelPrice.get(`${level}:${service.id}`) : undefined) ?? service.price;
+      prices.push({ staffId: Number(st.id), serviceId: Number(service.id), price: Math.round(num(price) * 100) / 100 });
+    }
+  }
+  return { staff: [], prices, ranges: [] };
+}
+
 export async function answerFromMirror(storeId: number, url: string): Promise<unknown | undefined> {
   if (!(await hasSalonMirror(storeId).catch(() => false))) return undefined;
   const path = url.split("?")[0];
@@ -97,6 +122,7 @@ export async function answerFromMirror(storeId: number, url: string): Promise<un
     if ((m = path.match(/^\/api\/customers\/(\d+)$/))) return (await mirrorClient(storeId, Number(m[1]))) ?? undefined;
     if ((m = path.match(/^\/api\/services\/(\d+)\/nail-config$/))) return await mirrorNailConfig(storeId, Number(m[1]));
     if (path === "/api/barber/upcoming") return await mirrorUpcoming(storeId);
+    if (/^\/api\/public\/store\/[^/]+\/pro-pricing$/.test(path)) return await mirrorProPricing(storeId);
   } catch {
     return undefined;
   }

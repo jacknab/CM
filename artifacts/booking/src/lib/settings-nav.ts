@@ -28,6 +28,8 @@ export type SettingsNavItem = {
   requiresBooking?: boolean;
   /** only for businesses on the Solo plan */
   requiresSoloPlan?: boolean;
+  /** only for barbershops and haircut studios (the Online Check-In Line) */
+  requiresOnlineLine?: boolean;
   /** small pill next to the label (plan gate like "Gold", or a count) */
   badge?: string;
 };
@@ -162,6 +164,11 @@ export function buildSettingsNav(pick: Pick4): SettingsTab[] {
           label: pick({ en: "Check-in & Kiosk", vi: "Kiosk check-in", es: "Kiosco de registro", fr: "Kiosque d'enregistrement" }),
           description: pick({ en: "Self check-in tablet URL, QR code and welcome text.", vi: "URL máy tính bảng tự check-in, mã QR và lời chào.", es: "URL del tablet de auto check-in, código QR y texto de bienvenida.", fr: "URL de la tablette d'enregistrement, QR code et message d'accueil." }),
           to: "/settings/kiosk", slug: "kiosk",
+        },
+        {
+          label: pick({ en: "Online Check-In", vi: "Check-in trực tuyến", es: "Registro en línea", fr: "Enregistrement en ligne" }),
+          description: pick({ en: "Clients join your walk-in line from their phone and get a text when it's time to come in.", vi: "Khách xếp hàng từ điện thoại và nhận tin nhắn khi đến lượt.", es: "Los clientes se unen a la fila desde su teléfono y reciben un mensaje cuando es hora de venir.", fr: "Les clients rejoignent la file depuis leur téléphone et reçoivent un SMS quand c'est le moment de venir." }),
+          to: "/dashboard/queue/settings", slug: "online-checkin", external: true, requiresOnlineLine: true,
         },
         {
           label: pick({ en: "POS Stations", vi: "Quầy thu ngân", es: "Cajas registradoras", fr: "Caisses" }),

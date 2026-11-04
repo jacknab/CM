@@ -50,12 +50,30 @@ export default function SubscriptionCard({ subscription }: Props) {
             </div>
           </div>
         )}
-        <div className="flex items-center gap-2 text-xs">
-          <Calendar size={13} className="text-slate-400" />
-          <span className="text-slate-500">
-            {subscription.cancelAtPeriodEnd ? "Cancels" : "Renews"}: <span className="font-medium text-slate-700">{renewalDate}</span>
-          </span>
-        </div>
+        {(subscription.renewalDate || subscription.priceCents > 0) && (
+          <div className="flex items-center gap-2 text-xs">
+            <Calendar size={13} className="text-slate-400" />
+            <span className="text-slate-500">
+              {subscription.status === "trialing" ? "Trial ends" : subscription.status === "expired" ? "Trial ended" : subscription.cancelAtPeriodEnd ? "Cancels" : "Renews"}: <span className="font-medium text-slate-700">{renewalDate}</span>
+            </span>
+          </div>
+        )}
+        {/* Add-ons billed on their own, e.g. Business Phone (api-server routes/businessPhone.ts). */}
+        {(subscription.addOns ?? []).map((a) => (
+          <div key={a.name} className="border-t border-slate-100 pt-3 flex items-start justify-between gap-3 text-xs">
+            <div>
+              <div className="font-semibold text-slate-700">{a.name}</div>
+              {a.detail && <div className="text-slate-500">{a.detail}</div>}
+              <div className="text-slate-500">
+                {a.status === "free" ? "No charge (test line)"
+                  : a.status === "held" ? "Paused: payment failed"
+                  : a.status === "past_due" ? "Payment failed, retrying"
+                  : a.renewalDate ? `${a.cancelAtPeriodEnd ? "Ends" : "Renews"} ${format(new Date(a.renewalDate), "MMM d, yyyy")}` : ""}
+              </div>
+            </div>
+            <div className="font-semibold text-slate-800 whitespace-nowrap">${(a.priceCents / 100).toFixed(2)}/month</div>
+          </div>
+        ))}
         {subscription.cancelAtPeriodEnd && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-2">
             <AlertTriangle size={13} className="text-amber-500 flex-shrink-0" />

@@ -308,7 +308,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang, bar
           <h1 className={h1} style={{ color: ink }}>The owner needs to set up the front desk</h1>
           <p className={lead} style={{ color: muted }}>{barber
             ? "Before your shop can use the front desk, the shop owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes."
-            : "Before your salon can use the front desk, the salon owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes."}</p>
+            : "Before your shop can use the front desk, the shop owner has to answer a few questions about sales tax, card payments and cash. Sign in on this tablet with the owner's account to do it. It takes a few minutes."}</p>
         </div>
         <button type="button" onClick={() => void signInAsOwner()} data-testid="pos-setup-owner-signin"
           className="w-full h-16 rounded-2xl text-white text-[26px] font-bold" style={{ background: brand }}>Sign in as the owner</button>
@@ -320,7 +320,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang, bar
         <h1 className={h1} style={{ color: ink }}>Let's set up your front desk</h1>
         <p className={lead} style={{ color: muted }}>{barber
           ? "A few questions about how your shop takes payment. It takes about three minutes, and you can change any answer later in Settings."
-          : "A few questions about how your salon takes payment. It takes about three minutes, and you can change any answer later in Settings."}</p>
+          : "A few questions about how your shop takes payment. It takes about three minutes, and you can change any answer later in Settings."}</p>
         <ul className="mt-6 grid sm:grid-cols-2 gap-x-8 gap-y-2 text-[24px]" style={{ color: ink }}>
           {["Sales tax", "Card payments", "Cash price", "Cash Drawer", "Tip choices", "Turn rotation", barber ? "Barber IDs" : "Barber IDs", "Manager PIN"].map((t) => (
             <li key={t} className="flex items-center gap-3"><span className="w-2 h-2 rounded-full" style={{ background: muted }} />{t}</li>
@@ -448,7 +448,7 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang, bar
       <div className="flex flex-col gap-4">
         <div>
           <h1 className={h1} style={{ color: ink }}>Turn rotation</h1>
-          <p className={lead} style={{ color: muted }}>{barber ? "How your shop decides which barber gets the next walk-in." : "How your salon decides which barber gets the next walk-in."}</p>
+          <p className={lead} style={{ color: muted }}>{barber ? "How your shop decides which barber gets the next walk-in." : "How your shop decides which barber gets the next walk-in."}</p>
         </div>
         <div className="grid md:grid-cols-2 gap-3">
           {TURN_MODES.map((m) => (
@@ -483,8 +483,8 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang, bar
           <h1 className={h1} style={{ color: ink }}>Printing</h1>
           <p className={lead} style={{ color: muted }}>Choose what prints by itself on your receipt printer. You can always print any of these by hand.</p>
         </div>
-        <Toggle on={printing.salonCopy} onChange={(v) => setPrinting((p) => ({ ...p, salonCopy: v }))} title={barber ? "Shop copy of the receipt" : "Salon copy of the receipt"} testId="pos-setup-print-salon-copy"
-          detail={printing.salonCopy ? (barber ? "Each sale prints a shop copy (signed for a card) and a customer copy." : "Each sale prints a salon copy (signed for a card) and a customer copy.") : "Only the customer copy prints."} />
+        <Toggle on={printing.salonCopy} onChange={(v) => setPrinting((p) => ({ ...p, salonCopy: v }))} title={barber ? "Shop copy of the receipt" : "Shop copy of the receipt"} testId="pos-setup-print-salon-copy"
+          detail={printing.salonCopy ? (barber ? "Each sale prints a shop copy (signed for a card) and a customer copy." : "Each sale prints a shop copy (signed for a card) and a customer copy.") : "Only the customer copy prints."} />
         <Toggle on={printing.dayClose === "auto"} onChange={(v) => setPrinting((p) => ({ ...p, dayClose: v ? "auto" : "none" }))} title="Day Close report" testId="pos-setup-print-day-close"
           detail={printing.dayClose === "auto" ? "Prints by itself when you close the day." : "Doesn't print. Tap Print the Z Report after closing the day if you want it."} />
         <Toggle on={printing.checkinSlip === "auto"} onChange={(v) => setPrinting((p) => ({ ...p, checkinSlip: v ? "auto" : "none" }))} title="Check-in slip" testId="pos-setup-print-checkin"
@@ -520,8 +520,8 @@ export function PosSetupWizard({ storeId, onFinished, onClose, lang, onLang, bar
           <h1 className={h1} style={{ color: ink }}>Manager PIN</h1>
           <p className={lead} style={{ color: muted }}>
             {status.managerPinIsDefault
-              ? (barber ? "The Manager menu needs a 4-digit PIN. Choose your shop's own PIN and keep it private." : "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your salon's own PIN and keep it private.")
-              : (barber ? "Your shop already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk." : "Your salon already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk.")}
+              ? (barber ? "The Manager menu needs a 4-digit PIN. Choose your shop's own PIN and keep it private." : "The Manager menu and cancelling a client who has been served need a 4-digit PIN. Choose your shop's own PIN and keep it private.")
+              : (barber ? "Your shop already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk." : "Your shop already has its own manager PIN. To change it, use Manager › Manager PIN on the front desk.")}
           </p>
         </div>
         {status.managerPinIsDefault && <>

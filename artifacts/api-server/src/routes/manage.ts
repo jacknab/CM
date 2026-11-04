@@ -106,7 +106,20 @@ router.patch("/profile", requireAuth, async (req: any, res) => {
 
     if (typeof b.firstName === "string") updates.firstName = b.firstName.trim().slice(0, 100);
     if (typeof b.lastName === "string") updates.lastName = b.lastName.trim().slice(0, 100);
-    if (typeof b.phone === "string") updates.phone = b.phone.trim().slice(0, 40) || null;
+    if (typeof b.phone === "string") {
+      const phone = b.phone.trim().slice(0, 40) || null;
+      // An account with a code-verified mobile number changes it through POST /api/account/phone/send-code
+      // (lib/proPhoneVerification.ts), never by typing a new one here.
+      const { rows: [own] } = await pool.query(
+        `SELECT (SELECT phone FROM users WHERE id = $1) AS current,
+                EXISTS (SELECT 1 FROM account_phone_numbers WHERE user_id = $1) AS verified`,
+        [userId],
+      );
+      if (phone !== (own?.current ?? null)) {
+        if (own?.verified) return res.status(409).json({ error: "Change your mobile number with a text code." });
+        updates.phone = phone;
+      }
+    }
     if (typeof b.profileImageUrl === "string") updates.profileImageUrl = b.profileImageUrl.trim() || null;
 
     if (Object.keys(updates).length === 0) {

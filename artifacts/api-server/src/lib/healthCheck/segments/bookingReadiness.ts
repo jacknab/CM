@@ -78,16 +78,15 @@ export async function bookingReadiness(accountId: number, pool: Pool): Promise<S
       availByStaff[row.staff_id].add(row.day_of_week);
     }
 
+    // Only a staff member with no day at all is a problem; a part-week schedule is normal (owner, 2026-11-03).
     const staffAvailTable: unknown[] = [];
     let anyFail = false;
-    let anyWarn = false;
 
     for (const s of staffRes.rows) {
       const days = availByStaff[s.id] ?? new Set();
       const row: Record<string, unknown> = { staffName: s.name };
       for (let d = 0; d < 7; d++) row[DAY_NAMES[d].toLowerCase().slice(0, 3)] = days.has(d);
       if (days.size === 0) anyFail = true;
-      else if (days.size < 5) anyWarn = true;
       staffAvailTable.push(row);
     }
 
@@ -95,15 +94,16 @@ export async function bookingReadiness(accountId: number, pool: Pool): Promise<S
 
     if (anyFail) {
       const noAvail = staffRes.rows.filter((s: any) => !(availByStaff[s.id]?.size));
-      checks.push(fail("staff_availability", "Staff availability configured", `${noAvail.map((s: any) => s.name).join(", ")} ${noAvail.length === 1 ? "has" : "have"} zero availability rows — they will never appear in the booking flow.`, "Staff → [Member] → Schedule"));
-    } else if (anyWarn) {
-      checks.push(warn("staff_availability", "Staff availability configured", "Some staff have partial week availability — see table below.", "Staff → [Member] → Schedule"));
+      // Without hours of their own a staff member is booked during all the business hours (the booking only narrows
+      // to their own hours when they have some), so this is a reminder, not a booking failure (corrected 2026-11-04).
+      checks.push(warn("staff_availability", "Staff availability configured", `${noAvail.map((s: any) => s.name).join(", ")} ${noAvail.length === 1 ? "has" : "have"} no working hours of their own — online booking offers them all the business hours.`, "Staff → [Member] → Schedule"));
     } else {
-      checks.push(pass("staff_availability", "Staff availability configured", "All calendar-visible staff have availability set."));
+      checks.push(pass("staff_availability", "Staff availability configured", "All calendar-visible staff have at least one day of availability."));
     }
   }
 
   // ── 1d. Staff → Service Assignments ──────────────────────────────────────────
+  // Only a staff member with no service at all is a problem; not doing every service is normal (owner, 2026-11-03).
   const servicesRes = await pool.query(
     `SELECT id, name FROM services WHERE store_id = $1 AND is_active = true AND hidden_from_public = false`,
     [accountId],
@@ -130,9 +130,8 @@ export async function bookingReadiness(accountId: number, pool: Pool): Promise<S
     for (const s of staffRes.rows) {
       const assigned = assignedMap[s.id] ?? new Set();
       const assignedNames = servicesRes.rows.filter((sv: any) => assigned.has(sv.id)).map((sv: any) => sv.name);
-      const missingNames  = servicesRes.rows.filter((sv: any) => !assigned.has(sv.id)).map((sv: any) => sv.name);
       if (assigned.size === 0) anyUnassigned = true;
-      staffServicesTable.push({ staffName: s.name, assigned: assignedNames, missing: missingNames });
+      staffServicesTable.push({ staffName: s.name, assigned: assignedNames });
     }
 
     tables.staff_services = staffServicesTable;
@@ -141,15 +140,7 @@ export async function bookingReadiness(accountId: number, pool: Pool): Promise<S
       const names = staffRes.rows.filter((s: any) => !(assignedMap[s.id]?.size)).map((s: any) => s.name).join(", ");
       checks.push(warn("staff_service_assignments", "Staff-service assignments", `${names} ${names.includes(",") ? "have" : "has"} zero service assignments — they will never appear in booking flow.`, "Staff → [Member] → Services"));
     } else {
-      const gapsExist = staffRes.rows.some((s: any) => {
-        const a = assignedMap[s.id] ?? new Set();
-        return a.size < servicesRes.rows.length;
-      });
-      if (gapsExist) {
-        checks.push(warn("staff_service_assignments", "Staff-service assignments", "Some staff are missing assignments for certain services — see table below.", "Staff → [Member] → Services"));
-      } else {
-        checks.push(pass("staff_service_assignments", "Staff-service assignments", "All calendar-visible staff are assigned to all active services."));
-      }
+      checks.push(pass("staff_service_assignments", "Staff-service assignments", "All calendar-visible staff have at least one service assigned."));
     }
   } else if (staffRes.rows.length === 0) {
     checks.push(warn("staff_service_assignments", "Staff-service assignments", "No active staff to check."));

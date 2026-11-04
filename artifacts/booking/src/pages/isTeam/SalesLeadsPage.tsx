@@ -1,6 +1,6 @@
 /**
- * /isTeam/sales-leads — callers to Tom, Certxa's AI sales line (888) 814-7623 (owner, 2026-10-31).
- * Leads Tom saved during calls (GET /api/support/sales-leads) and every call with its summary.
+ * /isTeam/sales-leads — callers to Certxa's AI sales team.
+ * Shared caller profiles and agent-attributed calls (GET /api/support/sales-leads).
  */
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,22 +12,48 @@ type Lead = {
   business_type: string | null; team_size: string | null; city: string | null; current_software: string | null;
   interested_plan: string | null; notes: string | null; trial_link_sent_at: string | null; status: string;
   created_at: string; summary: string | null; duration_seconds: number | null;
+  last_call_at: string | null; last_call_outcome: string | null; last_call_agent_id?: string | null;
+  phone_e164?: string | null;
+  profile_data?: {
+    business?: { locationCount?: string; serviceModel?: string; bookingProcess?: string; checkoutProcess?: string; turnRotationProcess?: string; commissionProcess?: string; problems?: string[] };
+    sales?: { currentStage?: string; nextAction?: string; lastSmsAt?: string; plansDiscussed?: string[]; outstandingQuestions?: string[]; featuresOfInterest?: string[]; signupLinkSent?: boolean };
+    provenance?: Record<string, { source?: string }>;
+  };
 };
 type Call = {
-  id: number; caller_phone: string | null; outcome: string; duration_seconds: number | null; summary: string | null;
+  id: number; caller_phone: string | null; sales_agent_id?: string | null; outcome: string; duration_seconds: number | null; summary: string | null;
   lead_id: number | null; started_at: string; ended_at: string | null;
   fact_check_ok: boolean | null; fact_check_issues: string[] | null;
 };
-type SalesData = { leads: Lead[]; calls: Call[]; phoneNumber: string };
+type SalesData = { leads: Lead[]; calls: Call[]; phoneNumber: string; agentPhoneNumbers?: { tom: string | null; shavez: string | null } };
 
-const STATUSES: [string, string][] = [["new", "New"], ["contacted", "Contacted"], ["signed_up", "Signed up"], ["not_interested", "Not interested"]];
+const STAGES: [string, string, boolean][] = [
+  ["new_prospect", "New prospect", false],
+  ["interested", "Interested", false],
+  ["signup_link_requested", "Signup link requested", false],
+  ["signup_link_sent", "Signup link sent", true],
+  ["trial_active", "Trial active · verified", true],
+  ["paying_customer", "Paying customer · verified", true],
+  ["not_interested", "Not interested", false],
+  ["follow_up_required", "Follow-up required", false],
+  ["legacy_signed_up_unverified", "Legacy signed up · verify", true],
+];
 const OUTCOMES: Record<string, string> = {
-  trial_link_sent: "Trial link texted", lead_saved: "Lead saved", caller_hung_up: "Caller hung up", ended_by_tom: "Ended",
+  trial_link_sent: "Trial link texted", lead_saved: "Lead saved", caller_hung_up: "Caller hung up", ended_by_tom: "Ended", ended_by_shavez: "Ended",
   silence: "Silent line", max_duration: "Time limit", in_progress: "In progress", ai_closed: "Ended", ai_error: "AI error", ai_timeout: "AI did not start",
 };
 
 const phone = (p: string | null) => (p && /^\d{10}$/.test(p) ? `(${p.slice(0, 3)}) ${p.slice(3, 6)}-${p.slice(6)}` : p ?? "—");
+const agentName = (id: string | null | undefined) => id === "shavez" ? "Shavez" : "Tom";
 const mins = (s: number | null) => (s == null ? "—" : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
+function displayStage(lead: Lead): string {
+  const stage = lead.profile_data?.sales?.currentStage;
+  if (typeof stage === "string" && STAGES.some(([value]) => value === stage)) return stage;
+  if (lead.status === "contacted") return "follow_up_required";
+  if (lead.status === "not_interested") return "not_interested";
+  if (lead.status === "signed_up") return "legacy_signed_up_unverified";
+  return "new_prospect";
+}
 
 async function get(): Promise<SalesData> {
   const r = await fetch("/api/support/sales-leads", { credentials: "include" });
@@ -58,7 +84,9 @@ export default function SalesLeadsPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold text-slate-900">Sales Leads</h1>
-            <p className="text-sm text-slate-500 mt-0.5">Callers to Tom, the AI sales line{data ? ` at ${data.phoneNumber}` : ""}.</p>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Shared caller profiles for Tom and Shavez{data ? ` · Tom ${data.agentPhoneNumbers?.tom || data.phoneNumber}${data.agentPhoneNumbers?.shavez ? ` · Shavez ${data.agentPhoneNumbers.shavez}` : ""}` : ""}.
+            </p>
           </div>
           <button onClick={() => refetch()} className="p-2 border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg transition bg-white" aria-label="Refresh">
             <RefreshCw size={13} className={isFetching ? "animate-spin" : ""} />
@@ -87,7 +115,7 @@ export default function SalesLeadsPage() {
                         <th className="px-4 py-2 font-medium">Uses today</th>
                         <th className="px-4 py-2 font-medium">Trial link</th>
                         <th className="px-4 py-2 font-medium">Notes</th>
-                        <th className="px-4 py-2 font-medium">Status</th>
+                        <th className="px-4 py-2 font-medium">Sales stage</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -96,23 +124,38 @@ export default function SalesLeadsPage() {
                           <td className="px-4 py-2">
                             <div className="font-medium text-slate-800">{l.name || "—"}</div>
                             <div className="text-slate-400">{formatDistanceToNow(new Date(l.created_at), { addSuffix: true })}</div>
+                            <div className="mt-1 text-slate-500">Last call: {l.last_call_at ? format(new Date(l.last_call_at), "MMM d, h:mm a") : "—"}</div>
+                            {l.last_call_at && <div className="text-slate-500">Handled by {agentName(l.last_call_agent_id)}</div>}
+                            {l.last_call_outcome && <div className="text-slate-500">{OUTCOMES[l.last_call_outcome] ?? l.last_call_outcome}</div>}
                           </td>
                           <td className="px-4 py-2 text-slate-700">
                             <div>{l.business_name || "—"}</div>
-                            <div className="text-slate-400">{[l.business_type, l.team_size && `${l.team_size} staff`, l.city].filter(Boolean).join(" · ")}</div>
-                            {l.interested_plan && <div className="text-slate-400">Interested in {l.interested_plan}</div>}
+            <div className="text-slate-400">{[l.business_type, l.team_size && `${l.team_size} staff`, l.profile_data?.business?.locationCount && `${l.profile_data.business.locationCount} locations`, l.city].filter(Boolean).join(" · ")}</div>
+            {l.interested_plan && <div className="text-slate-400">Interested in {l.interested_plan}</div>}
+            {l.profile_data?.sales?.plansDiscussed?.length ? <div className="text-slate-400">Last discussed: {l.profile_data.sales.plansDiscussed[l.profile_data.sales.plansDiscussed.length - 1]}</div> : null}
                           </td>
                           <td className="px-4 py-2 text-slate-700">
                             <div>{phone(l.phone)}</div>
                             <div className="text-slate-400">{l.email || ""}</div>
                           </td>
                           <td className="px-4 py-2 text-slate-700">{l.current_software || "—"}</td>
-                          <td className="px-4 py-2 text-slate-700">{l.trial_link_sent_at ? format(new Date(l.trial_link_sent_at), "MMM d, h:mm a") : "—"}</td>
-                          <td className="px-4 py-2 text-slate-600 max-w-xs">{l.summary || l.notes || "—"}</td>
+                          <td className="px-4 py-2 text-slate-700">
+                            {l.profile_data?.sales?.lastSmsAt ? format(new Date(l.profile_data.sales.lastSmsAt), "MMM d, h:mm a") :
+                              l.trial_link_sent_at ? format(new Date(l.trial_link_sent_at), "MMM d, h:mm a") : "—"}
+                          </td>
+          <td className="px-4 py-2 text-slate-600 max-w-xs">
+            <div>{l.summary || l.notes || "—"}</div>
+            {l.profile_data?.business?.problems?.length ? <div className="mt-1">Needs: {l.profile_data.business.problems.join("; ")}</div> : null}
+            {l.profile_data?.sales?.outstandingQuestions?.length ? <div className="mt-1">Open questions: {l.profile_data.sales.outstandingQuestions.join("; ")}</div> : null}
+            {l.profile_data?.sales?.nextAction ? <div className="mt-1">Next: {l.profile_data.sales.nextAction}</div> : null}
+            {l.profile_data?.sales?.currentStage ? <div className="mt-1">Call memory stage: {l.profile_data.sales.currentStage.replace(/_/g, " ")}</div> : null}
+            {l.profile_data?.provenance && Object.values(l.profile_data.provenance).some((p) => p?.source === "caller_statement") ?
+              <div className="mt-1 text-slate-400">Business details were reported by the caller; not independently verified.</div> : null}
+          </td>
                           <td className="px-4 py-2">
-                            <select value={l.status} onChange={(e) => void setStatus(l.id, e.target.value)}
+                            <select value={displayStage(l)} onChange={(e) => void setStatus(l.id, e.target.value)}
                               className="border border-slate-200 rounded-md px-2 py-1 bg-white text-slate-700">
-                              {STATUSES.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+                              {STAGES.map(([v, label, verified]) => <option key={v} value={v} disabled={verified}>{label}</option>)}
                             </select>
                           </td>
                         </tr>
@@ -135,6 +178,7 @@ export default function SalesLeadsPage() {
                     <thead>
                       <tr className="bg-slate-50 text-left text-slate-500">
                         <th className="px-4 py-2 font-medium">When</th>
+                        <th className="px-4 py-2 font-medium">Agent</th>
                         <th className="px-4 py-2 font-medium">Caller</th>
                         <th className="px-4 py-2 font-medium">Length</th>
                         <th className="px-4 py-2 font-medium">Result</th>
@@ -146,6 +190,7 @@ export default function SalesLeadsPage() {
                       {data.calls.map((c) => (
                         <tr key={c.id} className="border-t border-slate-100 align-top hover:bg-slate-50 cursor-pointer" onClick={() => setOpenCall(openCall === c.id ? null : c.id)}>
                           <td className="px-4 py-2 text-slate-700 whitespace-nowrap">{format(new Date(c.started_at), "MMM d, h:mm a")}</td>
+                          <td className="px-4 py-2 text-slate-700">{agentName(c.sales_agent_id)}</td>
                           <td className="px-4 py-2 text-slate-700">{phone(c.caller_phone)}</td>
                           <td className="px-4 py-2 text-slate-700">{mins(c.duration_seconds)}</td>
                           <td className="px-4 py-2 text-slate-700">{OUTCOMES[c.outcome] ?? c.outcome}</td>
@@ -159,6 +204,17 @@ export default function SalesLeadsPage() {
                           </td>
                           <td className="px-4 py-2 text-slate-600">
                             {c.summary || "—"}
+                            {openCall === c.id && callDetail?.structured_summary && (
+                              <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                                {(["callerIntent", "problems", "featuresDiscussed", "plansAndPricing", "questions", "objections", "outstandingQuestions", "commitments", "nextAction"] as const).map((field) => {
+                                  const value = callDetail.structured_summary[field];
+                                  if (!value || (Array.isArray(value) && !value.length)) return null;
+                                  return <p key={field}><span className="font-medium text-slate-700">{field.replace(/([A-Z])/g, " $1")}: </span>{Array.isArray(value) ? value.join("; ") : String(value)}</p>;
+                                })}
+                                {Array.isArray(callDetail.sms_events) && callDetail.sms_events.length > 0 &&
+                                  <p><span className="font-medium text-slate-700">SMS sent:</span> {callDetail.sms_events.length}</p>}
+                              </div>
+                            )}
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (
                               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
                                 {callDetail.transcript.map((t: any, i: number) => (

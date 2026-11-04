@@ -43,7 +43,13 @@ export function ReviewStarForm({ onSubmit, submitting, submitError }: ReviewStar
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPhotoPreview(URL.createObjectURL(file));
+    // A data: preview, not a blob: one — the site's Content-Security-Policy (img-src 'self' data: https:) blocks blob:
+    // images, so the box stayed empty (2026-11-03). Once uploaded, the saved photo (webp, so an iPhone HEIC shows
+    // too) replaces it.
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === "string") setPhotoPreview((cur) => (cur && cur.startsWith("https:") ? cur : reader.result as string)); };
+    reader.readAsDataURL(file);
+    setPhotoPreview(null);
     setPhotoUrl(null);
 
     // Upload immediately so we have the URL ready for submit
@@ -55,6 +61,7 @@ export function ReviewStarForm({ onSubmit, submitting, submitError }: ReviewStar
       if (!res.ok) throw new Error("Upload failed");
       const data = await res.json();
       setPhotoUrl(data.url);
+      if (typeof data.url === "string" && data.url.startsWith("https:")) setPhotoPreview(data.url);
     } catch {
       // Non-fatal — review submits without photo if upload failed
       setPhotoUrl(null);
@@ -125,13 +132,15 @@ export function ReviewStarForm({ onSubmit, submitting, submitError }: ReviewStar
           Add a photo{" "}
           <span className="text-muted-foreground font-normal">(optional)</span>
         </label>
-        {photoPreview ? (
-          <div className="relative inline-block">
-            <img
-              src={photoPreview}
-              alt="Review photo preview"
-              className="h-24 w-24 object-cover rounded-lg border"
-            />
+        {photoPreview || photoUploading ? (
+          <div className="relative inline-block h-24 w-24">
+            {photoPreview ? (
+              <img
+                src={photoPreview}
+                alt="Review photo preview"
+                className="h-24 w-24 object-cover rounded-lg border"
+              />
+            ) : <div className="h-24 w-24 rounded-lg border bg-muted" />}
             {photoUploading && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-lg">
                 <Loader2 className="h-5 w-5 text-white animate-spin" />

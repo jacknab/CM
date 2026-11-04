@@ -337,6 +337,8 @@ export async function matchWaitingNailTicketForTechnician(
   if (!store || !(isNailSalonCategory((store as any).category) || /barber/i.test((store as any).category ?? ""))) return null;
   // A nail salon's ticket is only ever started by someone pressing START; a barbershop's starts with the hand-over.
   const startOnAssign = !isNailSalonCategory((store as any).category);
+  // A barbershop: one client per barber — a barber who has taken a waiting client (or has a ticket) gets no other.
+  if (startOnAssign && await barberCurrentClient(args.storeId, args.staffId)) return null;
 
   const prefs = await deps.getTurnPreferences(args.storeId);
   if (prefs.turnEnabled === false || prefs.autoAdvanceOnCheckout === false) return null;
@@ -426,7 +428,7 @@ export async function matchWaitingNailTicketForTechnician(
 }
 
 /** Start an assigned, still-waiting ticket right now (claims a station/chair when the service needs one). */
-async function startClaimedTicketNow(storeId: number, appointmentId: number): Promise<boolean> {
+export async function startClaimedTicketNow(storeId: number, appointmentId: number): Promise<boolean> {
   const appt = await storage.getAppointment(appointmentId);
   if (!appt || appt.storeId !== storeId || appt.status !== "confirmed" || !appt.staffId || !appt.serviceId) return false;
   const service = await storage.getService(appt.serviceId);
@@ -1158,16 +1160,23 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   // or a different client's marker cannot be reused to mint duplicate printed ticket numbers.
   const offlineNumber = input.checkinId == null && input.ticketNumber && (await storage.claimTicketNumber(storeId, Number(input.ticketNumber)))
     ? Number(input.ticketNumber) : null;
+  // The barber took this client (no ticket yet) at this moment: the ticket starts then.
+  let takenAt: Date | null = null;
   const creation = await db.transaction(async (tx) => {
     let ticketNumberOverride: number | null = input.visitTicketNumber ?? offlineNumber;
     if (input.checkinId != null) {
-      const marker = (await tx.execute(sql`SELECT ticket_number, client_id, status, appointment_id
+      const marker = (await tx.execute(sql`SELECT ticket_number, client_id, status, appointment_id, staff_id, assigned_at
         FROM kiosk_checkins WHERE id = ${input.checkinId} AND store_id = ${storeId} FOR UPDATE`)).rows[0] as any;
       if (!marker || (marker.client_id == null ? null : Number(marker.client_id)) !== (client?.id ?? null) || marker.appointment_id != null ||
           !["waiting", "called"].includes(String(marker.status))) {
         return { ok: false as const, message: "This check-in was already used or belongs to another client." };
       }
       ticketNumberOverride = marker.ticket_number ?? null;
+      // A barbershop (owner, 2026-11-03): the service started when this barber took the client, not now at checkout.
+      if (startOnAssign && marker.status === "called" && marker.assigned_at && marker.staff_id != null && Number(marker.staff_id) === staffId) {
+        const at = new Date(marker.assigned_at);
+        if (at.getTime() <= now.getTime() && now.getTime() - at.getTime() < 12 * 3_600_000) takenAt = at;
+      }
     }
     const created = await atomicCreateBooking({
       storeId, timezone: tz, startTime,
@@ -1229,7 +1238,7 @@ async function createNailTicketLocked(deps: TicketDeps, input: CreateTicketInput
   let status: "started" | "confirmed" = "confirmed";
   if (immediate && staffId != null) {
     if (startOnAssign) {
-      await storage.updateAppointment(appointmentId, { status: "started", startedAt: now } as any);
+      await storage.updateAppointment(appointmentId, { status: "started", startedAt: takenAt ?? now } as any);
       status = "started";
     }
     // Started or not, the technician is held for this client and is not handed another one.
@@ -1563,6 +1572,10 @@ export interface BoardWaitingMarker {
   /** The technician / barber this client has been given before any ticket exists (null = still waiting). */
   staffId: number | null;
   staffName: string | null;
+  /** When that barber took the client: a barbershop's service (and its chair timer) starts here. */
+  assignedAt: string | null;
+  /** Checked in online from their phone (Online Check-In Line): here yet, and the late rule's step (1/3 held, 2 moved back). */
+  online?: { here: boolean; lateStage: number; heldUntil: string | null; preferredStaffId: number | null };
   /** What the client said they came for at the front desk (a catalog category), when they said. */
   requestedCategory: string | null;
   /** The catalog category id behind requestedCategory, so the POS can open its grid there. */
@@ -1624,7 +1637,7 @@ export async function getNailUpcoming(storeId: number): Promise<BoardDayBooking[
   const tz = (store as any)?.timezone || "UTC";
   const { rows } = await pool.query(
     `SELECT a.id, a.ticket_number, a.date, COALESCE(a.duration, 0) AS duration, a.status::text AS status,
-            COALESCE(c.full_name, 'Guest') AS client_name,
+            COALESCE(c.full_name, a.customer_name, 'Guest') AS client_name,
             COALESCE(s.name, 'Service') AS service_name,
             st.name AS staff_name
        FROM appointments a
@@ -1724,7 +1737,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   const { rows } = await pool.query(
     `SELECT a.id, a.ticket_number, a.ticket_group_id, a.status, a.ringing_up_since,
             (SELECT w.ticket_number FROM appointments w WHERE w.id = a.waits_for_appointment_id) AS waits_for_number, a.service_done_at, a.actual_minutes, a.date, a.duration, a.checked_in_at, a.started_at, a.staff_id,
-            ${walkInSQL("a")} AS walk_in, a.customer_id, a.custom_lines, c.full_name AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
+            ${walkInSQL("a")} AS walk_in, a.customer_id, a.custom_lines, COALESCE(c.full_name, a.customer_name) AS client_name, COALESCE(c.loyalty_points, 0) AS loyalty_points,
             (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p
                WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS client_phone,
             -- A ticket made at the kiosk with no client record linked still has the name/number
@@ -1809,7 +1822,8 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
 
   // Kiosk check-ins that don't have a ticket yet (phone not recognised, etc.).
   const markerRows = await pool.query(
-    `SELECT id, ticket_number, client_id, client_name, phone, created_at, status, staff_id, assigned_staff_name, requested_category, requested_category_id FROM kiosk_checkins
+    `SELECT id, ticket_number, client_id, client_name, phone, created_at, status, staff_id, assigned_staff_name, assigned_at, requested_category, requested_category_id,
+            source, arrived_at, late_stage, held_until, preferred_staff_id FROM kiosk_checkins
       WHERE store_id = $1 AND appointment_id IS NULL AND status IN ('waiting','called')
         AND created_at > NOW() - INTERVAL '${CHECKIN_MARKER_HOURS} hours'
       ORDER BY created_at ASC`,
@@ -1820,6 +1834,11 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
     // Only a marker a barber has taken ('called'); a kiosk's requested-stylist hint on a waiting marker is not an assignment.
     staffId: m.status === "called" && m.staff_id != null ? Number(m.staff_id) : null,
     staffName: m.status === "called" ? m.assigned_staff_name ?? null : null,
+    assignedAt: m.status === "called" && m.assigned_at ? new Date(m.assigned_at).toISOString() : null,
+    // Online Check-In Line: checked in from their phone — here yet or on the way, and whether they were skipped for being late.
+    ...(m.source === "online" ? { online: { here: m.arrived_at != null, lateStage: Number(m.late_stage) || 0,
+      heldUntil: m.held_until ? new Date(m.held_until).toISOString() : null,
+      preferredStaffId: m.preferred_staff_id != null ? Number(m.preferred_staff_id) : null } } : {}),
     requestedCategory: m.requested_category ?? null,
     requestedCategoryId: m.requested_category_id != null ? Number(m.requested_category_id) : null,
   }));
@@ -1830,7 +1849,7 @@ export async function getNailBoard(storeId: number): Promise<{ tickets: BoardTic
   const dayBookingRows = await pool.query(
     `SELECT * FROM (
        SELECT a.id, a.ticket_number, a.date, COALESCE(a.duration, 0) AS duration, a.status::text AS status,
-              COALESCE(c.full_name, 'Guest') AS client_name,
+              COALESCE(c.full_name, a.customer_name, 'Guest') AS client_name,
               COALESCE(s.name, 'Service') AS service_name,
               st.name AS staff_name,
               ${walkInSQL("a")} AS is_walk_in,
@@ -2070,15 +2089,76 @@ export async function identifyBarber(storeId: number, barberNumber: number, opts
 }
 
 /** A barber takes a waiting client. No ticket is made — that happens when the barber rings them up. */
-export async function assignMarkerToBarber(args: { storeId: number; markerId: number; staffId: number }): Promise<TicketResult<{ staffName: string }>> {
+/**
+ * A barbershop: one client per barber at a time (owner, 2026-11-02). The client a barber already has — a waiting
+ * client they took (no ticket yet), or a ticket of theirs that is waiting or in the chair (DONE frees them) — or null.
+ * `except`: the client this request is about (the same one again is not a second client).
+ */
+export async function barberCurrentClient(storeId: number, staffId: number, except: { appointmentId?: number | null; checkinId?: number | null } = {}): Promise<{ name: string; ticketNumber: number | null } | null> {
+  const tz = (await pool.query(`SELECT timezone FROM locations WHERE id = $1`, [storeId])).rows[0]?.timezone || "UTC";
+  const { rows } = await pool.query(
+    `SELECT name, ticket_number FROM (
+       SELECT COALESCE(c.full_name, a.customer_name, 'a client') AS name, a.ticket_number, 1 AS o
+         FROM appointments a LEFT JOIN clients c ON c.id = a.customer_id
+        WHERE a.store_id = $1 AND a.staff_id = $3 AND a.service_done_at IS NULL
+          AND (a.status = 'started' OR (a.status = 'confirmed' AND a.checked_in_at IS NOT NULL))
+          AND ${bizDayOf("a.date")} >= (${BIZ_TODAY} - 1)
+          AND ($4::int IS NULL OR a.id <> $4)
+          AND ($5::int IS NULL OR NOT EXISTS (SELECT 1 FROM kiosk_checkins x WHERE x.id = $5 AND x.appointment_id = a.id))
+       UNION ALL
+       SELECT COALESCE(k.client_name, 'a client'), k.ticket_number, 2
+         FROM kiosk_checkins k
+        WHERE k.store_id = $1 AND k.staff_id = $3 AND k.status = 'called' AND k.appointment_id IS NULL
+          AND ${bizDayOf("k.created_at")} = ${BIZ_TODAY}
+          AND ($5::int IS NULL OR k.id <> $5)
+     ) t ORDER BY o LIMIT 1`,
+    [storeId, tz, staffId, except.appointmentId ?? null, except.checkinId ?? null],
+  );
+  return rows[0] ? { name: String(rows[0].name).trim() || "a client", ticketNumber: rows[0].ticket_number != null ? Number(rows[0].ticket_number) : null } : null;
+}
+
+/**
+ * Holds one barber while a request checks they have no client and gives them one, so two tablets giving the same
+ * barber two clients at the same moment can't both pass the check (a Postgres advisory lock, held across the
+ * cluster's processes). Returns the release; null (not a barbershop request, or no barber) holds nothing.
+ */
+export async function lockBarber(staffId: number | null): Promise<() => Promise<void>> {
+  if (staffId == null) return async () => {};
+  const client = await pool.connect();
+  try {
+    await client.query(`SELECT pg_advisory_lock($1, $2)`, [BARBER_LOCK_SPACE, staffId]);
+  } catch (err) {
+    client.release();
+    throw err;
+  }
+  let released = false;
+  return async () => {
+    if (released) return;
+    released = true;
+    try { await client.query(`SELECT pg_advisory_unlock($1, $2)`, [BARBER_LOCK_SPACE, staffId]); } finally { client.release(); }
+  };
+}
+const BARBER_LOCK_SPACE = 7_202_611;
+
+/** The refusal when a barber already has a client. */
+export async function oneClientRefusal(storeId: number, staffId: number, except: { appointmentId?: number | null; checkinId?: number | null } = {}): Promise<string | null> {
+  const current = await barberCurrentClient(storeId, staffId, except);
+  if (!current) return null;
+  const who = (await pool.query(`SELECT name FROM staff WHERE id = $1 AND store_id = $2`, [staffId, storeId])).rows[0]?.name ?? "This barber";
+  return `${String(who).split(" ")[0]} already has a client (${current.ticketNumber != null ? `#${current.ticketNumber} ` : ""}${current.name}). A barber has one client at a time.`;
+}
+
+export async function assignMarkerToBarber(args: { storeId: number; markerId: number; staffId: number; takenAt?: Date | null }): Promise<TicketResult<{ staffName: string }>> {
   const member = await storage.getStaffMember(args.staffId);
   if (!member || member.storeId !== args.storeId || ["removed", "deactivated"].includes(String(member.status))) {
     return fail(404, "Barber not found");
   }
   const taken = await pool.query(
-    `UPDATE kiosk_checkins SET staff_id = $3, assigned_staff_name = $4, status = 'called'
+    // assigned_at: when the barber took the client — their service starts then (migration 0291). Taken on a tablet
+    // while offline: the moment it happened there, else now (the database fills it).
+    `UPDATE kiosk_checkins SET staff_id = $3, assigned_staff_name = $4, status = 'called', assigned_at = COALESCE($5::timestamptz, now())
       WHERE id = $1 AND store_id = $2 AND appointment_id IS NULL AND status = 'waiting'`,
-    [args.markerId, args.storeId, member.id, member.name],
+    [args.markerId, args.storeId, member.id, member.name, args.takenAt ? args.takenAt.toISOString() : null],
   );
   if (taken.rowCount === 0) {
     // Already with this same barber (a resend after a lost answer, or the same take from another tablet): done.
@@ -2222,7 +2302,7 @@ export async function ticketArchivePage(storeId: number, opts: { afterId: number
                JOIN appointments m ON m.id = (o.result->'appointmentIds'->>0)::int AND m.store_id = o.store_id
               WHERE o.store_id = a.store_id AND o.result->'appointmentIds' @> jsonb_build_array(a.id)
               ORDER BY o.created_at DESC LIMIT 1)) AS receipt_snapshot,
-            COALESCE(c.full_name, (SELECT kc.client_name FROM kiosk_checkins kc WHERE kc.appointment_id = a.id ORDER BY kc.id DESC LIMIT 1)) AS client_name,
+            COALESCE(c.full_name, a.customer_name, (SELECT kc.client_name FROM kiosk_checkins kc WHERE kc.appointment_id = a.id ORDER BY kc.id DESC LIMIT 1)) AS client_name,
             s.name AS service_name, st.name AS staff_name
        FROM appointments a
        LEFT JOIN clients  c  ON c.id  = a.customer_id

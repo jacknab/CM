@@ -399,6 +399,7 @@ export default function Auth() {
       google_not_configured: "Google sign-in isn't set up on this server yet.",
       google_denied: "Google sign-in was cancelled.",
       google_oauth_failed: "Google sign-in failed. Please try again or use your email and password.",
+      google_no_account: "There is no Certxa account for this Google address. Sign up with your e-mail and mobile number first.",
     };
     const description = messages[error] ?? "An unexpected error occurred. Please try again.";
     toast({ title: "Sign-in error", description, variant: "destructive" });
@@ -418,19 +419,15 @@ export default function Auth() {
     return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
   };
 
-  // Temporarily skip the owner-signup OTP step while test accounts are being created.
-  // Set VITE_REQUIRE_OWNER_SIGNUP_OTP=true to restore the original signup flow.
-  const requireSignupOtp = import.meta.env.VITE_REQUIRE_OWNER_SIGNUP_OTP === "true";
-  // Register: 1 = details form, 2 = OTP verification (when enabled), 3 = create password
+  // Register: 1 = details form, 2 = the code texted to the mobile number (always: owner, 2026-11-03 — a mobile
+  // line no Certxa account has ever had), 3 = create password
   const [registerStep, setRegisterStep] = useState<1 | 2 | 3>(1);
   const [otpCode, setOtpCode] = useState("");
   const [otpTimer, setOtpTimer] = useState(0);
   const [otpSending, setOtpSending] = useState(false);
   const [otpSendError, setOtpSendError] = useState("");
-  const [otpEmailSending, setOtpEmailSending] = useState(false);
-  const [otpEmailSent, setOtpEmailSent] = useState(false);
-  const [otpEmailError, setOtpEmailError] = useState("");
-  const [otpDelivery, setOtpDelivery] = useState<"sms" | "email">("sms");
+  // The one-time pass owner-verify-otp hands back; /api/auth/register needs it.
+  const [phoneToken, setPhoneToken] = useState("");
   const [professionalConfirmed, setProfessionalConfirmed] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -544,11 +541,10 @@ export default function Auth() {
       const phoneDigits = phone.replace(/\D/g, "");
       if (!firstName.trim() || !lastName.trim() || phoneDigits.length !== 10 || !email.trim() || !email.includes("@")) return;
 
-      // When OTP is off, check email only: the phone OTP history should not block
-      // creating separate test accounts for different business types.
+      // The e-mail only: a mobile number already in use gets its own message from owner-request-otp.
       try {
         const availRes = await fetch(
-          `/api/auth/check-availability?phone=${requireSignupOtp ? encodeURIComponent(phone) : ""}&email=${encodeURIComponent(email)}`
+          `/api/auth/check-availability?email=${encodeURIComponent(email)}`
         );
         if (availRes.ok) {
           const availData = await availRes.json();
@@ -558,19 +554,12 @@ export default function Auth() {
         // On network error, allow the flow to continue
       }
 
-      if (!requireSignupOtp) {
-        setOtpSendError("");
-        setRegisterStep(3);
-        return;
-      }
-
+      setPhoneToken("");
+      setOtpCode("");
       setOtpSending(true);
       setOtpSendError("");
       try {
-        const endpoint = otpDelivery === "email"
-          ? "/api/auth/owner-request-otp-email"
-          : "/api/auth/owner-request-otp";
-        const res = await fetch(endpoint, {
+        const res = await fetch("/api/auth/owner-request-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone, email }),
@@ -590,14 +579,11 @@ export default function Auth() {
       }
     };
 
-    const handleResendOtp = async (delivery: "sms" | "email" = otpDelivery) => {
+    const handleResendOtp = async () => {
       if (otpTimer > 0) return;
       setOtpSending(true);
       try {
-        const endpoint = delivery === "email"
-          ? "/api/auth/owner-request-otp-email"
-          : "/api/auth/owner-request-otp";
-        const res = await fetch(endpoint, {
+        const res = await fetch("/api/auth/owner-request-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone, email }),
@@ -608,33 +594,6 @@ export default function Auth() {
         setOtpSending(false);
       }
     };
-
-    const handleSendOtpEmail = async () => {
-      if (otpEmailSending) return;
-      setOtpEmailSending(true);
-      setOtpEmailSent(false);
-      setOtpEmailError("");
-      try {
-        const res = await fetch("/api/auth/owner-request-otp-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone, email }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          setOtpEmailError(data.message || "Could not send code to email. Please try again.");
-          return;
-        }
-        setOtpDelivery("email");
-        setOtpEmailSent(true);
-        setOtpTimer(30);
-      } catch {
-        setOtpEmailError("Connection error. Please try again.");
-      } finally {
-        setOtpEmailSending(false);
-      }
-    };
-
 
     const submitOtpCode = async (code: string) => {
       if (code.length !== 6 || otpVerifying) return;
@@ -651,6 +610,7 @@ export default function Auth() {
           setOtpVerifyError(data.message || "Invalid code. Please try again.");
           return;
         }
+        setPhoneToken(data.phoneToken ?? "");
         setRegisterStep(3);
       } catch {
         setOtpVerifyError("Connection error. Please check your internet and try again.");
@@ -673,7 +633,8 @@ export default function Auth() {
           password,
           firstName: firstName || undefined,
           lastName:  lastName  || undefined,
-          phone:     phone     || undefined,
+          phone,
+          phoneToken,
           keepSignedIn,
         });
         await postAuthRedirect(!!(result && result.onboardingCompleted), result);
@@ -683,6 +644,8 @@ export default function Auth() {
         try {
           const parsed = JSON.parse(message.replace(/^\d+:\s*/, ""));
           description = parsed.message || message;
+          // The number check expired or the number was taken meanwhile: back to the details step for a new code.
+          if (parsed.field === "phone") { setPhoneToken(""); setOtpCode(""); setRegisterStep(1); }
         } catch {
           if (message.includes(":")) description = message.split(":").slice(1).join(":").trim();
         }
@@ -702,7 +665,7 @@ export default function Auth() {
     };
 
     // ── Step 2: OTP verification ───────────────────────────────────────────
-    if (requireSignupOtp && registerStep === 2) {
+    if (registerStep === 2) {
       return (
         <div style={{
           position: "fixed", inset: 0,
@@ -723,7 +686,7 @@ export default function Auth() {
             <p style={{ fontSize: ".92rem", color: "#374151", margin: "0 0 28px", lineHeight: 1.6 }}>
               To ensure your security, please enter the code sent to:{" "}
               <strong style={{ color: "#111827" }}>
-                {otpDelivery === "email" ? email.trim().toLowerCase() : maskPhone(phone)}
+                {maskPhone(phone)}
               </strong>
             </p>
 
@@ -768,44 +731,6 @@ export default function Auth() {
                     {otpSending ? "Sending…" : "Resend code"}
                   </button>
                 </p>
-
-                <p style={{ fontSize: ".84rem", color: "#6b7280", margin: 0 }}>
-                  {otpDelivery === "email" ? "Prefer a text message?" : "Can't access this phone?"}{" "}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (otpDelivery === "email") {
-                        setOtpDelivery("sms");
-                        setOtpEmailSent(false);
-                        setOtpEmailError("");
-                        setOtpTimer(0);
-                        await handleResendOtp("sms");
-                        return;
-                      }
-                      await handleSendOtpEmail();
-                    }}
-                    disabled={otpEmailSending}
-                    style={{
-                      background: "none", border: "none", padding: 0,
-                      fontSize: ".84rem", fontWeight: 600,
-                      color: otpEmailSending ? "#9ca3af" : PLUM_MID,
-                      cursor: otpEmailSending ? "default" : "pointer",
-                      textDecoration: otpEmailSending ? "none" : "underline",
-                    }}
-                  >
-                    {otpEmailSending
-                      ? "Sending…"
-                      : otpDelivery === "email"
-                        ? "Send code by SMS instead"
-                        : "Send code to email instead"}
-                  </button>
-                </p>
-
-                {otpEmailError && (
-                  <p style={{ fontSize: ".82rem", color: "#ef4444", margin: 0 }}>
-                    {otpEmailError}
-                  </p>
-                )}
 
                 {otpVerifyError && (
                   <p style={{ fontSize: ".82rem", color: "#ef4444", margin: 0 }}>

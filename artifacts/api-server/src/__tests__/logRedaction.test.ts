@@ -22,6 +22,7 @@ describe("redactForLog", () => {
     expect(redactForLog({ secret: "pst_live_abc" })).toEqual({ secret: "[redacted]" });
     expect(redactForLog({ clientSecret: "pi_abc_secret_xyz" })).toEqual({ clientSecret: "[redacted]" });
     expect(redactForLog({ data: { payment: { token: "tok_1" } } })).toEqual({ data: { payment: { token: "[redacted]" } } });
+    expect(redactForLog({ phoneToken: "abc" })).toEqual({ phoneToken: "[redacted]" });
     expect(redactForLog({ client: { phone: "7205551234", email: "a@b.com" } })).toEqual({ client: { phone: "[redacted]", email: "[redacted]" } });
   });
   it("redacts inside arrays", () => {

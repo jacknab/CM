@@ -168,5 +168,53 @@ export async function cancelledAfterServiceReport(storeId: number, r: ReportRang
   };
 }
 
+/**
+ * Online check-in (barbershops, haircut studios; plans/online-checkin-line.md): how many joined the line from their
+ * phone, how many were served, left, or were taken off for being late — and how good the wait estimate was (the wait
+ * shown when they joined vs how long it really took a barber to take them).
+ */
+export async function onlineCheckinReport(storeId: number, r: ReportRange, compare: boolean) {
+  const tz = await storeTimezone(storeId);
+  const IN = `k.store_id = $1 AND (k.created_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date`;
+  // Taken by a barber: when the check-in got its barber (assigned_at), else when its ticket started.
+  const took = `COALESCE(k.assigned_at, (SELECT a.started_at FROM appointments a WHERE a.id = k.appointment_id))`;
+  const real = `EXTRACT(EPOCH FROM (${took} - k.created_at)) / 60`;
+  const counts = async (p: ReportRange) => (await pool.query(
+    `SELECT COUNT(*) FILTER (WHERE k.source = 'online')::int AS online,
+            COUNT(*) FILTER (WHERE k.source IS DISTINCT FROM 'online')::int AS in_shop,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND (k.appointment_id IS NOT NULL OR k.status IN ('called', 'serving', 'completed')))::int AS served,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND k.removed_reason = 'left')::int AS left_line,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND k.removed_reason = 'late')::int AS late,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND k.late_stage >= 2)::int AS moved_back,
+            AVG(k.wait_promised_min) FILTER (WHERE k.source = 'online' AND ${took} IS NOT NULL) AS promised,
+            AVG(${real}) FILTER (WHERE k.source = 'online' AND ${took} IS NOT NULL AND ${real} BETWEEN 0 AND 360) AS actual,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND ${took} IS NOT NULL AND k.wait_promised_min IS NOT NULL AND ${real} BETWEEN 0 AND 360) AS timed,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND ${took} IS NOT NULL AND k.wait_promised_min IS NOT NULL AND ${real} BETWEEN 0 AND 360
+                              AND ABS(${real} - k.wait_promised_min) <= 10) AS within10
+       FROM kiosk_checkins k WHERE ${IN}`,
+    [storeId, tz, p.from, p.to])).rows[0];
+  const t = await counts(r);
+  const byDay = (await pool.query(
+    `SELECT to_char((k.created_at AT TIME ZONE $2)::date, 'YYYY-MM-DD') AS day,
+            COUNT(*) FILTER (WHERE k.source = 'online')::int AS online,
+            COUNT(*) FILTER (WHERE k.source IS DISTINCT FROM 'online')::int AS in_shop,
+            COUNT(*) FILTER (WHERE k.source = 'online' AND k.removed_reason IN ('late', 'left'))::int AS lost,
+            ROUND(AVG(k.wait_promised_min) FILTER (WHERE k.source = 'online' AND ${took} IS NOT NULL))::int AS promised,
+            ROUND(AVG(${real}) FILTER (WHERE k.source = 'online' AND ${took} IS NOT NULL AND ${real} BETWEEN 0 AND 360))::int AS actual
+       FROM kiosk_checkins k WHERE ${IN} GROUP BY 1 ORDER BY 1`,
+    [storeId, tz, r.from, r.to])).rows;
+  const round = (v: unknown) => (v == null ? null : Math.round(num(v)));
+  let previous = null;
+  if (compare) { const p = previousRange(r); const y = await counts(p); previous = { range: p, online: y.online, served: y.served }; }
+  const all = t.online + t.in_shop;
+  return {
+    range: r,
+    totals: { online: t.online, inShop: t.in_shop, onlineShare: all ? Math.round((t.online / all) * 100) : null, served: t.served, left: t.left_line,
+      late: t.late, movedBack: t.moved_back, promised: round(t.promised), actual: round(t.actual),
+      within10: Number(t.timed) ? Math.round((Number(t.within10) / Number(t.timed)) * 100) : null },
+    byDay, previous,
+  };
+}
+
 export const OPERATIONS_REPORTS = { appointments: appointmentsReport, "wait-times": waitTimesReport, "service-times": serviceTimesReport, "busy-times": busyTimesReport, services: servicesReport,
-  "cancelled-after-service": cancelledAfterServiceReport } as const;
+  "cancelled-after-service": cancelledAfterServiceReport, "online-checkin": onlineCheckinReport } as const;

@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Switch } from "@/components/ui/switch";
 import { QRCodeCanvas } from "qrcode.react";
 import { Copy, Check, Tablet, ExternalLink, Plus, Trash2, Loader2, CircleSlash } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -150,6 +152,42 @@ function StationRow({
   );
 }
 
+/**
+ * The front desk's lock-screen keypad (/nail, /barber; owner, 2026-11-03): shown, or hidden so staff sign in by
+ * scanning their printed ID badge. The salon's tablets change at once.
+ */
+function FrontDeskKeypadCard({ barber }: { barber: boolean }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data } = useQuery<{ keypadVisible: boolean }>({ queryKey: ["/api/front-desk/keypad"] });
+  const save = useMutation({
+    mutationFn: async (keypadVisible: boolean) => {
+      const res = await fetch("/api/front-desk/keypad", { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ keypadVisible }) });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d?.message || "Could not save");
+      return d as { keypadVisible: boolean };
+    },
+    onSuccess: (d) => queryClient.setQueryData(["/api/front-desk/keypad"], d),
+    onError: (e: any) => toast({ title: "Not saved", description: e?.message, variant: "destructive" }),
+  });
+  if (!data) return null;
+  const idName = barber ? "Barber ID" : "Tech ID";
+  return (
+    <div className="bg-white border border-slate-200 rounded-2xl p-5 flex items-center justify-between gap-4" data-testid="front-desk-keypad">
+      <div>
+        <p className="font-semibold text-slate-900">Front desk keypad</p>
+        <p className="text-sm text-slate-500 mt-0.5">
+          {data.keypadVisible ? `Staff type their ${idName} on the lock screen's keypad, or scan their printed badge.` : `Hidden: staff scan their printed ${idName} badge to sign in.`}
+        </p>
+      </div>
+      <label className="flex items-center gap-2 text-sm font-medium shrink-0">
+        <Switch checked={data.keypadVisible} disabled={save.isPending} onCheckedChange={(on) => save.mutate(on)} data-testid="front-desk-keypad-switch" />
+        {data.keypadVisible ? "Shown" : "Hidden"}
+      </label>
+    </div>
+  );
+}
+
 export default function Registers() {
   const { toast } = useToast();
   const inShell = useInSettingsShell();
@@ -214,6 +252,8 @@ export default function Registers() {
         )}
 
         <DeviceCodeCard />
+
+        {/nail|barber/i.test((selectedStore as any)?.category ?? "") && <FrontDeskKeypadCard barber={/barber/i.test((selectedStore as any)?.category ?? "")} />}
 
         {isLoading ? (
           <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">

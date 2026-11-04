@@ -91,6 +91,8 @@ export async function cancelBookingWithPolicy(
     });
     // Tell the owner's phone (Certxa Pro app) that the client cancelled.
     if (appointment.storeId) void pushBookingEvent(Number(appointment.storeId), Number(appointment.id), "cancelled_client");
+    // Someone on the waitlist for that day (Certxa Pro Waitlist, 2026-11-03): tell the owner the time is free.
+    if (appointment.storeId) void notifyWaitlistForDay(Number(appointment.storeId), new Date(appointment.date)).catch(() => {});
   }
 
   const refreshed = await storage.getAppointment(appointment.id);
@@ -99,4 +101,21 @@ export async function cancelBookingWithPolicy(
     (result as any).staff = result.staff;
   }
   return { ok: true, status: 200, body: { ...result, cancellationFeeCharged, cancellationFeeError } };
+}
+
+async function notifyWaitlistForDay(storeId: number, when: Date): Promise<void> {
+  const { pool } = await import("../db");
+  const r = await pool.query(
+    `SELECT count(*)::int AS n FROM waitlist w JOIN locations l ON l.id = w.store_id
+      WHERE w.store_id = $1 AND w.status = 'waiting' AND w.preferred_date IS NOT NULL
+        AND (w.preferred_date AT TIME ZONE 'UTC' AT TIME ZONE COALESCE(l.timezone, 'UTC'))::date = ($2::timestamptz AT TIME ZONE COALESCE(l.timezone, 'UTC'))::date`,
+    [storeId, when]);
+  const n = Number(r.rows[0]?.n) || 0;
+  if (!n) return;
+  const { pushOwnerMessage } = await import("./ownerPush");
+  await pushOwnerMessage(storeId, {
+    title: "A time opened up",
+    body: `${n} ${n === 1 ? "client is" : "clients are"} on your waitlist for that day. Tap to see them.`,
+    data: { type: "waitlist" },
+  });
 }

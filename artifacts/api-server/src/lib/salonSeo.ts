@@ -15,10 +15,12 @@
  */
 import { isSoloPlanCode } from "@shared/soloPlan";
 import { pool } from "../db";
+import { offersOnlineLine } from "./onlineLine";
+import { loadLineSettings } from "./onlineLineService";
 import { addressIsPrivate } from "./publicStore";
 import { displayPhone, toE164 } from "./tenant-seo";
 import { resolveStorePlan } from "./featureAccess";
-import { craftFor, craftTitle, placesSentence, soloKeywords, type SoloPlaces } from "./proCraft";
+import { craftFor, craftTitle, placesSentence, proByLabel, soloKeywords, type SoloPlaces } from "./proCraft";
 
 export interface SalonFacts {
   slug: string;
@@ -46,7 +48,11 @@ export interface SalonFacts {
   rating: { value: number; count: number; source: "Google" | "Certxa" } | null;
   /** A Solo-plan professional (booth/suite, home studio, house calls): described by their craft, not as a salon (lib/proCraft.ts). */
   solo: boolean;
+  /** A Solo pro's label: "Nails by Toby" (lib/proCraft.ts). */
+  byLabel: string | null;
   places: SoloPlaces;
+  /** A barbershop or haircut studio with the Online Check-In Line on: where walk-ins check in from their phone. */
+  onlineCheckin: string | null;
 }
 
 const CACHE_MS = 5 * 60_000;
@@ -86,7 +92,7 @@ export async function salonFacts(slug: string): Promise<SalonFacts | null> {
 async function loadFacts(slug: string): Promise<SalonFacts | null> {
   const { rows } = await pool.query(
     `SELECT id, name, category, address, city, state, postcode, phone, email, store_latitude, store_longitude, booking_slug, booking_site, own_place, address_private, account_status,
-            house_calls, house_call_radius_miles
+            house_calls, house_call_radius_miles, (SELECT first_name FROM users u WHERE u.id = locations.user_id) AS owner_first_name
        FROM locations WHERE lower(booking_slug) = $1 LIMIT 1`,
     [slug],
   );
@@ -130,6 +136,7 @@ async function loadFacts(slug: string): Promise<SalonFacts | null> {
     instagram: site.instagram?.trim() || null,
     showPrices: settings?.show_prices !== false,
     solo,
+    byLabel: solo ? proByLabel(s.category, s.owner_first_name, String(s.name ?? "")) : null,
     places: { ownPlace: s.own_place ?? null, houseCalls: s.house_calls === true,
       radiusMiles: s.house_call_radius_miles != null && Number(s.house_call_radius_miles) > 0 ? Number(s.house_call_radius_miles) : null },
     services: services.map((x: any) => ({
@@ -143,6 +150,8 @@ async function loadFacts(slug: string): Promise<SalonFacts | null> {
         : { day, opens: null, closes: null };
     }),
     rating,
+    onlineCheckin: offersOnlineLine(s.category) && (await loadLineSettings(Number(s.id)).catch(() => null))?.enabled
+      ? `${(process.env.APP_URL ?? "https://certxa.com").replace(/\/$/, "")}/q/${encodeURIComponent(s.booking_slug)}` : null,
   };
 }
 
@@ -153,6 +162,14 @@ const nameWithWork = (f: SalonFacts) => {
   const work = craftFor(f.category).work;
   return /['’]s$/i.test(f.name.trim()) ? `${f.name} ${work}` : `${f.name} — ${work}`;
 };
+/** How the page names them: "Nails by Toby" for a Solo pro, the business name otherwise. */
+const who = (f: SalonFacts) => f.byLabel ?? f.name;
+/** "Nails by Toby in Denver, CO", then the business name unless it only repeats the pro's ("Toby’s"). */
+const soloTitle = (f: SalonFacts) => {
+  const own = f.name.replace(/['’]s$/i, "").trim().toLowerCase();
+  const repeats = f.byLabel!.toLowerCase().endsWith(` by ${own}`);
+  return `${f.byLabel}${f.cityState ? ` in ${f.cityState}` : ""}${repeats ? "" : ` | ${f.name}`}`;
+};
 const addressLine = (f: SalonFacts) => [f.streetAddress, f.cityState, f.postcode].filter(Boolean).join(", ").replace(/, (\d{5})$/, " $1");
 const hasHours = (f: SalonFacts) => f.hours.some((h) => h.opens);
 const hoursText = (f: SalonFacts) => f.hours.map((h) => `${h.day}: ${h.opens && h.closes ? `${time12(h.opens)}–${time12(h.closes)}` : "Closed"}`);
@@ -161,30 +178,33 @@ const priced = (f: SalonFacts) => (f.showPrices ? f.services.filter((s) => s.pri
 /** Questions people ask about a salon, answered from its own details (AEO). */
 export function salonFaq(f: SalonFacts): { q: string; a: string }[] {
   const faq: { q: string; a: string }[] = [];
+  const name = who(f);
   const where = addressLine(f);
-  if (where) faq.push({ q: `Where is ${f.name} located?`, a: `${f.name} is ${f.streetAddress ? "at" : "in"} ${where}.` });
-  if (hasHours(f)) faq.push({ q: `What are ${f.name}'s hours?`, a: `${hoursText(f).join("; ")}.` });
+  if (where) faq.push({ q: `Where is ${name} located?`, a: `${name} is ${f.streetAddress ? "at" : "in"} ${where}.` });
+  if (hasHours(f)) faq.push({ q: f.byLabel ? `What are the hours for ${name}?` : `What are ${name}'s hours?`, a: `${hoursText(f).join("; ")}.` });
   // A Solo pro: where the appointment happens.
   if (f.solo && f.places.houseCalls) {
-    faq.push({ q: `Does ${f.name} come to you?`,
-      a: `Yes, ${f.name} does house calls${f.places.radiusMiles ? ` within ${f.places.radiusMiles} miles` : ""}${f.cityState ? ` ${f.places.radiusMiles ? "of" : "in and around"} ${f.cityState}` : ""}.` });
+    faq.push({ q: `Does ${name} come to you?`,
+      a: `Yes, ${name} does house calls${f.places.radiusMiles ? ` within ${f.places.radiusMiles} miles` : ""}${f.cityState ? ` ${f.places.radiusMiles ? "of" : "in and around"} ${f.cityState}` : ""}.` });
   }
   if (f.solo && f.places.ownPlace === "home") {
-    faq.push({ q: `Where do I go for my appointment with ${f.name}?`,
-      a: `${f.name} works from a home studio${f.cityState ? ` in ${f.cityState}` : ""}. The address is shared once you book.` });
+    faq.push({ q: `Where do I go for my appointment with ${name}?`,
+      a: `${name} works from a home studio${f.cityState ? ` in ${f.cityState}` : ""}. The address is shared once you book.` });
   } else if (f.solo && f.places.ownPlace === "salon" && addressLine(f)) {
-    faq.push({ q: `Where do I go for my appointment with ${f.name}?`, a: `${f.name} works from a salon suite at ${addressLine(f)}.` });
+    faq.push({ q: `Where do I go for my appointment with ${name}?`, a: `${name} works from a salon suite at ${addressLine(f)}.` });
   }
-  faq.push({ q: `How do I book an appointment at ${f.name}?`,
+  if (f.onlineCheckin) faq.push({ q: `Does ${name} take walk-ins? Can I check in online?`,
+    a: `Yes. Walk-ins are welcome, and you can join the line from your phone at ${f.onlineCheckin} — it shows the current wait and texts you when it's time to come in.` });
+  faq.push({ q: `How do I book an appointment ${f.solo ? "with" : "at"} ${name}?`,
     a: `Book online at ${f.canonical} — choose a service and an open time.${f.phone ? ` You can also call ${f.phone}.` : ""}` });
-  if (f.services.length) faq.push({ q: `What services does ${f.name} offer?`, a: `${f.services.slice(0, 12).map((s) => s.name).join(", ")}.` });
+  if (f.services.length) faq.push({ q: `What services does ${name} offer?`, a: `${f.services.slice(0, 12).map((s) => s.name).join(", ")}.` });
   const p = priced(f);
   if (p.length) {
     const lo = Math.min(...p.map((s) => s.price!)), hi = Math.max(...p.map((s) => s.price!));
-    faq.push({ q: `How much does ${f.name} charge?`,
+    faq.push({ q: `How much does ${name} charge?`,
       a: `Services range from ${money(lo)} to ${money(hi)}. For example: ${p.slice(0, 4).map((s) => `${s.name} ${money(s.price!)}`).join(", ")}.` });
   }
-  if (f.rating) faq.push({ q: `Is ${f.name} good?`, a: `${f.name} is rated ${f.rating.value} out of 5 from ${f.rating.count} ${f.rating.source} reviews.` });
+  if (f.rating) faq.push({ q: `Is ${name} good?`, a: `${name} is rated ${f.rating.value} out of 5 from ${f.rating.count} ${f.rating.source} reviews.` });
   return faq;
 }
 
@@ -192,7 +212,7 @@ export interface SalonHead { title: string; description: string; keywords: strin
 
 export function salonHead(f: SalonFacts): SalonHead {
   // "Nail Saints | Nail Salon in Lakewood, CO": the salon's name first (owner, 2026-11-02).
-  const title = clip(`${f.name}${kindIn(f) ? ` | ${kindIn(f)}` : ""}`, 70);
+  const title = clip(f.byLabel ? soloTitle(f) : `${f.name}${kindIn(f) ? ` | ${kindIn(f)}` : ""}`, 70);
   // "Toby's offers Basic Manicure, Full Set Acrylics, and Gel X Full Set in Denver, CO. Book online or call (720) 243-6886."
   // Built from whole sentences that fit (the most booked services first), never cut mid-sentence.
   const phone = displayPhone(f.phone);
@@ -203,7 +223,7 @@ export function salonHead(f: SalonFacts): SalonHead {
     const list = names.length > 1 ? `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}` : names[0] ?? "";
     // A Solo pro: "Toby’s nails in Denver, CO: Basic Manicure, …. Home studio and house calls. Book online or call …"
     const first = f.solo
-      ? `${nameWithWork(f)}${f.cityState ? ` in ${f.cityState}` : ""}${list ? `: ${list}` : ""}.${placesSentence(f.places) ? ` ${placesSentence(f.places)}` : ""}`
+      ? `${f.byLabel ?? nameWithWork(f)}${f.cityState ? ` in ${f.cityState}` : ""}${list ? `: ${list}` : ""}.${placesSentence(f.places) ? ` ${placesSentence(f.places)}` : ""}`
       : list ? `${f.name} offers ${list}${f.cityState ? ` in ${f.cityState}` : ""}.`
       : `${f.name} is a ${f.category ? f.category.toLowerCase() : "salon"}${f.cityState ? ` in ${f.cityState}` : ""}.`;
     const both = `${first} ${close}`;
@@ -211,7 +231,7 @@ export function salonHead(f: SalonFacts): SalonHead {
     else if (n === 0) description = clip(first, 158);
   }
   const keywords = (f.solo
-    ? [...soloKeywords(craftFor(f.category), f.city, f.places), f.name, ...f.services.slice(0, 6).map((s) => s.name)]
+    ? [f.byLabel, ...soloKeywords(craftFor(f.category), f.city, f.places), f.name, ...f.services.slice(0, 6).map((s) => s.name)]
     : [
       f.category, f.category && f.city ? `${f.category} ${f.city}` : "", f.category ? `${f.category.toLowerCase()} near me` : "",
       `book ${(f.category || "appointment").toLowerCase()}${f.city ? ` ${f.city}` : ""}`, f.name, ...f.services.slice(0, 6).map((s) => s.name),
@@ -223,6 +243,7 @@ export function salonHead(f: SalonFacts): SalonHead {
     "@type": f.solo ? "HealthAndBeautyBusiness" : schemaType(f.category),
     "@id": `${f.canonical}#business`,
     name: f.name,
+    ...(f.byLabel ? { alternateName: f.byLabel } : {}),
     url: f.canonical,
     ...(f.phone ? { telephone: toE164(f.phone) ?? f.phone } : {}),
     ...(f.email ? { email: f.email } : {}),
@@ -252,7 +273,11 @@ export function salonHead(f: SalonFacts): SalonHead {
         })),
       },
     } : {}),
-    potentialAction: { "@type": "ReserveAction", target: { "@type": "EntryPoint", urlTemplate: f.canonical, actionPlatform: ["https://schema.org/DesktopWebPlatform", "https://schema.org/MobileWebPlatform"] } },
+    potentialAction: [
+      { "@type": "ReserveAction", target: { "@type": "EntryPoint", urlTemplate: f.canonical, actionPlatform: ["https://schema.org/DesktopWebPlatform", "https://schema.org/MobileWebPlatform"] } },
+      // Walk-ins join the line from their phone (Online Check-In Line).
+      ...(f.onlineCheckin ? [{ "@type": "JoinAction", name: "Check in online", target: { "@type": "EntryPoint", urlTemplate: f.onlineCheckin, actionPlatform: ["https://schema.org/MobileWebPlatform", "https://schema.org/DesktopWebPlatform"] } }] : []),
+    ],
   };
   const faq = salonFaq(f);
   const jsonLd = {
@@ -277,8 +302,8 @@ export function salonSummaryHtml(f: SalonFacts): string {
   const services = f.services.slice(0, 20).map((s) =>
     `<li>${esc(s.name)}${f.showPrices && s.price ? ` — ${money(s.price)}` : ""}${s.duration ? ` (${s.duration} min)` : ""}</li>`).join("");
   return `<main data-salon-summary style="max-width:720px;margin:0 auto;padding:24px;font-family:system-ui,sans-serif;line-height:1.5;color:#1a1a1a">
-<h1>${esc(f.name)}</h1>
-${kindIn(f) ? `<p>${esc(kindIn(f))}${f.rating ? ` · Rated ${f.rating.value}/5 (${f.rating.count} ${f.rating.source} reviews)` : ""}</p>` : ""}
+<h1>${esc(who(f))}</h1>
+${kindIn(f) ? `<p>${esc(f.solo ? `Independent ${craftFor(f.category).pro}${f.cityState ? ` in ${f.cityState}` : ""}` : kindIn(f))}${f.rating ? ` · Rated ${f.rating.value}/5 (${f.rating.count} ${f.rating.source} reviews)` : ""}</p>` : ""}
 ${f.solo && placesSentence(f.places) ? `<p>${esc(placesSentence(f.places))}</p>` : ""}
 ${f.about ? `<p>${esc(f.about)}</p>` : ""}
 <p><a href="${esc(f.canonical)}">Book an appointment online</a>${f.phone ? ` · Call <a href="tel:${esc(f.phone.replace(/[^\d+]/g, ""))}">${esc(f.phone)}</a>` : ""}</p>
@@ -358,10 +383,11 @@ export function salonSitemapXml(f: SalonFacts): string {
 
 /** llms.txt: the salon's facts for AI assistants, in plain Markdown (GEO). */
 export function salonLlmsTxt(f: SalonFacts): string {
-  const lines = [`# ${f.name}`, "", `> ${salonHead(f).description}`, ""];
+  const lines = [`# ${who(f)}`, "", `> ${salonHead(f).description}`, ""];
   lines.push("## About", "");
   if (f.solo) {
     const c = craftFor(f.category);
+    if (f.byLabel) lines.push(`- Business name: ${f.name}`);
     lines.push(`- Type: independent ${c.pro}${f.cityState ? ` in ${f.cityState}` : ""}`);
     if (placesSentence(f.places)) lines.push(`- Works: ${placesSentence(f.places).replace(/\.$/, "")}${f.places.houseCalls && f.places.radiusMiles ? ` (within ${f.places.radiusMiles} miles)` : ""}`);
   } else if (kindIn(f)) lines.push(`- Type: ${kindIn(f)}`);
@@ -369,6 +395,7 @@ export function salonLlmsTxt(f: SalonFacts): string {
   if (where) lines.push(`- Location: ${where}`);
   if (f.phone) lines.push(`- Phone: ${f.phone}`);
   lines.push(`- Book online: ${f.canonical}`);
+  if (f.onlineCheckin) lines.push(`- Walk-ins: check in online (live wait, text when it's time to come in): ${f.onlineCheckin}`);
   if (f.rating) lines.push(`- Rating: ${f.rating.value}/5 from ${f.rating.count} ${f.rating.source} reviews`);
   if (f.instagram) lines.push(`- Instagram: ${f.instagram}`);
   if (f.about) lines.push("", f.about);

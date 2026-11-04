@@ -10,22 +10,34 @@ export interface Craft {
   work: string;
   /** The professional: "nail tech", "barber". */
   pro: string;
+  /** What goes before their name: "Nails by Toby". */
+  by: string;
 }
 
 /** The craft for a business type (the salon category: "Nail Salon", "Barbershop", "Hair Salon", …). */
 export function craftFor(category: string | null | undefined): Craft {
   const c = String(category ?? "").toLowerCase();
-  if (/nail/.test(c)) return { work: "nails", pro: "nail tech" };
-  if (/barber/.test(c)) return { work: "buzzcuts", pro: "barber" };
-  if (/hair|haircut|stylist/.test(c)) return { work: "haircuts", pro: "hair stylist" };
-  if (/lash/.test(c)) return { work: "lashes", pro: "lash artist" };
-  if (/brow/.test(c)) return { work: "brows", pro: "brow artist" };
-  if (/wax/.test(c)) return { work: "waxing", pro: "wax specialist" };
-  if (/makeup|make-up/.test(c)) return { work: "makeup", pro: "makeup artist" };
-  if (/esthetic|skin|facial/.test(c)) return { work: "skin care", pro: "esthetician" };
-  if (/massage/.test(c)) return { work: "massage", pro: "massage therapist" };
-  if (/tattoo/.test(c)) return { work: "tattoos", pro: "tattoo artist" };
-  return { work: "beauty services", pro: "beauty pro" };
+  if (/nail/.test(c)) return { work: "nails", pro: "nail tech", by: "Nails" };
+  if (/barber/.test(c)) return { work: "buzzcuts", pro: "barber", by: "Cuts" };
+  if (/hair|haircut|stylist/.test(c)) return { work: "haircuts", pro: "hair stylist", by: "Hair" };
+  if (/lash/.test(c)) return { work: "lashes", pro: "lash artist", by: "Lashes" };
+  if (/brow/.test(c)) return { work: "brows", pro: "brow artist", by: "Brows" };
+  if (/wax/.test(c)) return { work: "waxing", pro: "wax specialist", by: "Waxing" };
+  if (/makeup|make-up/.test(c)) return { work: "makeup", pro: "makeup artist", by: "Makeup" };
+  if (/esthetic|skin|facial/.test(c)) return { work: "skin care", pro: "esthetician", by: "Skin" };
+  if (/massage/.test(c)) return { work: "massage", pro: "massage therapist", by: "Massage" };
+  if (/tattoo/.test(c)) return { work: "tattoos", pro: "tattoo artist", by: "Tattoos" };
+  return { work: "beauty services", pro: "beauty pro", by: "Beauty" };
+}
+
+/**
+ * "Nails by Toby", the way independent pros are named on search (owner, 2026-11-04). From the account owner's first
+ * name; null without a usable one, or when the business is already called "... by ...".
+ */
+export function proByLabel(category: string | null | undefined, firstName: string | null | undefined, businessName: string): string | null {
+  const first = String(firstName ?? "").trim().split(/\s+/)[0] ?? "";
+  if (!/^\p{L}[\p{L}'’-]*$/u.test(first) || /\bby\b/i.test(businessName)) return null;
+  return `${craftFor(category).by} by ${first.charAt(0).toUpperCase()}${first.slice(1)}`;
 }
 
 const cap = (s: string) => s.replace(/\b\w/g, (m) => m.toUpperCase());

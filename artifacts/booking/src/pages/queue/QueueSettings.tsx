@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "react-router-dom";
+import OnlineLineSettings from "@/pages/line/OnlineLineSettings";
 import {
   Settings, Copy, ExternalLink, Check, ArrowLeft, QrCode,
   Code2, ToggleLeft, ToggleRight, Clock, Users, Loader2,
@@ -74,7 +75,14 @@ function CopyField({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** Barbershops and haircut studios have the Online Check-In Line and its own settings (pages/line). */
 export default function QueueSettings() {
+  const { selectedStore } = useSelectedStore();
+  if (/barber|hair/i.test(String((selectedStore as any)?.category ?? ""))) return <AppLayout><OnlineLineSettings /></AppLayout>;
+  return <OlderQueueSettings />;
+}
+
+function OlderQueueSettings() {
   const { selectedStore } = useSelectedStore();
   const { toast } = useToast();
   const queryClient = useQueryClient();

@@ -1,3 +1,4 @@
+import { useSelectedStore } from "@/hooks/use-store";
 import { isSoloPlanCode } from "@shared/soloPlan";
 import { useMemo, useState } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
@@ -52,15 +53,17 @@ export default function SettingsShell() {
 
   const { user: authUser } = useAuth();
   const proAccount = isProAccount((authUser as any)?.accountType);
+  const { selectedStore: settingsStore } = useSelectedStore();
+  const onlineLineShop = /barber|hair/i.test(String((settingsStore as any)?.category ?? ""));
   const tabs = useMemo(
     () =>
       buildSettingsNav(pick)
         .map((tab) => ({
           ...tab,
-          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(it.requiresBooking && !features.bookingSystem) && !(it.requiresSoloPlan && !isSoloPlanCode(planCode)) && !(proAccount && isHiddenForProAccount(it.to))),
+          items: tab.items.filter((it) => !(it.requiresPos && !features.pos) && !(it.requiresBooking && !features.bookingSystem) && !(it.requiresSoloPlan && !isSoloPlanCode(planCode)) && !(it.requiresOnlineLine && !onlineLineShop) && !(proAccount && isHiddenForProAccount(it.to))),
         }))
         .filter((tab) => tab.items.length > 0),
-    [pick, features.pos, features.bookingSystem, proAccount, planCode],
+    [pick, onlineLineShop, features.pos, features.bookingSystem, proAccount, planCode],
   );
 
   const allItems = useMemo(() => tabs.flatMap((tab) => tab.items), [tabs]);

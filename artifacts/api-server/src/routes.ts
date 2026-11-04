@@ -3,8 +3,9 @@ import { printSettingsOf } from "@shared/printSettings";
 import { usesBuiltInReviewsOnly } from "./lib/reviewLinks";
 import { isAccountStopped } from "./lib/accountSuspension";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
-import { checkHouseCall, saveClientAddress, type ClientAddress } from "./lib/houseCalls";
+import { checkHouseCall, placeOfZip, saveClientAddress, type ClientAddress } from "./lib/houseCalls";
 import { publicStoreView, bookedClientStoreView, addressIsPrivate } from "./lib/publicStore";
+import { salonFacts } from "./lib/salonSeo";
 import { getRedisClient } from "./lib/redis";
 import * as checkSignature from "./lib/checkSignature";
 import { createServer, type Server } from "http";
@@ -38,6 +39,8 @@ import { allocateTenders } from "./lib/tenderAllocation";
 import { summarizeDeductionYtd, summarizePayrollYtd } from "@shared/payrollYtd";
 import { sanitizePosGridConfig } from "@shared/posGrid";
 import rateLimit from "express-rate-limit";
+import * as onlineLine from "./lib/onlineLineService";
+import { offersOnlineLine } from "./lib/onlineLine";
 import { getStoreOwnerContact } from "./lib/systemEmails";
 import { resolveActivationCode, ensureLocationActivationCode, ensureRegisterActivationCode } from "./lib/activationCodes";
 import { classifySmsCancellationIntent } from "./lib/smsCancellationIntent";
@@ -219,7 +222,7 @@ import { db as websiteDb, websitesTable, templatesTable } from "@workspace/db";
 import { IS_SCHEDULER_INSTANCE } from "./lib/clusterInfo";
 import { bookingSlugAvailable, changeBookingSlug } from "./lib/bookingSlug";
 import { createBookingRequest, setPublicBookHandler, startBookingRequestSweeper } from "./lib/bookingRequests";
-import { createBookingPaymentToken, depositCentsFor, holdTimeLeft } from "./lib/bookingPaymentLinks";
+import { createBookingPaymentToken, depositCentsFor, depositFromRule, depositIsSet, holdTimeLeft } from "./lib/bookingPaymentLinks";
 
 const BLOOM_TEMPLATE_NAME = "Nail Salon — Bloom";
 /** The booking-link rules live in lib/bookingSlug.ts (format, reserved words, other businesses' current and old links). */
@@ -916,6 +919,27 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   };
 }
 
+/** The Online Check-In Line's view of the shop (lib/onlineLineService.ts): who is in, and how to tell the screens. */
+const onlineLineDeps: onlineLine.LineDeps = {
+  async workingBarbers(storeId) {
+    const e = await getTurnEligibility(storeId);
+    const turnTakers = new Set((await pool.query(`SELECT id FROM staff WHERE store_id = $1 AND takes_turns IS NOT FALSE
+        AND COALESCE(status, 'active') NOT IN ('removed', 'deactivated')`, [storeId])).rows.map((r: any) => Number(r.id)));
+    return (e.technicians as any[]).filter((t) => t.clockedIn && !t.paused && turnTakers.has(Number(t.id))).map((t) => ({ id: Number(t.id), name: String(t.name) }));
+  },
+  notify(storeId) {
+    try {
+      broadcastNotification({ type: "kiosk_checkin_created", storeId } as any);
+      broadcastNotification({ type: "queue_updated", storeId } as any);
+    } catch { /* screens also poll */ }
+  },
+};
+
+/** The old /q check-in's cancel key: only whoever checked in has it (HMAC of the entry's id). */
+function waitlistToken(id: number): string {
+  return crypto.createHmac("sha256", String(process.env.SESSION_SECRET ?? "certxa-waitlist")).update(`waitlist:${id}`).digest("hex").slice(0, 32);
+}
+
 async function assertTurnEligibleForWalkIn(storeId: number, staffId?: number | null, serviceId?: number | null) {
   if (!staffId) return;
   const eligibility = await getTurnEligibility(storeId, serviceId);
@@ -1478,6 +1502,8 @@ export async function registerRoutes(
   app.use(deviceHealthRouter);
   // Every 5 minutes: each salon's offline-mode score and problems (lib/offlineHealthRules.ts).
   startOfflineHealthJob();
+  // Every 30 seconds: the Online Check-In Line's texts and late rule (lib/onlineLineService.ts).
+  onlineLine.startOnlineLineJob(onlineLineDeps);
   // Support Home feed: admins write posts on /isadmin, support agents read them on /isTeam (routes/supportFeed.ts)
   app.use(supportFeedRouter);
 
@@ -1915,6 +1941,7 @@ export async function registerRoutes(
     if (req.path.startsWith("/auth/")) return next();
     if (req.path === "/solo/login") return next(); // Native app credential exchange
     if (req.path === "/solo/register") return next(); // Certxa Pro app sign-up
+    if (req.path === "/solo/phone/send-code" || req.path === "/solo/phone/verify") return next(); // its mobile number step
     if (req.path.startsWith("/store/by-subdomain")) return next(); // Allow public access to subdomain store
     if (req.path.startsWith("/public/")) return next(); // Allow public routes
     if (req.path.startsWith("/contractor-payouts/public/")) return next(); // Contractor onboarding — public token-gated routes
@@ -4312,6 +4339,18 @@ export async function registerRoutes(
   // Certxa Pro Plus: the app's one-time link into certxa.com/pro-plus, and buying Plus there (routes/soloPlus.ts).
   const { default: soloPlusRouter } = await import("./routes/soloPlus.js");
   app.use(soloPlusRouter);
+  // Certxa Pro text message credits: one tap with a card on file, else certxa.com/pro-credits (routes/soloCredits.ts).
+  const { default: soloCreditsRouter } = await import("./routes/soloCredits.js");
+  app.use(soloCreditsRouter);
+  // Payment links texted from the Certxa Pro app, paid on certxa.com/pay/<token> (routes/payLinks.ts).
+  const { default: payLinksRouter } = await import("./routes/payLinks.js");
+  app.use(payLinksRouter);
+  // Gift cards and prepaid packages sold on the Solo website (routes/siteShop.ts).
+  const { default: siteShopRouter } = await import("./routes/siteShop.js");
+  app.use(siteShopRouter);
+  // Business Phone for the Certxa Pro app: a number bought on Certxa's Twilio account, calls in the app (routes/businessPhone.ts).
+  const { default: businessPhoneRouter } = await import("./routes/businessPhone.js");
+  app.use(businessPhoneRouter);
 
   // Certxa for AI assistants: a public MCP server at /mcp (ChatGPT apps, Claude connectors) to find a salon,
   // check open times and book through the booking page's own rules (routes/mcp.ts, plans/ai-booking.md).
@@ -4327,6 +4366,9 @@ export async function registerRoutes(
   // The /manage assistant: looks things up and changes account and front desk settings after the owner confirms.
   const { default: ownerAssistantRouter } = await import("./routes/ownerAssistant.js");
   app.use(ownerAssistantRouter);
+  // Business AI in the Certxa Pro app (same engine, solo tools, its own conversation).
+  const { default: proAssistantRouter } = await import("./routes/proAssistant.js");
+  app.use(proAssistantRouter);
   // Solo plan: where the professional sees clients, and booking approval (plans/solo-work-places-and-approval.md).
   const { default: workPlacesRouter } = await import("./routes/workPlaces.js");
   app.use("/api/work-places", isAuthenticated, workPlacesRouter);
@@ -6573,7 +6615,7 @@ If you have any questions, please contact your administrator.
       if (input.status === "cancelled" && existingAppointment.status !== "cancelled") {
         const { rows: [w] } = await pool.query(
           `SELECT a.started_at, a.service_done_at, a.status, a.total_paid, a.ticket_number, a.staff_id, a.customer_id, a.date,
-                  l.category, st.name AS staff_name, sv.name AS service_name, COALESCE(a.service_price, sv.price) AS price, c.full_name AS client_name
+                  l.category, st.name AS staff_name, sv.name AS service_name, COALESCE(a.service_price, sv.price) AS price, COALESCE(c.full_name, a.customer_name) AS client_name
              FROM appointments a JOIN locations l ON l.id = a.store_id
              LEFT JOIN staff st ON st.id = a.staff_id LEFT JOIN services sv ON sv.id = a.service_id
              LEFT JOIN clients c ON c.id = a.customer_id
@@ -7413,7 +7455,7 @@ If you have any questions, please contact your administrator.
   /** Checked-in tickets from the last two days that nobody started (assigned or not) — still on the board at close. */
   async function findWaitingTickets(storeId: number) {
     const { rows } = await pool.query(
-      `SELECT a.id, a.ticket_number, c.full_name AS customer_name, st.name AS staff_name, s.name AS service_name, a.checked_in_at
+      `SELECT a.id, a.ticket_number, COALESCE(c.full_name, a.customer_name) AS customer_name, st.name AS staff_name, s.name AS service_name, a.checked_in_at
          FROM appointments a
          LEFT JOIN clients c ON c.id = a.customer_id
          LEFT JOIN staff st ON st.id = a.staff_id
@@ -7742,6 +7784,15 @@ If you have any questions, please contact your administrator.
         // Day Close ends the day for everyone: nobody stays clocked in overnight (whatever day they
         // clocked in on), in the same transaction, so a closed day never leaves a technician on the clock.
         await clockOutOpenRecords(session.storeId, { now, exec: tx });
+        // One open session per drawer: when another one is already open for this drawer (two older sessions
+        // left open side by side), it carries on and no new one is opened — otherwise each Day Close renews
+        // both and the duplicate never goes away (store 2, sessions 45/46 → 47/51, found 2026-11-03).
+        const [alreadyOpen] = await tx.select({ id: cashDrawerSessions.id }).from(cashDrawerSessions).where(and(
+          eq(cashDrawerSessions.storeId, session.storeId),
+          eq(cashDrawerSessions.status, "open"),
+          sessionDrawerId == null ? isNull(cashDrawerSessions.drawerId) : eq(cashDrawerSessions.drawerId, sessionDrawerId),
+        )).limit(1);
+        if (alreadyOpen) return { updated, newSession: null };
         const [newSession] = await tx.insert(cashDrawerSessions).values({
           storeId: session.storeId,
           drawerId: sessionDrawerId,
@@ -8869,7 +8920,7 @@ If you have any questions, please contact your administrator.
       // Public (a salon's own subdomain): no internal fields, no private street address (lib/publicStore.ts).
       const publicStore = publicStoreView(store);
       const hours = await storage.getBusinessHours(store.id);
-      return res.json({ ...publicStore, businessHours: hours });
+      return res.json({ ...publicStore, businessHours: hours, byLabel: store.bookingSlug ? (await salonFacts(store.bookingSlug))?.byLabel ?? null : null });
     } else {
       return res.status(404).json({ message: "Store not found for this subdomain" });
     }
@@ -8929,6 +8980,7 @@ If you have any questions, please contact your administrator.
 
       return res.json({
         ...publicStore, businessHours: hours, showPrices,
+        byLabel: (await salonFacts(req.params.slug))?.byLabel ?? null,
         googleRating, googleReviewCount,
         displayRating, displayReviewCount, reviewSource,
         // false: the salon switched its booking system off (lib/bookingSystem.ts) — no booking from this page.
@@ -9006,7 +9058,14 @@ If you have any questions, please contact your administrator.
           items: p.items.map((it) => ({ type: it.itemType, name: it.name })),
         }));
 
-      return res.json({ services: storeServices, categories, packages });
+      // Add-ons a client may choose, and which services each one goes with.
+      const publicAddons = (await storage.getAddons(store.id)).filter((x: any) => x.isActive !== false && !x.hiddenFromPublic);
+      const publicAddonIds = new Set(publicAddons.map((x) => Number(x.id)));
+      const serviceAddons = (await storage.getAllServiceAddonMappings())
+        .filter((x) => publicAddonIds.has(Number(x.addonId)) && visibleServiceIds.has(Number(x.serviceId)));
+      const addons = publicAddons.map((x) => ({ id: x.id, name: x.name, description: x.description, price: x.price, duration: x.duration, storeId: x.storeId }));
+
+      return res.json({ services: storeServices, categories, packages, addons, serviceAddons });
     } catch (error) {
       return res.status(500).json({ message: "Internal server error" });
     }
@@ -9188,6 +9247,11 @@ If you have any questions, please contact your administrator.
       to: dayEndLocal,
       storeId: store.id,
     });
+    // Time a professional blocked (personal time, a day off — Certxa Pro app): no booking inside it.
+    const dayBlocks = (await pool.query(
+      `SELECT staff_id, starts_at, ends_at FROM time_blocks WHERE store_id = $1 AND starts_at < $3 AND ends_at > $2`,
+      [store.id, dayStartLocal, dayEndLocal],
+    ).catch(() => ({ rows: [] as any[] }))).rows.map((b: any) => ({ staffId: b.staff_id != null ? Number(b.staff_id) : null, start: new Date(b.starts_at).getTime(), end: new Date(b.ends_at).getTime() }));
 
     let candidateStaff: typeof import("@shared/schema").staff.$inferSelect[];
     if (specificStaffId) {
@@ -9272,6 +9336,10 @@ If you have any questions, please contact your administrator.
               hasConflict = true;
               break;
             }
+          }
+          if (!hasConflict) {
+            const need = neededWindow(from, to, visitAt, travelMin);
+            hasConflict = dayBlocks.some((b) => (b.staffId == null || b.staffId === staffMember.id) && need.start.getTime() < b.end && need.end.getTime() > b.start);
           }
 
           // Check staff availability rules (days off and custom hours)
@@ -9538,15 +9606,20 @@ If you have any questions, please contact your administrator.
   // sees the travel fee. Rate-limited: every call asks the US Census geocoder.
   const houseCallCheckLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
     message: { message: "Too many address checks. Please wait a few minutes and try again." } });
+  // City and state for a ZIP code, so an address takes less typing (house calls, website and app).
+  app.get("/api/public/zip/:zip", rateLimit({ windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false }), async (req, res) => {
+    if (!/^\d{5}$/.test(String(req.params.zip))) return res.status(400).json({ message: "Enter a 5-digit ZIP code." });
+    const place = await placeOfZip(String(req.params.zip));
+    return place ? res.json(place) : res.status(404).json({ message: "ZIP code not found." });
+  });
+
   app.post("/api/public/store/:slug/house-call", houseCallCheckLimiter, async (req, res) => {
     try {
       const store = await storage.getStoreBySlug(String(req.params.slug));
       if (!store) return res.status(404).json({ message: "Store not found" });
       const check = await checkHouseCall(store.id, req.body?.address, { enforceRadius: true });
       if (!check.ok) return res.json({ ok: false, reason: check.reason, message: check.message });
-      // The address goes back without its map position: the page only needs to know it's in range.
-      const { lat: _lat, lng: _lng, ...address } = check.address;
-      return res.json({ ok: true, address, distanceMiles: check.distanceMiles, travelFee: check.travelFee });
+      return res.json({ ok: true, address: check.address, distanceMiles: check.distanceMiles, travelFee: check.travelFee });
     } catch (error) {
       console.error("[house-call check]", error);
       return res.status(500).json({ message: "We couldn't check that address. Please try again." });
@@ -9830,6 +9903,9 @@ If you have any questions, please contact your administrator.
         // A second service on the same visit. It is booked as its own appointment straight after the first,
         // with the same technician when they perform it. `duration` stays the FIRST service's own length.
         extraServiceId: z.number().int().positive().optional(),
+        // Where the client pays straight after this: the page's own card form, or the link page. Lets a business that
+        // asks for a card take the booking as a hold first (card on file used to need the card before the booking).
+        payStep: z.enum(["page", "link"]).optional(),
         // Payment policy fields (set when store requires card/deposit)
         paymentPolicy: z.enum(["none", "card_on_file", "deposit"]).optional().default("none"),
         paymentStatus: z.string().optional(),
@@ -9840,6 +9916,9 @@ If you have any questions, please contact your administrator.
         depositCollected: z.number().optional(),
         remainingBalance: z.number().optional(),
         cancellationPolicyAccepted: z.boolean().optional(),
+        // The text consent box on the booking form (Solo and Bloom designs); left out by the others.
+        smsConsent: z.boolean().optional(),
+        smsConsentText: z.string().max(600).optional(),
         // Redeeming a purchased marketplace deal voucher — already fully
         // paid, so this booking skips the store's normal deposit/card policy.
         voucherCode: z.string().optional(),
@@ -9887,6 +9966,16 @@ If you have any questions, please contact your administrator.
         }
       }
 
+      // Add-ons come from the page, so each must be this business's, on offer, and go with a service in the visit.
+      if (parsed.addonIds.length > 0 && !resolvedPackage) {
+        parsed.addonIds = [...new Set(parsed.addonIds)];
+        const valid = await pool.query(
+          `SELECT DISTINCT a.id FROM addons a JOIN service_addons sa ON sa.addon_id = a.id
+            WHERE a.store_id = $1 AND a.id = ANY($2::int[]) AND a.is_active IS NOT FALSE AND a.hidden_from_public IS NOT TRUE AND sa.service_id = ANY($3::int[])`,
+          [store.id, parsed.addonIds, [parsed.serviceId, parsed.extraServiceId].filter(Boolean)]);
+        if (valid.rowCount !== parsed.addonIds.length) return res.status(400).json({ message: "An add-on you chose is no longer available. Please choose again." });
+      }
+
       // Voucher validation — must belong to this store's deal, be for the
       // exact package being booked, and still be unredeemed/unbooked.
       let voucherRow: typeof dealVouchers.$inferSelect | null = null;
@@ -9913,6 +10002,13 @@ If you have any questions, please contact your administrator.
       };
 
       const e164CustomerPhone = toE164US(input.customerPhone);
+      // Kept as proof, whatever happens next (lib: sms_consents, migration 0305). Never blocks a booking.
+      if (typeof parsed.smsConsent === "boolean" && e164CustomerPhone) {
+        await pool.query(
+          `INSERT INTO sms_consents (store_id, phone_e164, consented, source, wording, ip) VALUES ($1, $2, $3, 'online_booking', $4, $5)`,
+          [store.id, e164CustomerPhone, parsed.smsConsent, parsed.smsConsentText ?? null, String(req.ip ?? "") || null],
+        ).catch((err) => console.warn("[sms-consent] not saved:", err?.message));
+      }
       if (!e164CustomerPhone) {
         return res.status(400).json({ message: "Phone number must be a valid 10-digit US number" });
       }
@@ -9940,6 +10036,7 @@ If you have any questions, please contact your administrator.
           bookingPaymentPolicy:       locations.bookingPaymentPolicy,
           depositType:                locations.depositType,
           depositValue:               locations.depositValue,
+          depositIncludeTravelFee:    locations.depositIncludeTravelFee,
           cancellationPolicyRequired: locations.cancellationPolicyRequired,
           cancellationPolicyText:     locations.cancellationPolicyText,
         })
@@ -9955,7 +10052,7 @@ If you have any questions, please contact your administrator.
       }
 
       // Determine effective policy (downgrade to 'none' if Stripe not connected)
-      const { verifyStripeIntentForBooking: _verifyIntent } = await import("./routes/bookingPayments.js");
+      const { verifyStripeIntentForBooking: _verifyIntent, rememberClientCard } = await import("./routes/bookingPayments.js");
       const stripeConnected = !!(
         process.env.STRIPE_SECRET_KEY &&
         (await pool.query(
@@ -9997,33 +10094,6 @@ If you have any questions, please contact your administrator.
         ? Math.round(resolvedPackage.price * 100)
         : Math.round((servicePrice + addonTotal) * 100);
 
-      // Compute expected deposit if policy requires it
-      let expectedDepositCents: number | undefined;
-      if (effectivePolicy === "deposit" && storePolicy?.depositValue) {
-        if (storePolicy.depositType === "percentage") {
-          expectedDepositCents = Math.round(serviceTotalCents * (Number(storePolicy.depositValue) / 100));
-        } else {
-          expectedDepositCents = Math.round(Number(storePolicy.depositValue) * 100);
-        }
-      }
-
-      // Enforce: reject bookings that lack required payment evidence
-      if (effectivePolicy === "card_on_file" && !input.stripeSetupIntentId) {
-        return res.status(402).json({
-          message: "This salon requires a payment method on file to confirm your booking.",
-        });
-      }
-      // A deposit not paid on the booking page (Bloom, Classic and Mobile can't take one) is paid by a link
-      // straight after: the booking is held, hidden from the calendar, until it is (lib/bookingPaymentLinks.ts,
-      // services/booking-hold-scheduler.ts). So is the deposit for a booking the professional approved
-      // (lib/bookingRequests.ts), with a day to pay instead of an hour.
-      const payLater = effectivePolicy === "deposit" && !input.stripePaymentIntentId;
-      const holdDepositCents = payLater ? (expectedDepositCents ?? null) : fromRequest ? await depositCentsFor(store.id, serviceTotalCents) : null;
-      const holdForDeposit = !!holdDepositCents && holdDepositCents > 0;
-
-      // Override client-declared policy with server's authoritative value
-      input.paymentPolicy = (payLater ? "none" : effectivePolicy) as "none" | "card_on_file" | "deposit";
-
       // Where the visit happens. A house call needs the business to offer them, a service that can be done at
       // the client's, and an address inside the travel radius; the travel fee comes with it.
       const visitAt = input.visitAt ?? ((store as any).ownPlace === "none" ? "client" : "place");
@@ -10037,6 +10107,31 @@ If you have any questions, please contact your administrator.
       } else if ((store as any).ownPlace === "none" || serviceOfferedAt === "client") {
         return res.status(400).json({ message: "This service is a house call: enter the address where you'd like it." });
       }
+
+      // What the visit costs and so what the deposit is, with the second service and the travel fee known.
+      const visitCents = serviceTotalCents + Math.round(Number(extraService?.price ?? 0) * 100);
+      const travelCents = Math.round((houseCall?.travelFee ?? 0) * 100);
+      const expectedDepositCents = effectivePolicy === "deposit" && storePolicy
+        ? depositFromRule({ type: storePolicy.depositType, value: storePolicy.depositValue, includeTravelFee: storePolicy.depositIncludeTravelFee }, visitCents, travelCents) || undefined
+        : undefined;
+
+      // Enforce: reject bookings that lack required payment evidence. A page that takes the card right after booking
+      // (payStep) holds the booking until it's added, as a deposit does.
+      const cardLater = effectivePolicy === "card_on_file" && !input.stripeSetupIntentId && !!parsed.payStep;
+      if (effectivePolicy === "card_on_file" && !input.stripeSetupIntentId && !cardLater) {
+        return res.status(402).json({
+          message: "This salon requires a payment method on file to confirm your booking.",
+        });
+      }
+      // A deposit not paid before booking is paid straight after, on the page or by a link: the booking is held,
+      // hidden from the calendar, until it is (lib/bookingPaymentLinks.ts, services/booking-hold-scheduler.ts). So is
+      // the deposit for a booking the professional approved (lib/bookingRequests.ts), with a day to pay instead of an hour.
+      const payLater = effectivePolicy === "deposit" && !input.stripePaymentIntentId;
+      const holdDepositCents = payLater ? (expectedDepositCents ?? null) : fromRequest ? await depositCentsFor(store.id, visitCents, travelCents) : null;
+      const holdForDeposit = cardLater || (!!holdDepositCents && holdDepositCents > 0);
+
+      // Override client-declared policy with server's authoritative value
+      input.paymentPolicy = (payLater || cardLater ? "none" : effectivePolicy) as "none" | "card_on_file" | "deposit";
 
       // Customer upsert — must happen before atomicCreateBooking (engine needs customerId)
       let customer = await storage.searchCustomerByPhone(e164CustomerPhone, store.id);
@@ -10121,6 +10216,15 @@ If you have any questions, please contact your administrator.
 
       // The request is saved, the client is texted that it was received and the professional's phone is told.
       if (asRequest) {
+        // The card on file comes with the request; a declined card stops it here (a deposit comes after approval).
+        if (input.stripeSetupIntentId && stripeConnected && storePolicy?.bookingPaymentPolicy === "card_on_file") {
+          try {
+            const card = await _verifyIntent({ storeId: store.id, paymentPolicy: "card_on_file", stripeSetupIntentId: input.stripeSetupIntentId, stripeCustomerId: input.stripeCustomerId });
+            await rememberClientCard(store.id, customer.id, card);
+          } catch (cardErr: any) {
+            return res.status(402).json({ message: cardErr?.message ?? "That card could not be saved. Please try another card." });
+          }
+        }
         const addonRows = input.addonIds.length ? await Promise.all(input.addonIds.map((id) => storage.getAddon(id))) : [];
         const visitMinutes = input.duration + addonRows.reduce((sum, a) => sum + (Number(a?.duration) || 0), 0) + (Number(extraService?.duration) || 0);
         const created = await createBookingRequest({
@@ -10272,7 +10376,7 @@ If you have any questions, please contact your administrator.
             stripeCustomerId: input.stripeCustomerId,
             stripePaymentMethodId: input.stripePaymentMethodId,
             expectedDepositCents,          // authoritative server-computed deposit
-            authorizedServiceTotalCents: serviceTotalCents, // for remainingBalance — never from client
+            authorizedServiceTotalCents: visitCents + travelCents, // for remainingBalance — never from client
           });
 
           await pool.query(
@@ -10304,6 +10408,7 @@ If you have any questions, please contact your administrator.
               `UPDATE clients SET stripe_customer_id = $1 WHERE id = $2`,
               [verified.stripeCustomerId, customer.id]
             );
+            if (verified.paymentStatus === "card_saved") await rememberClientCard(store.id, customer.id, verified);
           }
         } catch (paymentErr: any) {
           // Roll back the created appointment so the slot is freed
@@ -10381,17 +10486,18 @@ If you have any questions, please contact your administrator.
       if (holdForDeposit) {
         const tokenRow = await createBookingPaymentToken({
           storeId: store.id, appointmentId, customerId: customer.id, customerPhone: e164CustomerPhone,
-          requirement: "deposit", depositAmountCents: holdDepositCents!, holdMinutes: fromRequest ? 24 * 60 : 60,
+          requirement: cardLater ? "card_on_file" : "deposit", depositAmountCents: cardLater ? null : holdDepositCents!, holdMinutes: fromRequest ? 24 * 60 : 60,
         });
         const paymentUrl = `${process.env.APP_URL ?? "https://certxa.com"}/complete-booking/${tokenRow.token}`;
         const when = formatInTimeZone(new Date(input.date), store.timezone ?? "UTC", "EEE, MMM d 'at' h:mm a");
         const first = String(customer.name || input.customerName || "").trim().split(/\s+/)[0] || "there";
-        void sendSms(store.id, e164CustomerPhone,
-          `Hi ${first}, your ${serviceRecord?.name ?? "appointment"} with ${store.name} on ${when} is held for you. To confirm it, pay the $${(holdDepositCents! / 100).toFixed(2)} deposit within ${holdTimeLeft(tokenRow.expiresAt, "next")}: ${paymentUrl}`,
+        // On the page, the client is paying now: the text waits for the reminder in case they leave (booking-hold-scheduler).
+        if (parsed.payStep !== "page") void sendSms(store.id, e164CustomerPhone,
+          `Hi ${first}, your ${serviceRecord?.name ?? "appointment"} with ${store.name} on ${when} is held for you. To confirm it, ${cardLater ? "add a card" : `pay the $${(holdDepositCents! / 100).toFixed(2)} deposit`} within ${holdTimeLeft(tokenRow.expiresAt, "next")}: ${paymentUrl}`,
           "booking_payment_required", appointmentId, customer.id, { skipCreditDeduction: true, smsSource: "platform" }).catch(() => undefined);
         return res.status(201).json({
           ...(fullAppointment ?? { id: appointmentId }), ...(extraAppointment ? { extraAppointment } : {}),
-          depositHold: { amountCents: holdDepositCents, paymentUrl, expiresAt: tokenRow.expiresAt.toISOString() },
+          depositHold: { amountCents: holdDepositCents, paymentUrl, expiresAt: tokenRow.expiresAt.toISOString(), token: tokenRow.token, requirement: cardLater ? "card_on_file" : "deposit" },
         });
       }
       if (fullAppointment) {
@@ -11170,7 +11276,10 @@ If you have any questions, please contact your administrator.
 
       // sendSms handles all deduction internally (allowance → wallet → fail)
       const e164Phone = phone.startsWith("+") ? phone : `+${phone}`;
-      const result = await sendSms(storeId, e164Phone, body, "two_way_reply");
+      // A Plus pro texts from the shared Plus number, the number their clients call and text (lib/plusLine.ts).
+      const { isPlusStore, plusNumber } = await import("./lib/plusLine");
+      const result = await sendSms(storeId, e164Phone, body, "two_way_reply", undefined, undefined,
+        (await isPlusStore(storeId)) ? { fromNumber: plusNumber() } : undefined);
 
       if (!result.success && !result.skipped) {
         return res.status(500).json({ message: result.error || "Failed to send SMS" });
@@ -11259,7 +11368,10 @@ If you have any questions, please contact your administrator.
 
       // sendSms handles all deduction internally (allowance → wallet → fail)
       const e164Phone = toE164US(phone) ?? (phone.startsWith("+") ? phone : `+${phone}`);
-      const result = await sendSms(storeId, e164Phone, body, "two_way_reply");
+      // A Plus pro texts from the shared Plus number, the number their clients call and text (lib/plusLine.ts).
+      const { isPlusStore, plusNumber } = await import("./lib/plusLine");
+      const result = await sendSms(storeId, e164Phone, body, "two_way_reply", undefined, undefined,
+        (await isPlusStore(storeId)) ? { fromNumber: plusNumber() } : undefined);
       if (!result.success && !result.skipped) {
         return res.status(500).json({ message: result.error || "Failed to send SMS" });
       }
@@ -11456,6 +11568,72 @@ If you have any questions, please contact your administrator.
     }
   });
 
+  // The booking website's gallery (Bloom design, "Client Gallery"): photos the business put on it (wb_gallery_photos —
+  // Certxa Pro's Portfolio, or a client photo shown on the website). Before 2026-11-03 this endpoint didn't exist, so no
+  // site ever showed a gallery.
+  app.get("/api/public/store/:slug/gallery", async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(String(req.params.slug));
+      if (!store) return res.status(404).json({ message: "Not found" });
+      const r = await pool.query(`SELECT image_url, caption, service_id FROM wb_gallery_photos WHERE store_id=$1 AND show_on_website ORDER BY sort_order, created_at DESC LIMIT 60`, [store.id]);
+      return res.json(r.rows);
+    } catch (err) {
+      console.error("[public gallery]", err);
+      return res.status(500).json({ message: "Could not load the gallery" });
+    }
+  });
+
+  // === ONLINE CHECK-IN LINE (barbershops, haircut studios; lib/onlineLineService.ts, plans/online-checkin-line.md) ===
+  // One line with the kiosk and /barber: a phone check-in is a kiosk_checkins row. A client's own page is reached only by
+  // the check-in's secret token.
+  // The AI assistants' tool (routes/mcp.ts) calls in from this server; its own limit applies there, and one phone holds one spot.
+  const lineJoinLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
+    skip: (req) => req.get("X-Certxa-Source") === "mcp" && ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(String(req.socket?.remoteAddress ?? "")),
+    message: { error: "Too many check-ins from here. Please try again in a few minutes." } });
+  const lineReadLimiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
+  const lineSendError = (res: any, err: any, what: string) => {
+    if (err instanceof onlineLine.LineError) return res.status(err.status).json({ error: err.message });
+    console.error(`[online-line] ${what}`, err);
+    return res.status(500).json({ error: "Something went wrong. Please try again." });
+  };
+  app.get("/api/public/line/:slug", lineReadLimiter, async (req, res) => {
+    try {
+      const store = await onlineLine.lineStoreBySlug(String(req.params.slug));
+      if (!store || !offersOnlineLine(store.category)) return res.status(404).json({ error: "Not found" });
+      return res.json(onlineLine.publicLine(await onlineLine.lineState(store, onlineLineDeps)));
+    } catch (err) { return lineSendError(res, err, "line"); }
+  });
+  app.post("/api/public/line/:slug/join", lineJoinLimiter, async (req, res) => {
+    try {
+      const store = await onlineLine.lineStoreBySlug(String(req.params.slug));
+      if (!store || !offersOnlineLine(store.category)) return res.status(404).json({ error: "Not found" });
+      const body = z.object({
+        names: z.array(z.string().max(60)).min(1).max(4),
+        phone: z.string().max(30),
+        preferredStaffId: z.number().int().positive().nullable().optional(),
+      }).safeParse(req.body);
+      if (!body.success) return res.status(400).json({ error: "Please enter your name and mobile number." });
+      return res.json(await onlineLine.joinLine(store, onlineLineDeps, body.data));
+    } catch (err) { return lineSendError(res, err, "join"); }
+  });
+  app.get("/api/public/line/spot/:token", lineReadLimiter, async (req, res) => {
+    try {
+      const spot = await onlineLine.spotByToken(String(req.params.token), onlineLineDeps);
+      if (!spot) return res.status(404).json({ error: "This spot wasn't found." });
+      return res.json(spot);
+    } catch (err) { return lineSendError(res, err, "spot"); }
+  });
+  app.post("/api/public/line/spot/:token/here", lineReadLimiter, async (req, res) => {
+    try {
+      return res.json({ ok: await onlineLine.markHere(String(req.params.token), onlineLineDeps) });
+    } catch (err) { return lineSendError(res, err, "here"); }
+  });
+  app.post("/api/public/line/spot/:token/leave", lineReadLimiter, async (req, res) => {
+    try {
+      return res.json({ ok: await onlineLine.leaveLine(String(req.params.token), onlineLineDeps) });
+    } catch (err) { return lineSendError(res, err, "leave"); }
+  });
+
   // === PUBLIC QUEUE ===
 
   app.get("/api/public/queue/:slug", async (req, res) => {
@@ -11583,7 +11761,7 @@ If you have any questions, please contact your administrator.
       const estimatedWaitMinutes = Math.max(0, (position - 1) * avgServiceTime);
 
       broadcastNotification({ type: "queue_updated", storeId: store.id });
-      return res.json({ id: entry.id, position, estimatedWaitMinutes, storeName: store.name });
+      return res.json({ id: entry.id, token: waitlistToken(entry.id), position, estimatedWaitMinutes, storeName: store.name });
     } catch (err) {
       console.error(err);
       return res.status(500).json({ error: "Failed to check in" });
@@ -11621,9 +11799,16 @@ If you have any questions, please contact your administrator.
   });
 
   // Allow unauthenticated status update for self-cancel
+  // Only the person who checked in can cancel: the request carries the signed token their check-in returned (a bare
+  // number let anyone cancel anyone, 2026-11-03).
   app.put("/api/public/queue/cancel/:id", async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
+      const given = String(req.body?.token ?? req.query.token ?? "");
+      const want = waitlistToken(id);
+      if (!Number.isSafeInteger(id) || given.length !== want.length || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want))) {
+        return res.status(403).json({ error: "This check-in can't be cancelled from here." });
+      }
       const [existing] = await db.select({ storeId: waitlist.storeId }).from(waitlist).where(eq(waitlist.id, id)).limit(1);
       await db.update(waitlist).set({ status: "cancelled" }).where(eq(waitlist.id, id));
       if (existing?.storeId) broadcastNotification({ type: "queue_updated", storeId: existing.storeId });
@@ -11819,8 +12004,13 @@ If you have any questions, please contact your administrator.
         return;
       }
 
-      // 1b — SMS credits must be available
-      if (campaign.channel === "sms" || campaign.channel === "both") {
+      // 1b — SMS credits must be available. A Solo (Certxa Pro) account pays per text with its own credits.
+      const { soloPlanCode } = await import("./lib/soloSmsCredits");
+      const soloCode = await soloPlanCode(storeId);
+      if ((campaign.channel === "sms" || campaign.channel === "both") && soloCode) {
+        const credits = Number((await pool.query(`SELECT sms_credits FROM locations WHERE id = $1`, [storeId])).rows[0]?.sms_credits ?? 0);
+        if (credits <= 0) { await rejectCampaign("You have no text message credits left. Buy more in More › Credit balance."); return; }
+      } else if (campaign.channel === "sms" || campaign.channel === "both") {
         const { resolveSmsAccess } = await import("./lib/featureAccess");
         const smsGate = await resolveSmsAccess(storeId);
         if (!smsGate.allowed) {
@@ -12025,7 +12215,8 @@ or
 
       const baseQuery = db.select({
         name: clients.fullName,
-        phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true LIMIT 1)`,
+        // No number for a client who opted out of marketing texts (2026-11-03: campaign texts went to everyone).
+        phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND is_primary = true AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.sms_marketing_opt_in = false) LIMIT 1)`,
         email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true AND ce.marketing_opt_in IS NOT FALSE AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false) LIMIT 1)`, // none for a client who opted out of marketing e-mail
       }).from(clients).where(and(eq(clients.storeId, storeId), isNull(clients.archivedAt)));
 
@@ -12036,7 +12227,8 @@ or
         const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
         targetCustomers = await db.select({
           name: clients.fullName,
-          phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id ORDER BY is_primary DESC, id ASC LIMIT 1)`,
+          // No number for a client who opted out of marketing texts (2026-11-03: campaign texts went to everyone).
+        phone: sql<string>`(SELECT display_phone FROM client_phones WHERE client_id = clients.id AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.sms_marketing_opt_in = false) ORDER BY is_primary DESC, id ASC LIMIT 1)`,
           email: sql<string>`(SELECT ce.email_address FROM client_emails ce WHERE ce.client_id = clients.id AND ce.is_primary = true AND ce.marketing_opt_in IS NOT FALSE AND NOT EXISTS (SELECT 1 FROM client_marketing_preferences mp WHERE mp.client_id = clients.id AND mp.email_marketing_opt_in = false) LIMIT 1)`, // none for a client who opted out of marketing e-mail
         }).from(clients)
           .where(
@@ -12063,7 +12255,9 @@ or
 
       // Recheck SMS credits for campaign loop (cap to allowance if plan-funded)
       let smsCreditsRemaining = Infinity;
-      if (campaign.channel === "sms" || campaign.channel === "both") {
+      if ((campaign.channel === "sms" || campaign.channel === "both") && soloCode) {
+        smsCreditsRemaining = Number((await pool.query(`SELECT sms_credits FROM locations WHERE id = $1`, [storeId])).rows[0]?.sms_credits ?? 0);
+      } else if (campaign.channel === "sms" || campaign.channel === "both") {
         const { resolveSmsAccess } = await import("./lib/featureAccess");
         const smsGate = await resolveSmsAccess(storeId);
         if (smsGate.source === "plan") {
@@ -12075,7 +12269,7 @@ or
       const { sendEmail } = await import("./mail");
       const store = await storage.getStore(storeId);
       const bookingLink = store?.bookingSlug
-        ? `${process.env.REPLIT_DEV_DOMAIN || ""}/book/${store.bookingSlug}`
+        ? `${(process.env.APP_URL || "https://certxa.com").replace(/\/$/, "")}/book/${store.bookingSlug}`
         : "";
 
       let sentCount = 0;
@@ -16871,6 +17065,34 @@ or
     }
   });
 
+  // App Announcements page: a short push message to every phone with the Certxa Pro app, at a set date and time.
+  app.get("/api/admin/app-announcements", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const { listAnnouncements } = await import("./lib/appAnnouncements");
+    return res.json(await listAnnouncements());
+  });
+  app.post("/api/admin/app-announcements", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const { createAnnouncement, AnnouncementError } = await import("./lib/appAnnouncements");
+    try {
+      return res.status(201).json(await createAnnouncement(req.body ?? {}, String((req.session as any)?.userId ?? "") || null));
+    } catch (err: any) {
+      if (err instanceof AnnouncementError) return res.status(err.status).json({ message: err.message });
+      console.error("[app-announcements] save failed:", err?.message);
+      return res.status(500).json({ message: "Could not save the announcement" });
+    }
+  });
+  app.delete("/api/admin/app-announcements/:id", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    const { cancelAnnouncement, AnnouncementError } = await import("./lib/appAnnouncements");
+    try {
+      return res.json(await cancelAnnouncement(Number(req.params.id) || 0));
+    } catch (err: any) {
+      if (err instanceof AnnouncementError) return res.status(err.status).json({ message: err.message });
+      return res.status(500).json({ message: "Could not cancel the announcement" });
+    }
+  });
+
   // Hardware Prices page: the price of each product on certxa.com/products, the cart and checkout.
   app.get("/api/admin/shop/prices", async (req, res) => {
     if (!(await requireAdmin(req, res))) return;
@@ -17238,6 +17460,7 @@ or
       const settings = {
         trialPeriodDays,
         soloFreeSmsCredits: await soloFreeCreditsSetting(),
+        soloCreditPacks: await (await import("./lib/soloSmsCredits")).soloCreditPacks(),
         mailgun: {
           apiKey: process.env.MAILGUN_API_KEY || '',
           domain: process.env.MAILGUN_DOMAIN || '',
@@ -17272,6 +17495,27 @@ or
       return res.json({ soloFreeSmsCredits: n });
     } catch (error) {
       console.error("[admin/solo-sms-settings]", error);
+      return res.status(500).json({ message: "Failed to save" });
+    }
+  });
+
+  // The text message credit packages the Certxa Pro app sells (owner, 2026-11-03): its own save, like the free credits.
+  app.put("/api/admin/solo-credit-packs", async (req, res) => {
+    if (!(await requireAdmin(req, res))) return;
+    try {
+      const { cleanCreditPacks, MAX_CREDIT_PACKS } = await import("./lib/soloSmsCredits");
+      const raw = Array.isArray(req.body?.packs) ? req.body.packs : null;
+      if (!raw || raw.length === 0 || raw.length > MAX_CREDIT_PACKS) return res.status(400).json({ message: `Set 1 to ${MAX_CREDIT_PACKS} packages` });
+      // A package keeps its id while it is edited; a new one gets one here.
+      const withIds = raw.map((p: any) => ({ ...p, id: typeof p?.id === "string" && p.id ? p.id : `p${crypto.randomBytes(4).toString("hex")}` }));
+      const packs = cleanCreditPacks(withIds);
+      if (packs.length !== raw.length) return res.status(400).json({ message: "Each package needs 1 to 100,000 credits and a price from $0.50 to $1,000" });
+      if (new Set(packs.map((p) => p.id)).size !== packs.length) return res.status(400).json({ message: "Two packages share an id" });
+      const updated = await pool.query(`UPDATE platform_settings SET solo_credit_packs = $1::jsonb RETURNING id`, [JSON.stringify(packs)]);
+      if (!updated.rows[0]) await pool.query(`INSERT INTO platform_settings (solo_credit_packs) VALUES ($1::jsonb)`, [JSON.stringify(packs)]);
+      return res.json({ packs });
+    } catch (error) {
+      console.error("[admin/solo-credit-packs]", error);
       return res.status(500).json({ message: "Failed to save" });
     }
   });
@@ -19670,15 +19914,24 @@ or
       if (!body.success) return res.status(400).json({ message: "Invalid ticket" });
       const userId = (req.session as any)?.userId;
       const { extraServiceIds = [], ...ticket } = body.data;
-      const result = await nailTickets.createNailTicketGroup(nailDeps, {
-        ...ticket,
-        extraServiceIds,
-        storeId,
-        idempotencyKey: typeof req.get("x-idempotency-key") === "string" ? String(req.get("x-idempotency-key")).trim() : null,
-        // /nail never starts a ticket on its own; the barbershop screen still does.
-        startOnAssign: req.originalUrl?.startsWith("/api/barber/") === true,
-        bookedByUserId: Number.isFinite(Number(userId)) ? Number(userId) : null,
-      });
+      // A barbershop: one client per barber at a time (the client this ticket is for — their check-in — is not a second one).
+      // Held while checking and giving (nailTickets.lockBarber), so two tablets can't both pass the check.
+      const oneClient = req.originalUrl?.startsWith("/api/barber/") && ticket.staffId != null ? ticket.staffId : null;
+      const unlockBarber = await nailTickets.lockBarber(oneClient);
+      let result: Awaited<ReturnType<typeof nailTickets.createNailTicketGroup>>;
+      try {
+        const busy = oneClient != null ? await nailTickets.oneClientRefusal(storeId, oneClient, { checkinId: ticket.checkinId ?? null }) : null;
+        if (busy) return res.status(409).json({ message: busy, code: "BARBER_BUSY" });
+        result = await nailTickets.createNailTicketGroup(nailDeps, {
+          ...ticket,
+          extraServiceIds,
+          storeId,
+          idempotencyKey: typeof req.get("x-idempotency-key") === "string" ? String(req.get("x-idempotency-key")).trim() : null,
+          // /nail never starts a ticket on its own; the barbershop screen still does.
+          startOnAssign: req.originalUrl?.startsWith("/api/barber/") === true,
+          bookedByUserId: Number.isFinite(Number(userId)) ? Number(userId) : null,
+        });
+      } finally { await unlockBarber(); }
       if (!result.ok) return res.status(result.status).json({ message: result.message, technicians: result.technicians });
       return res.status(201).json(result.data);
     } catch (err) {
@@ -19878,7 +20131,14 @@ or
       const appointmentId = Number(req.params.id);
       const staffId = req.body?.staffId == null ? null : Number(req.body.staffId);
       if (!Number.isSafeInteger(appointmentId) || (staffId != null && !Number.isSafeInteger(staffId))) return res.status(400).json({ message: "Invalid ticket" });
-      const r = await nailTickets.saveRingingUpTicket(nailDeps, { storeId, appointmentId, staffId });
+      const oneClient = staffId != null && req.originalUrl?.startsWith("/api/barber/") ? staffId : null;
+      const unlockBarber = await nailTickets.lockBarber(oneClient);
+      let r: Awaited<ReturnType<typeof nailTickets.saveRingingUpTicket>>;
+      try {
+        const busy = oneClient != null ? await nailTickets.oneClientRefusal(storeId, oneClient, { appointmentId }) : null;
+        if (busy) return res.status(409).json({ message: busy, code: "BARBER_BUSY" });
+        r = await nailTickets.saveRingingUpTicket(nailDeps, { storeId, appointmentId, staffId });
+      } finally { await unlockBarber(); }
       if (!r.ok) return res.status(r.status).json({ message: r.message });
       broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["staff", "services"] });
       broadcastTurnEligibilityChanged(storeId);
@@ -20027,10 +20287,29 @@ or
       const body = z.object({ staffId: z.number().int(), expectedStaffId: z.number().int().nullable().optional(), reason: z.string().max(200).nullable().optional() }).safeParse(req.body);
       const appointmentId = Number(req.params.id);
       if (!body.success || !Number.isFinite(appointmentId)) return res.status(400).json({ message: "Invalid request" });
-      const result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId, expectedStaffId: body.data.expectedStaffId, reason: body.data.reason });
+      // A barbershop: one client per barber at a time.
+      const oneClient = req.originalUrl?.startsWith("/api/barber/") ? body.data.staffId : null;
+      const unlockBarber = await nailTickets.lockBarber(oneClient);
+      let result: Awaited<ReturnType<typeof nailTickets.reassignNailTicket>>;
+      try {
+        const busy = oneClient != null ? await nailTickets.oneClientRefusal(storeId, oneClient, { appointmentId }) : null;
+        if (busy) return res.status(409).json({ message: busy, code: "BARBER_BUSY" });
+        result = await nailTickets.reassignNailTicket(nailDeps, { storeId, appointmentId, staffId: body.data.staffId, expectedStaffId: body.data.expectedStaffId, reason: body.data.reason });
+      } finally { await unlockBarber(); }
       if (!result.ok) return res.status(result.status).json({ message: result.message, code: result.code });
       // Given a technician from another station while still being rung up: it counts as saved.
       await pool.query(`UPDATE appointments SET ringing_up_since = NULL WHERE id = $1 AND store_id = $2 AND ringing_up_since IS NOT NULL`, [appointmentId, storeId]);
+      // A barbershop's ticket starts as soon as it has its barber (owner, 2026-11-02) — when that barber has nobody
+      // else in the chair; otherwise it waits with them, as it does now. /nail keeps START.
+      if (req.originalUrl?.startsWith("/api/barber/") && result.data.status === "confirmed") {
+        const busy = await pool.query(
+          `SELECT 1 FROM appointments WHERE store_id = $1 AND staff_id = $2 AND id <> $3 AND status = 'started' AND service_done_at IS NULL LIMIT 1`,
+          [storeId, result.data.staffId, appointmentId]);
+        if (!busy.rowCount && await nailTickets.startClaimedTicketNow(storeId, appointmentId)) {
+          result.data.status = "started";
+          broadcastSyncEvent({ type: "booking_updated", storeId, appointmentId, changes: ["status"] });
+        }
+      }
       return res.json(result.data);
     } catch (err) {
       console.error("[nail/tickets reassign]", err);
@@ -20074,7 +20353,7 @@ or
                 justAssigned = { clientName: again.data.activeMarker.clientName, ticketNumber: m?.ticket_number ?? null };
               } else if (again.data.activeTicketId != null) {
                 const t = (await pool.query(
-                  `SELECT a.ticket_number, NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), '') AS name
+                  `SELECT a.ticket_number, COALESCE(NULLIF(TRIM(CONCAT(c.first_name, ' ', c.last_name)), ''), a.customer_name) AS name
                      FROM appointments a LEFT JOIN clients c ON c.id = a.customer_id WHERE a.id = $1 AND a.store_id = $2`,
                   [again.data.activeTicketId, storeId],
                 )).rows[0];
@@ -20226,6 +20505,117 @@ or
     }
   });
 
+  // The front desk's lock-screen keypad from the owner's Settings › POS Stations (owner, 2026-11-03): shown, or hidden
+  // (staff scan their printed ID badge). Nail salons and barbershops — the same setting /nail and /barber use.
+  app.get("/api/front-desk/keypad", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await hubStoreId(req, res);
+      if (!storeId) return;
+      const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
+      return res.json({ keypadVisible: nailScreenSettings(safeParsePreferences(row?.preferences as string | undefined)).keypadVisible });
+    } catch (err) {
+      console.error("[front-desk/keypad get]", err);
+      return res.status(500).json({ message: "Could not load the keypad setting" });
+    }
+  });
+  app.put("/api/front-desk/keypad", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await hubStoreId(req, res);
+      if (!storeId) return;
+      if (typeof req.body?.keypadVisible !== "boolean") return res.status(400).json({ message: "keypadVisible must be true or false" });
+      const prefs = await mutateStorePreferences(storeId, (current) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), keypadVisible: req.body.keypadVisible } }));
+      // The salon's tablets refresh the setting straight away.
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/screen-settings" } as any);
+      return res.json({ keypadVisible: nailScreenSettings(prefs).keypadVisible });
+    } catch (err) {
+      console.error("[front-desk/keypad put]", err);
+      return res.status(500).json({ message: "Could not save the keypad setting" });
+    }
+  });
+
+  // ── Win-back texts (lib/winBack.ts): on/off and after how many days, and how many clients are due now ──
+  app.get("/api/win-back/settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const { loadWinBackSettings, winBackCandidates } = await import("./lib/winBack");
+      const settings = await loadWinBackSettings(storeId);
+      return res.json({ ...settings, dueNow: (await winBackCandidates(storeId, settings.afterDays)).length });
+    } catch (err) {
+      console.error("[win-back settings get]", err);
+      return res.status(500).json({ message: "Could not load win-back texts" });
+    }
+  });
+  app.put("/api/win-back/settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await resolveSessionStoreId(req);
+      if (!storeId) return res.status(400).json({ message: "No store selected" });
+      const { WIN_BACK_DAYS, loadWinBackSettings } = await import("./lib/winBack");
+      const body = z.object({ enabled: z.boolean().optional(), afterDays: z.number().int().refine((d) => (WIN_BACK_DAYS as readonly number[]).includes(d)).optional() }).strict().safeParse(req.body ?? {});
+      if (!body.success) return res.status(400).json({ message: "Invalid settings" });
+      await mutateStorePreferences(storeId, (current) => ({ ...current, winBack: { ...(current.winBack ?? {}), ...body.data } }));
+      return res.json(await loadWinBackSettings(storeId));
+    } catch (err) {
+      console.error("[win-back settings put]", err);
+      return res.status(500).json({ message: "Could not save win-back texts" });
+    }
+  });
+
+  // ── Online Check-In Line settings (Settings › Online Check-In, and Pause on /barber's Manager screen) ──
+  // Barbershops and haircut studios only (lib/onlineLine.ts). Stored in store_settings.preferences.onlineLine.
+  const lineStoreId = async (req: any, res: any): Promise<number | null> => {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) { res.status(400).json({ message: "No store selected" }); return null; }
+    const store: any = await storage.getStore(storeId);
+    if (!store || !offersOnlineLine(store.category)) { res.status(404).json({ message: "Online check-in is for barbershops and haircut studios." }); return null; }
+    return storeId;
+  };
+  app.get("/api/online-line/settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await lineStoreId(req, res);
+      if (!storeId) return;
+      const store: any = await storage.getStore(storeId);
+      return res.json({ settings: await onlineLine.loadLineSettings(storeId), link: `${(process.env.APP_URL ?? "https://certxa.com").replace(/\/$/, "")}/q/${store.bookingSlug}` });
+    } catch (err) {
+      console.error("[online-line settings get]", err);
+      return res.status(500).json({ message: "Could not load the online check-in settings" });
+    }
+  });
+  app.put("/api/online-line/settings", isAuthenticated, async (req, res) => {
+    try {
+      const storeId = await lineStoreId(req, res);
+      if (!storeId) return;
+      const body = z.object({
+        enabled: z.boolean().optional(),
+        closesBeforeMin: z.number().int().min(0).max(240).optional(),
+        maxLine: z.number().int().min(1).max(200).optional(),
+        leadMin: z.number().int().min(5).max(120).optional(),
+        lateHoldMin: z.number().int().min(0).max(60).optional(),
+        lateMoveBack: z.boolean().optional(),
+        barberChoice: z.boolean().optional(),
+        avgMinutes: z.number().int().min(5).max(180).optional(),
+        // Pause from the front desk: a reason and how long (minutes; null = until switched back on). null = open again.
+        paused: z.object({ reason: z.string().max(120).default(""), minutes: z.number().int().min(5).max(24 * 60).nullable().default(null) }).nullable().optional(),
+      }).strict().safeParse(req.body ?? {});
+      if (!body.success) return res.status(400).json({ message: "Invalid settings" });
+      const { paused, ...rest } = body.data;
+      await mutateStorePreferences(storeId, (current) => {
+        const was = current.onlineLine ?? {};
+        const next: Record<string, unknown> = { ...was, ...rest };
+        if (paused !== undefined) {
+          next.paused = paused == null ? null : { reason: paused.reason.trim(), until: paused.minutes == null ? null : new Date(Date.now() + paused.minutes * 60_000).toISOString() };
+        }
+        return { ...current, onlineLine: next };
+      });
+      onlineLineDeps.notify(storeId);
+      broadcastNotification({ type: "settings_changed", storeId, scope: "/api/online-line/settings" } as any);
+      return res.json({ settings: await onlineLine.loadLineSettings(storeId) });
+    } catch (err) {
+      console.error("[online-line settings put]", err);
+      return res.status(500).json({ message: "Could not save the online check-in settings" });
+    }
+  });
+
   // POST /api/nail/tickets/:id/text-ready — tell a waiting client by text that their technician is ready
   // ("Hi Maria, Amy is ready for you at Luxury Nails."). Sent when staff press it, never on its own: a text
   // the moment a ticket is assigned would reach clients already sitting in the salon. Once per ticket per
@@ -20238,7 +20628,7 @@ or
       const appointmentId = Number(req.params.id);
       if (!Number.isInteger(appointmentId)) return res.status(400).json({ message: "Invalid ticket" });
       const { rows } = await pool.query(
-        `SELECT a.status, c.full_name AS client_name, s.name AS staff_name, l.name AS store_name,
+        `SELECT a.status, COALESCE(c.full_name, a.customer_name) AS client_name, s.name AS staff_name, l.name AS store_name,
                 (SELECT COALESCE(p.phone_number_e164, p.display_phone) FROM client_phones p WHERE p.client_id = c.id ORDER BY p.is_primary DESC, p.id LIMIT 1) AS phone
            FROM appointments a JOIN locations l ON l.id = a.store_id
            LEFT JOIN clients c ON c.id = a.customer_id LEFT JOIN staff s ON s.id = a.staff_id
@@ -20983,10 +21373,21 @@ or
       if (!barberOnly(req, res)) return;
       const storeId = await nailStoreId(req, res);
       if (!storeId) return;
-      const body = z.object({ staffId: z.number().int().positive() }).safeParse(req.body);
+      // takenAt: a client taken on a tablet while offline, sent later — when it really happened there.
+      const body = z.object({ staffId: z.number().int().positive(), takenAt: z.string().datetime({ offset: true }).optional() }).safeParse(req.body);
       const markerId = Number(req.params.id);
       if (!body.success || !Number.isSafeInteger(markerId) || markerId <= 0) return res.status(400).json({ message: "Invalid request" });
-      const result = await nailTickets.assignMarkerToBarber({ storeId, markerId, staffId: body.data.staffId });
+      // One client per barber at a time.
+      const unlockBarber = await nailTickets.lockBarber(body.data.staffId);
+      let result: Awaited<ReturnType<typeof nailTickets.assignMarkerToBarber>>;
+      try {
+        const busy = await nailTickets.oneClientRefusal(storeId, body.data.staffId, { checkinId: markerId });
+        if (busy) return res.status(409).json({ message: busy, code: "BARBER_BUSY" });
+        // Only a believable moment: in the last 12 hours, not ahead of the server's clock by more than a minute.
+        const at = body.data.takenAt ? new Date(body.data.takenAt) : null;
+        const takenAt = at && at.getTime() <= Date.now() + 60_000 && Date.now() - at.getTime() < 12 * 3_600_000 ? new Date(Math.min(at.getTime(), Date.now())) : null;
+        result = await nailTickets.assignMarkerToBarber({ storeId, markerId, staffId: body.data.staffId, takenAt });
+      } finally { await unlockBarber(); }
       if (!result.ok) return res.status(result.status).json({ message: result.message });
       broadcastTurnEligibilityChanged(storeId);
       return res.json(result.data);
@@ -21719,13 +22120,16 @@ or
       const storeId = userStore[0].id;
 
       const { amount, issuedToName, issuedToEmail, expiresAt, notes } = req.body;
+      // A real amount only (2026-11-03: a missing one crashed here with a 500).
+      const value = Number(amount);
+      if (!Number.isFinite(value) || value < 1 || value > 10000) return res.status(400).json({ message: "Enter an amount from $1 to $10,000" });
       const code = generateGiftCardCode();
 
       const [card] = await db.insert(giftCards).values({
         storeId,
         code,
-        originalAmount: amount.toString(),
-        remainingBalance: amount.toString(),
+        originalAmount: value.toFixed(2),
+        remainingBalance: value.toFixed(2),
         issuedToName,
         issuedToEmail,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
@@ -21885,6 +22289,7 @@ or
         bookingPaymentPolicy: (store as any).bookingPaymentPolicy ?? "none",
         depositType: (store as any).depositType ?? null,
         depositValue: (store as any).depositValue ? Number((store as any).depositValue) : null,
+        depositIncludeTravelFee: (store as any).depositIncludeTravelFee === true,
         allowOnlineCancellation: (store as any).allowOnlineCancellation ?? true,
         cancellationPolicyRequired: (store as any).cancellationPolicyRequired ?? false,
         cancellationPolicyText: (store as any).cancellationPolicyText ?? "",
@@ -21912,7 +22317,7 @@ or
 
       const {
         cancellationHoursCutoff, lateGracePeriodMinutes, autoMarkNoShows,
-        bookingPaymentPolicy, depositType, depositValue,
+        bookingPaymentPolicy, depositType, depositValue, depositIncludeTravelFee,
         allowOnlineCancellation, cancellationPolicyRequired, cancellationPolicyText,
         cancellationFeeType, cancellationFeeValue,
          askClientsForPronouns,
@@ -21922,7 +22327,7 @@ or
 
       // ── Server-side validation ────────────────────────────────────────────────
       const VALID_POLICIES = ["none", "card_on_file", "deposit"];
-      const VALID_DEPOSIT_TYPES = ["percentage", "fixed"];
+      const VALID_DEPOSIT_TYPES = ["percentage", "fixed", "full"];
       const VALID_BOOKING_MODES = ["all", "existing", "off"];
 
       if (onlineBookingMode !== undefined && !VALID_BOOKING_MODES.includes(onlineBookingMode)) {
@@ -21971,6 +22376,7 @@ or
       if (bookingPaymentPolicy !== undefined) locationUpdates.bookingPaymentPolicy = bookingPaymentPolicy;
       if (depositType !== undefined) locationUpdates.depositType = depositType ?? null;
       if (depositValue !== undefined) locationUpdates.depositValue = depositValue != null ? String(Number(depositValue)) : null;
+      if (typeof depositIncludeTravelFee === "boolean") locationUpdates.depositIncludeTravelFee = depositIncludeTravelFee;
       if (allowOnlineCancellation !== undefined) locationUpdates.allowOnlineCancellation = Boolean(allowOnlineCancellation);
       if (cancellationPolicyRequired !== undefined) locationUpdates.cancellationPolicyRequired = Boolean(cancellationPolicyRequired);
       if (cancellationPolicyText !== undefined) locationUpdates.cancellationPolicyText = String(cancellationPolicyText ?? "").trim() || null;
@@ -22837,6 +23243,8 @@ or
         isPublic: true,
         isFeatured: false,
       }).returning();
+      // The owner's phone (Certxa Pro): a new review, to read and reply to.
+      void import("./lib/ownerPush").then(({ pushNewReview }) => pushNewReview(apt.storeId!, { id: review?.id ?? null, customerName: apt.customerName, rating: Number(rating), comment: comment ?? null })).catch(() => {});
 
       return res.json(review);
     } catch (err) {
@@ -23796,6 +24204,76 @@ or
     }
   });
 
+  // Sign-up phone step (owner, 2026-11-03): a mobile number no Certxa account has ever had, proved by a texted code.
+  app.post("/api/solo/phone/send-code", async (req, res) => {
+    try {
+      const { startPhoneVerification } = await import("./lib/proPhoneVerification");
+      const result = await startPhoneVerification(String(req.body?.phone ?? ""), getClientIp(req) ?? "");
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      return res.json({ sent: true });
+    } catch (err) {
+      console.error("[solo/phone/send-code]", err);
+      return res.status(500).json({ message: "We couldn't send a code. Please try again." });
+    }
+  });
+
+  app.post("/api/solo/phone/verify", async (req, res) => {
+    try {
+      const { checkPhoneCode } = await import("./lib/proPhoneVerification");
+      const result = await checkPhoneCode(String(req.body?.phone ?? ""), String(req.body?.code ?? "").trim());
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      return res.json({ phoneToken: result.token });
+    } catch (err) {
+      console.error("[solo/phone/verify]", err);
+      return res.status(500).json({ message: "We couldn't check the code. Please try again." });
+    }
+  });
+
+  // Changing the account's own mobile number (app and website): a number the account had before switches back with
+  // no code; a new one gets a texted code; a number another account ever had is refused.
+  app.post("/api/account/phone/send-code", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Sign in again." });
+      const { toE164US } = await import("./lib/phoneUtils");
+      const lib = await import("./lib/proPhoneVerification");
+      const phone = toE164US(String(req.body?.phone ?? ""));
+      if (!phone) return res.status(400).json({ message: "Enter a 10-digit US mobile number." });
+      const owner = await lib.phoneNumberOwner(phone);
+      if (owner === userId) {
+        await lib.reactivateOwnPhone(phone, userId);
+        await db.update(users).set({ phone: phone.slice(2), updatedAt: new Date() }).where(eq(users.id, userId));
+        return res.json({ changed: true, phone: phone.slice(2) });
+      }
+      const result = await lib.startPhoneVerification(phone, getClientIp(req) ?? "");
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      return res.json({ sent: true });
+    } catch (err) {
+      console.error("[account/phone/send-code]", err);
+      return res.status(500).json({ message: "We couldn't send a code. Please try again." });
+    }
+  });
+
+  app.post("/api/account/phone/verify", isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.session as any)?.userId as string | undefined;
+      if (!userId) return res.status(401).json({ message: "Sign in again." });
+      const lib = await import("./lib/proPhoneVerification");
+      const phoneInput = String(req.body?.phone ?? "");
+      const checked = await lib.checkPhoneCode(phoneInput, String(req.body?.code ?? "").trim());
+      if (!checked.ok) return res.status(checked.status).json({ message: checked.message });
+      const verified = await lib.findVerifiedPhone(phoneInput, checked.token);
+      if (!verified || !(await lib.claimPhoneNumber(verified, userId))) {
+        return res.status(409).json({ message: "This mobile number is already linked to a Certxa account. Use a different number." });
+      }
+      await db.update(users).set({ phone: verified.phone.slice(2), updatedAt: new Date() }).where(eq(users.id, userId));
+      return res.json({ changed: true, phone: verified.phone.slice(2) });
+    } catch (err) {
+      console.error("[account/phone/verify]", err);
+      return res.status(500).json({ message: "We couldn't check the code. Please try again." });
+    }
+  });
+
   app.post("/api/solo/register", async (req, res) => {
     const input = z.object({
       firstName: z.string().trim().min(1).max(60),
@@ -23804,7 +24282,9 @@ or
       businessType: z.string().trim().min(1).max(60),
       email: z.string().trim().toLowerCase().email().max(254),
       password: z.string().min(8).max(200),
-      phone: z.string().regex(/^\d{10}$/).optional(),
+      phone: z.string().regex(/^\d{10}$/),
+      // From POST /api/solo/phone/verify: the phone was proved by a texted code.
+      phoneToken: z.string().max(100),
       timezone: z.string().max(64).optional(),
       // Where they see clients (plans/solo-work-places-and-approval.md). Older app builds don't send it.
       ownPlace: z.enum(["salon", "home", "none"]).optional(),
@@ -23815,6 +24295,7 @@ or
       const message = field === "password" ? "Choose a password of at least 8 characters."
         : field === "email" ? "Enter a valid e-mail address."
         : field === "phone" ? "Enter a 10-digit phone number."
+        : field === "phoneToken" ? "Verify your mobile number first. If you don't see that step, update the app."
         : "Please fill in every field.";
       return res.status(400).json({ message });
     }
@@ -23823,19 +24304,33 @@ or
     try { if (d.timezone) { new Intl.DateTimeFormat("en-US", { timeZone: d.timezone }); timezone = d.timezone; } } catch { /* keep the default */ }
     let createdUserId: string | null = null;
     let createdStoreId: number | null = null;
+    let claimedPhone: string | null = null;
     try {
       const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, d.email));
       if (existing) return res.status(409).json({ message: "An account with this e-mail already exists." });
+      const { findVerifiedPhone, claimPhoneNumber, phoneNumberOwner } = await import("./lib/proPhoneVerification");
+      const verifiedPhone = await findVerifiedPhone(d.phone, d.phoneToken);
+      if (!verifiedPhone) return res.status(400).json({ field: "phone", message: "Your mobile number check has expired. Verify your number again." });
+      if (await phoneNumberOwner(verifiedPhone.phone)) {
+        return res.status(409).json({ field: "phone", message: "This mobile number is already linked to a Certxa account. Use a different number, or sign in to your account." });
+      }
 
       const [user] = await db.insert(users).values({
         email: d.email, password: await bcrypt.hash(d.password, 10),
-        firstName: d.firstName, lastName: d.lastName, phone: d.phone ?? null,
+        firstName: d.firstName, lastName: d.lastName, phone: d.phone,
         role: "owner", accountType: PRO_ACCOUNT_TYPE, subscriptionStatus: "active",
       }).returning();
       createdUserId = user.id;
+      // One number, one account, for good: the list's primary key settles two sign-ups racing for the same number.
+      if (!(await claimPhoneNumber(verifiedPhone, user.id))) {
+        await db.delete(users).where(eq(users.id, user.id));
+        createdUserId = null;
+        return res.status(409).json({ field: "phone", message: "This mobile number is already linked to a Certxa account. Use a different number, or sign in to your account." });
+      }
+      claimedPhone = verifiedPhone.phone;
 
       const store = await storage.createStore({
-        name: d.businessName, email: d.email, timezone, phone: d.phone ?? null,
+        name: d.businessName, email: d.email, timezone, phone: d.phone,
         category: d.businessType, userId: user.id, parkingOptions: [], accessibilityFeatures: [],
         ownPlace: d.ownPlace === "none" && !d.houseCalls ? "salon" : (d.ownPlace ?? "salon"),
         // The address starts private (clients see the city until they book) unless the pro said they work in a
@@ -23845,7 +24340,8 @@ or
         houseCalls: d.houseCalls ?? false,
       } as any);
       createdStoreId = store.id;
-      await storage.updateStore(store.id, { bookingSlug: await chooseOnboardingSlug(d.businessName) });
+      // The Certxa Pro app's website design is Solo (booking SoloTheme.tsx, owner 2026-11-04).
+      await storage.updateStore(store.id, { bookingSlug: await chooseOnboardingSlug(d.businessName), bookingTheme: "solo" });
       // Monday to Saturday, 9 to 6. The owner changes this under Availability in the app.
       await storage.setBusinessHours(store.id, [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
         storeId: store.id, dayOfWeek, openTime: "09:00", closeTime: "18:00", isClosed: dayOfWeek === 0,
@@ -23874,12 +24370,16 @@ or
       const { password: _pw, ...safeUser } = fresh;
       const { signSoloToken } = await import("./lib/soloAuth");
       console.log(`[solo/register] app account created user=${user.id} store=${store.id} type=${d.businessType}`);
+      // Recorded like a website sign-up, so support sees it (isTeam account page, Last Login).
+      const { logAuthEvent } = await import("./lib/authEvents");
+      logAuthEvent(user.id, "register", req, { source: "certxa_pro_app" });
       return res.status(201).json({ token: signSoloToken({ userId: user.id }), user: safeUser });
     } catch (err) {
       console.error("[solo/register] Error:", err);
       // Leave nothing half-made behind: the e-mail must be free to try again.
       try {
         if (createdStoreId) await db.delete(locations).where(eq(locations.id, createdStoreId));
+        if (claimedPhone && createdUserId) await (await import("./lib/proPhoneVerification")).releaseClaimedPhone(claimedPhone, createdUserId);
         if (createdUserId) await db.delete(users).where(eq(users.id, createdUserId));
       } catch (cleanupErr) { console.error("[solo/register] clean-up failed:", cleanupErr); }
       return res.status(500).json({ message: "We couldn't create your account. Please try again." });
@@ -23936,6 +24436,8 @@ or
   await ensureBookingPaymentTokensTable().catch((e: unknown) =>
     console.warn("[BookingHold] Table init skipped:", (e as any)?.message)
   );
+  const { startHouseCallAlarms } = await import("./services/house-call-alarm.js");
+  startHouseCallAlarms();
   const { startBookingHoldScheduler } = await import("./services/booking-hold-scheduler.js");
   startBookingHoldScheduler();
 
@@ -25321,6 +25823,20 @@ or
       [storeId, clientId]
     );
     if (recentCheckin.length > 0) return { id: recentCheckin[0].id, token: recentCheckin[0].token, ticketNumber: recentCheckin[0].ticket_number };
+    // Already in the line from their phone (Online Check-In Line): that spot, now here — never a second one.
+    if (digits.length === 10) {
+      const { rows: online } = await pool.query(
+        `UPDATE kiosk_checkins SET arrived_at = COALESCE(arrived_at, now()), client_id = COALESCE(client_id, $3), client_name = COALESCE(client_name, $4)
+          WHERE id = (SELECT id FROM kiosk_checkins WHERE store_id = $1 AND source = 'online' AND appointment_id IS NULL
+                        AND status IN ('waiting', 'called') AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', '', 'g'), 10) = $2
+                        AND created_at >= NOW() - INTERVAL '${nailTickets.CHECKIN_MARKER_HOURS} hours' ORDER BY id LIMIT 1)
+          RETURNING id, token, ticket_number`,
+        [storeId, digits, clientId, clientName]);
+      if (online.length) {
+        try { broadcastNotification({ type: "kiosk_checkin_created", storeId } as any); } catch { /* polls */ }
+        return { id: online[0].id, token: online[0].token, ticketNumber: online[0].ticket_number };
+      }
+    }
     const token = crypto.randomBytes(24).toString("hex");
     const ticketNumber = wantedTicketNumber && (await storage.claimTicketNumber(storeId, wantedTicketNumber))
       ? wantedTicketNumber
@@ -25517,6 +26033,8 @@ or
       // Normalise to last 10 digits — matches both 10-digit input and E.164 stored values.
       const digits = String(phone).replace(/\D/g, "").slice(-10);
       if (digits.length < 7) return res.status(400).json({ error: "Phone too short" });
+      // Checked in online from their phone and now at the shop: they are here (plans/online-checkin-line.md).
+      if (!skipCheckin && offersOnlineLine((store as any).category)) await onlineLine.arrivedByPhone(store.id, digits, onlineLineDeps).catch(() => null);
 
       // Phones live exclusively in client_phones.phone_number_e164 (E.164 format).
       // Compare the last 10 stripped digits for reliable US number matching regardless

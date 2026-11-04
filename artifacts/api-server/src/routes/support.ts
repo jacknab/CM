@@ -6,6 +6,7 @@ import { MAX_TRIAL_EXTENSION_DAYS, latestTrialEnd, trialEndRefusal } from "../li
 import bcrypt from "bcrypt";
 import { pool, waitForDb } from "../db";
 import { broadcastNotification } from "../notifications";
+import { mutateStorePreferences } from "../lib/storePreferences";
 import { sendSupportReply, smtpAvailable } from "../lib/smtpSender";
 import { broadcastRawEvent } from "./systemStatus";
 import { ERROR_CODE_LOOKUP } from "../lib/apiErrorCodes";
@@ -262,29 +263,69 @@ router.get("/api/support/accounts/:id/overview", requireSupportAuth, async (req:
     const storeRow = await pool.query(`
       SELECT l.*, u.id AS user_id, u.email AS owner_email, u.first_name, u.last_name,
         u.created_at AS signup_date, u.subscription_status, u.trial_started_at, u.trial_ends_at, u.profile_image_url,
+        -- Made in the Certxa Pro app (shared/proAccount.ts), and whether it is on Plus ("Certxa Pro+").
+        u.account_type,
+        (SELECT sp.code FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+          WHERE ss.store_id = l.id AND ss.status IN ('active', 'trialing') ORDER BY ss.id DESC LIMIT 1) AS store_plan_code,
         -- Last time the owner was signed in: a password or magic-link login, signing up, or a device signing itself back in.
+        -- A Certxa Pro app sign-in lasts 30 days, so the app being used counts too (locations.pro_app_seen_at).
         GREATEST(
           (SELECT MAX(ae.created_at) FROM auth_events ae WHERE ae.user_id = u.id AND ae.event_type IN ('login', 'magic_link', 'register')),
-          (SELECT MAX(dl.last_used_at) FROM device_logins dl WHERE dl.user_id = u.id)
+          (SELECT MAX(dl.last_used_at) FROM device_logins dl WHERE dl.user_id = u.id),
+          l.pro_app_seen_at
         ) AS last_login_at
       FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1
     `, [storeId]);
     if (storeRow.rows.length === 0) return res.status(404).json({ error: "Account not found" });
     const store = storeRow.rows[0];
-    const [subRow, apptCount, smsCount, aiCallRow, aiMinRow, staffCount] = await Promise.all([
-      pool.query(`SELECT s.*, bp.name AS plan_name, bp.price_cents, bp.interval FROM subscriptions s LEFT JOIN billing_plans bp ON bp.code = s.plan_code WHERE s.store_number = $1 ORDER BY s.id DESC LIMIT 1`, [storeId]),
-      pool.query(`SELECT COUNT(*)::int FROM appointments WHERE store_id = $1 AND date >= now() - interval '30 days'`, [storeId]),
+    const [subRow, apptCount, smsCount, aiCallRow, aiMinRow, staffCount, phoneRow] = await Promise.all([
+      // The plan as billing runs it today (store_subscriptions + Certxa's own billing, services/saas-billing.ts); the
+      // old subscriptions table is no longer written.
+      pool.query(`SELECT ss.status, ss.current_period_end, sp.code AS plan_code, sp.name AS plan_name, sp.price_monthly_cents,
+                         bp.amount_cents, bp.interval_days, bp.next_charge_at, bp.card_brand, bp.card_last4, bp.cancel_at_period_end AS profile_cancel,
+                         ss.cancel_at_period_end
+                    FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+                    LEFT JOIN saas_billing_profiles bp ON bp.store_id = ss.store_id AND bp.plan_id = ss.plan_id
+                   WHERE ss.store_id = $1 AND ss.status IN ('active', 'trialing', 'past_due') ORDER BY ss.id DESC LIMIT 1`, [storeId]),
+      // Appointments in the last 30 days, up to now (future bookings aren't "this month" yet).
+      pool.query(`SELECT COUNT(*)::int FROM appointments WHERE store_id = $1 AND date >= now() - interval '30 days' AND date <= now()`, [storeId]),
       pool.query(`SELECT COUNT(*)::int FROM sms_log WHERE store_id = $1 AND sent_at >= now() - interval '30 days'`, [storeId]).catch(() => ({ rows: [{ count: 0 }] })),
       pool.query(`SELECT COUNT(*)::int AS calls, COUNT(CASE WHEN appointment_id IS NOT NULL THEN 1 END)::int AS bookings FROM ai_call_log WHERE store_id = $1 AND started_at >= now() - interval '30 days'`, [storeId]).catch(() => ({ rows: [{ calls: 0, bookings: 0 }] })),
       pool.query(`SELECT COALESCE(SUM(duration_seconds), 0)::float / 60 AS minutes, COALESCE(SUM(total_est_cost::float), 0) AS cost FROM call_usage_records WHERE store_id = $1 AND created_at >= now() - interval '30 days'`, [storeId]).catch(() => ({ rows: [{ minutes: 0, cost: 0 }] })),
       pool.query(`SELECT COUNT(*)::int FROM staff WHERE store_id = $1 AND status = 'active'`, [storeId]),
+      // Business Phone add-on (routes/businessPhone.ts).
+      pool.query(`SELECT phone_number, billing_status, paid_until, cancel_at_period_end FROM business_phone_lines WHERE store_id = $1`, [storeId]).catch(() => ({ rows: [] as any[] })),
     ]);
-    const sub = subRow.rows[0] ?? null;
-    const health = await computeHealthStatus(storeId);
+    const proApp: "pro" | "plus" | null = store.account_type === "certxa_pro" ? (store.store_plan_code === "solo_plus" ? "plus" : "pro") : null;
+    const onTrial = store.subscription_status === "trial";
+    // An ended trial can still have its free_trial plan row open; the owner's trial status says it is over.
+    const trialOver = store.subscription_status === "expired";
+    const plan = trialOver && subRow.rows[0]?.plan_code === "free_trial" ? null : subRow.rows[0] ?? null;
+    const line = phoneRow.rows[0] ?? null;
+    const addOns = line ? [{
+      name: "Business Phone", detail: line.phone_number,
+      priceCents: line.billing_status === "free" ? 0 : 1000,
+      status: line.billing_status, renewalDate: line.paid_until ?? null, cancelAtPeriodEnd: !!line.cancel_at_period_end,
+    }] : [];
+    const sub = plan || onTrial || trialOver ? {
+      planCode: plan?.plan_code ?? (trialOver ? "trial_expired" : "trial"),
+      planName: proApp === "plus" ? "Certxa Pro+" : proApp === "pro" ? "Certxa Pro" : plan?.plan_name ?? (trialOver ? "Trial expired" : "Free trial"),
+      priceCents: plan ? Number(plan.amount_cents ?? plan.price_monthly_cents ?? 0) : 0,
+      interval: plan?.interval_days >= 365 ? "year" : "month",
+      status: !plan && trialOver ? "expired" : onTrial && !plan?.amount_cents ? "trialing" : plan?.status ?? "active",
+      cancelAtPeriodEnd: !!(plan?.profile_cancel ?? plan?.cancel_at_period_end),
+      paymentBrand: plan?.card_brand ?? null, paymentLast4: plan?.card_last4 ?? null,
+      renewalDate: plan?.next_charge_at ?? plan?.current_period_end ?? (onTrial || trialOver ? store.trial_ends_at : null),
+      addOns,
+    } : null;
+    const mrrCents = (sub?.priceCents ?? 0) + addOns.filter((a) => a.status === "active" || a.status === "past_due").reduce((n, a) => n + a.priceCents, 0);
+    const health = await computeHealthStatus(storeId, proApp !== null);
     res.json({
-      store: { id: store.id, name: store.name, phone: store.phone, email: store.email, address: store.address, city: store.city, state: store.state, postcode: store.postcode, timezone: store.timezone, category: store.category, bookingSlug: store.booking_slug, accountStatus: store.account_status, smsTokens: store.sms_tokens, smsAllowance: store.sms_allowance, platformCredits: store.platform_credits, account_id: store.account_id ?? `ACC-${String(store.id).padStart(5, "0")}` },
-      owner: { id: store.user_id, email: store.owner_email, firstName: store.first_name, lastName: store.last_name, name: [store.first_name, store.last_name].filter(Boolean).join(" "), signupDate: store.signup_date, subscriptionStatus: store.subscription_status, trialStartedAt: store.trial_started_at, trialEndsAt: store.trial_ends_at, profileImageUrl: store.profile_image_url, lastLoginAt: store.last_login_at ?? null },
-      subscription: sub ? { planCode: sub.plan_code, planName: sub.plan_name, priceCents: sub.price_cents, interval: sub.interval ?? "month", status: sub.status, cancelAtPeriodEnd: sub.cancel_at_period_end, paymentBrand: null, paymentLast4: null, renewalDate: null } : null,
+      store: { id: store.id, name: store.name, phone: store.phone, email: store.email, address: store.address, city: store.city, state: store.state, postcode: store.postcode, timezone: store.timezone, category: store.category, bookingSlug: store.booking_slug, accountStatus: store.account_status, smsTokens: store.sms_tokens, smsAllowance: store.sms_allowance, smsCredits: store.sms_credits ?? 0, smsPlus: store.sms_plus === true, platformCredits: store.platform_credits, account_id: store.account_id ?? `ACC-${String(store.id).padStart(5, "0")}` },
+      owner: { id: store.user_id, email: store.owner_email, firstName: store.first_name, lastName: store.last_name, name: [store.first_name, store.last_name].filter(Boolean).join(" "), signupDate: store.signup_date, subscriptionStatus: store.subscription_status, trialStartedAt: store.trial_started_at, trialEndsAt: store.trial_ends_at, profileImageUrl: store.profile_image_url, lastLoginAt: store.last_login_at ?? null,
+        proApp },
+      subscription: sub,
+      mrrCents,
       stats: { appointmentsThisMonth: apptCount.rows[0]?.count ?? 0, smsSentThisMonth: smsCount.rows[0]?.count ?? 0, aiCallsThisMonth: aiCallRow.rows[0]?.calls ?? 0, aiBookingsThisMonth: aiCallRow.rows[0]?.bookings ?? 0, aiMinutesThisMonth: Math.round(aiMinRow.rows[0]?.minutes ?? 0), aiCostThisMonth: parseFloat(aiMinRow.rows[0]?.cost ?? "0"), staffCount: staffCount.rows[0]?.count ?? 0 },
       health,
     });
@@ -363,7 +404,7 @@ async function fetchActivityEvents(storeId: number, from: Date, to: Date, cat: s
       pool.query(`
         SELECT a.id, a.status, a.date AS occurred_at, a.cancelled_at,
           s.name AS service_name, st.name AS staff_name,
-          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name, '') AS client_name,
+          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name, a.customer_name, '') AS client_name,
           a.created_at, a.completed_at, a.checked_in_at, a.payment_method, a.total_paid
         FROM appointments a
         LEFT JOIN services s ON s.id = a.service_id
@@ -424,13 +465,18 @@ async function fetchActivityEvents(storeId: number, from: Date, to: Date, cat: s
   // ── Billing: subscriptions/plan changes ───────────────────────────────────
   if (cat === "all" || cat === "billing" || cat === "subscription") {
     queries.push(
+      // A plan's start and its end are separate events: one row used to be shown once, at its start time, titled
+      // "cancelled" whenever it had since ended (found 2026-11-04).
       pool.query(`
-        SELECT ss.id, ss.created_at AS occurred_at, ss.status,
-          sp.name AS plan_name, sp.code AS plan_code, ss.canceled_at
-        FROM store_subscriptions ss
-        JOIN subscription_plans sp ON sp.id = ss.plan_id
-        WHERE ss.store_id = $1 AND ss.created_at >= $2 AND ss.created_at <= $3
-        ORDER BY ss.created_at DESC LIMIT 100
+        SELECT * FROM (
+          SELECT ss.id, 'start' AS kind, ss.created_at AS occurred_at, ss.status, sp.name AS plan_name, sp.code AS plan_code, ss.canceled_at
+            FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+           WHERE ss.store_id = $1 AND ss.created_at >= $2 AND ss.created_at <= $3
+          UNION ALL
+          SELECT ss.id, 'end' AS kind, ss.canceled_at AS occurred_at, ss.status, sp.name AS plan_name, sp.code AS plan_code, ss.canceled_at
+            FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+           WHERE ss.store_id = $1 AND ss.canceled_at >= $2 AND ss.canceled_at <= $3
+        ) e ORDER BY occurred_at DESC LIMIT 100
       `, [storeId, from, to])
         .then(r => ({ rows: r.rows, _type: "subscription" }))
         .catch(() => ({ rows: [], _type: "subscription" }))
@@ -527,7 +573,7 @@ async function fetchActivityEvents(storeId: number, from: Date, to: Date, cat: s
           ae.appointment_id, ae.actor_user_id, ae.metadata,
           s.name AS service_name,
           st.name AS staff_name,
-          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name, '') AS client_name
+          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name, a.customer_name, '') AS client_name
         FROM appointment_events ae
         LEFT JOIN appointments a ON a.id = ae.appointment_id
         LEFT JOIN services s ON s.id = a.service_id
@@ -679,9 +725,9 @@ async function fetchActivityEvents(storeId: number, from: Date, to: Date, cat: s
 
       case "subscription":
         push(rows, r => {
-          const title = r.canceled_at ? `Subscription cancelled` : r.status === "active" ? `Subscription activated — ${r.plan_name}` : `Subscription ${r.status}`;
+          const title = r.kind === "end" ? "Subscription ended" : r.plan_code === "free_trial" || r.status === "trialing" ? `Trial started — ${r.plan_name}` : `Subscription started — ${r.plan_name}`;
           return {
-            id: `sub-${r.id}`,
+            id: `sub-${r.id}-${r.kind}`,
             category: "subscription",
             title,
             subtitle: r.plan_name ? `Plan: ${r.plan_name}` : null,
@@ -689,7 +735,7 @@ async function fetchActivityEvents(storeId: number, from: Date, to: Date, cat: s
             occurred_at: r.occurred_at,
             actor_name: null,
             actor_type: mapActorType("subscription"),
-            severity: r.canceled_at ? "warning" : "info",
+            severity: r.kind === "end" ? "warning" : "info",
           };
         });
         break;
@@ -1261,6 +1307,22 @@ router.post("/api/support/accounts/:id/suspend", requireSupportAuth, async (req:
   }
 });
 
+// The salon's front-desk keypad (/nail, /barber lock screen): support can show it again (owner, 2026-11-03) — e.g. when the
+// salon scanned its KEYPAD QR by mistake and no one has a printed ID badge. The salon's tablets refresh at once.
+router.post("/api/support/accounts/:id/keypad", requireSupportAuth, async (req: Request, res: Response) => {
+  const storeId = paramInt(req.params.id);
+  try {
+    if (typeof req.body?.visible !== "boolean") return res.status(400).json({ error: "visible must be true or false" });
+    const visible = req.body.visible === true;
+    await mutateStorePreferences(storeId, (current: any) => ({ ...current, nailScreen: { ...(current.nailScreen ?? {}), keypadVisible: visible } }));
+    broadcastNotification({ type: "settings_changed", storeId, scope: "/api/nail/screen-settings" } as any);
+    await logActivity(req.session.supportAgentId!, storeId, visible ? "keypad_shown" : "keypad_hidden", req.session.supportAgentName!, {});
+    res.json({ ok: true, keypadVisible: visible });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to change the keypad" });
+  }
+});
+
 router.post("/api/support/accounts/:id/unsuspend", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.id);
   try {
@@ -1757,7 +1819,8 @@ router.post("/api/support/tickets/:ticketId/link-account", requireSupportAuth, a
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function computeHealthStatus(storeId: number) {
+async function computeHealthStatus(storeId: number, proApp = false) {
+  // not_configured / not_available are optional or not offered, so they don't count against the score.
   const [booking, sms, ai, google, website] = await Promise.all([
     pool.query("SELECT COUNT(*)::int FROM appointments WHERE store_id = $1 AND date >= now() - interval '30 days'", [storeId]).then((r: any) => r.rows[0].count > 0 ? "online" : "no_recent_activity").catch(() => "unknown"),
     // SMS is a platform-level service (shared Twilio) — never "disconnected" based on per-account allowance.
@@ -1765,9 +1828,15 @@ async function computeHealthStatus(storeId: number) {
     pool.query("SELECT COUNT(*)::int AS cnt FROM sms_log WHERE store_id = $1 AND sent_at >= now() - interval '30 days'", [storeId])
       .then((r: any) => Number(r.rows[0]?.cnt ?? 0) > 0 ? "connected" : "no_recent_activity")
       .catch(() => "connected"), // If sms_log doesn't exist yet, platform SMS is still available
-    pool.query("SELECT COUNT(*)::int FROM ai_call_log WHERE store_id = $1 AND started_at >= now() - interval '30 days'", [storeId]).then((r: any) => r.rows[0].count > 0 ? "online" : "not_configured").catch(() => "unknown"),
-    pool.query("SELECT id FROM google_business_accounts WHERE store_id = $1 LIMIT 1", [storeId]).then((r: any) => r.rows.length > 0 ? "connected" : "disconnected").catch(() => "unknown"),
-    pool.query("SELECT id FROM wb_websites WHERE storeid = $1::text LIMIT 1", [storeId]).then((r: any) => r.rows.length > 0 ? "online" : "not_configured").catch(() => "unknown"),
+    // The Certxa Pro app has no AI receptionist and never uses Google (owner decisions).
+    proApp ? Promise.resolve("not_available") : pool.query("SELECT COUNT(*)::int FROM ai_call_log WHERE store_id = $1 AND started_at >= now() - interval '30 days'", [storeId]).then((r: any) => r.rows[0].count > 0 ? "online" : "not_configured").catch(() => "unknown"),
+    // The same source as Account Diagnostics (lib/healthCheck/segments/onlinePresence.ts): no profile is optional.
+    proApp ? Promise.resolve("not_available") : pool.query("SELECT is_connected, reconnect_required FROM google_business_profiles WHERE store_id = $1 LIMIT 1", [storeId])
+      .then((r: any) => !r.rows[0] ? "not_configured" : r.rows[0].is_connected && !r.rows[0].reconnect_required ? "connected" : "disconnected").catch(() => "unknown"),
+    // A Certxa Pro account's website is its booking site (the app's Website screen); others use the Website Builder.
+    proApp
+      ? pool.query("SELECT booking_slug FROM locations WHERE id = $1", [storeId]).then((r: any) => r.rows[0]?.booking_slug ? "online" : "not_configured").catch(() => "unknown")
+      : pool.query("SELECT published FROM wb_websites WHERE storeid = $1::text LIMIT 1", [storeId]).then((r: any) => r.rows[0]?.published ? "online" : "not_configured").catch(() => "unknown"),
   ]);
   return { booking, sms, ai, google, website };
 }
@@ -1856,11 +1925,21 @@ router.get("/api/support/billing/:accountId", requireSupportAuth, async (req: Re
           u.profile_image_url, l.phone, l.city, l.state, l.timezone
         FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1
       `, [storeId]),
+      // The plan as billing runs it today (store_subscriptions + services/saas-billing.ts); the old subscriptions
+      // table is no longer written.
       pool.query(`
-        SELECT s.*, bp.name AS plan_name, bp.price_cents, bp.interval,
-          bp.description AS plan_description
-        FROM subscriptions s LEFT JOIN billing_plans bp ON bp.code = s.plan_code
-        WHERE s.store_number = $1 ORDER BY s.id DESC LIMIT 1
+        SELECT sp.code AS plan_code,
+          CASE WHEN u.account_type = 'certxa_pro' THEN CASE WHEN sp.code = 'solo_plus' THEN 'Certxa Pro+' ELSE 'Certxa Pro' END ELSE sp.name END AS plan_name,
+          COALESCE(bp.amount_cents, sp.price_monthly_cents) AS price_cents,
+          CASE WHEN COALESCE(bp.interval_days, 31) >= 365 THEN 'year' ELSE 'month' END AS interval,
+          ss.status, COALESCE(bp.next_charge_at, ss.current_period_end) AS current_period_end,
+          bp.card_brand AS payment_method_brand, bp.card_last4 AS payment_method_last4,
+          NULL::text AS stripe_subscription_id, COALESCE(bp.stripe_customer_id, ss.stripe_customer_id) AS stripe_customer_id,
+          COALESCE(bp.cancel_at_period_end, ss.cancel_at_period_end) AS cancel_at_period_end, ss.created_at
+        FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+        JOIN locations l ON l.id = ss.store_id LEFT JOIN users u ON u.id = l.user_id
+        LEFT JOIN saas_billing_profiles bp ON bp.store_id = ss.store_id AND bp.plan_id = ss.plan_id
+        WHERE ss.store_id = $1 AND ss.status IN ('active', 'trialing', 'past_due') ORDER BY ss.id DESC LIMIT 1
       `, [storeId]),
       pool.query(`
         SELECT * FROM store_invoices WHERE store_id = $1 ORDER BY created_at DESC LIMIT 100
@@ -3596,32 +3675,34 @@ router.get("/api/support/accounts/:id/booking", requireSupportAuth, async (req: 
       pool.query(`SELECT booking_slug FROM locations WHERE id = $1`, [storeId]),
       pool.query(`
         SELECT
-          COUNT(*) FILTER (WHERE date >= now() - interval '30 days')::int                                          AS total_30d,
-          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND status = 'completed')::int                AS completed_30d,
-          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND status = 'cancelled')::int                AS cancelled_30d,
-          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND status = 'no-show')::int                  AS no_show_30d,
-          COUNT(*) FILTER (WHERE date > now()  AND status NOT IN ('cancelled','no-show'))::int                    AS upcoming,
-          COALESCE(SUM(total_paid) FILTER (WHERE date >= now() - interval '30 days' AND status = 'completed'),0)::float AS revenue_30d
+          -- The last 30 days up to now (future bookings are "upcoming"). No-shows are saved as 'no_show', and a booking
+          -- paid in the Certxa Pro app is 'paid' (corrected 2026-11-04: no-shows were never counted).
+          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND date <= now())::int                                    AS total_30d,
+          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND date <= now() AND status IN ('completed', 'paid'))::int AS completed_30d,
+          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND date <= now() AND status = 'cancelled')::int           AS cancelled_30d,
+          COUNT(*) FILTER (WHERE date >= now() - interval '30 days' AND date <= now() AND status IN ('no_show', 'no-show'))::int AS no_show_30d,
+          COUNT(*) FILTER (WHERE date > now()  AND status NOT IN ('cancelled', 'no_show', 'no-show'))::int                     AS upcoming,
+          COALESCE(SUM(total_paid) FILTER (WHERE date >= now() - interval '30 days' AND date <= now() AND status IN ('completed', 'paid')),0)::float AS revenue_30d
         FROM appointments WHERE store_id = $1
       `, [storeId]),
       pool.query(`
         SELECT a.id, a.date, a.status, a.total_paid, a.payment_method,
           s.name  AS service_name, st.name AS staff_name,
-          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name) AS client_name
+          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name, a.customer_name) AS client_name
         FROM appointments a
         LEFT JOIN services s  ON s.id  = a.service_id
         LEFT JOIN staff   st  ON st.id = a.staff_id
         LEFT JOIN clients cl  ON cl.id = a.customer_id
-        WHERE a.store_id = $1 ORDER BY a.date DESC LIMIT 15
+        WHERE a.store_id = $1 AND a.date <= now() ORDER BY a.date DESC LIMIT 15
       `, [storeId]),
       pool.query(`
         SELECT a.date, s.name AS service_name, st.name AS staff_name,
-          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name) AS client_name
+          COALESCE(cl.full_name, cl.first_name || ' ' || cl.last_name, a.customer_name) AS client_name
         FROM appointments a
         LEFT JOIN services s  ON s.id  = a.service_id
         LEFT JOIN staff   st  ON st.id = a.staff_id
         LEFT JOIN clients cl  ON cl.id = a.customer_id
-        WHERE a.store_id = $1 AND a.date > now() AND a.status NOT IN ('cancelled','no-show')
+        WHERE a.store_id = $1 AND a.date > now() AND a.status NOT IN ('cancelled', 'no_show', 'no-show')
         ORDER BY a.date ASC LIMIT 5
       `, [storeId]),
       pool.query(`SELECT COUNT(*)::int AS count, COUNT(*) FILTER (WHERE is_active = true)::int AS active FROM services WHERE store_id = $1`, [storeId])
@@ -3648,7 +3729,7 @@ router.get("/api/support/accounts/:id/communications", requireSupportAuth, async
   const storeId = paramInt(req.params.id);
   if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });
   try {
-    const [smsR, ticketsR, statsR] = await Promise.all([
+    const [smsR, ticketsR, statsR, lineR, callsR, convR, phoneTextsR, plusR] = await Promise.all([
       pool.query(`
         SELECT id, sent_at, message_type, phone, status, sms_source, message_body
         FROM sms_log WHERE store_id = $1 ORDER BY sent_at DESC LIMIT 30
@@ -3659,17 +3740,51 @@ router.get("/api/support/accounts/:id/communications", requireSupportAuth, async
         FROM support_tickets t WHERE t.account_id = $1
         ORDER BY t.created_at DESC LIMIT 10
       `, [storeId]).catch(() => ({ rows: [] })),
+      // sms_log holds the texts Certxa sent; replies from clients are in the two-way inbox (sms_conversations) and texts
+      // to a Business Phone number in business_phone_texts. Inbound/outbound used to filter sms_log on message_type
+      // (e.g. 'rebooking_nudge'), so both were always 0 (corrected 2026-11-04).
       pool.query(`
         SELECT
-          COUNT(*)::int                                                              AS total,
-          COUNT(*) FILTER (WHERE message_type = 'inbound')::int                    AS inbound,
-          COUNT(*) FILTER (WHERE message_type = 'outbound')::int                   AS outbound,
-          COUNT(*) FILTER (WHERE status = 'failed')::int                           AS failed,
-          COUNT(*) FILTER (WHERE sent_at >= now() - interval '30 days')::int       AS last_30d
-        FROM sms_log WHERE store_id = $1
-      `, [storeId]).catch(() => ({ rows: [{ total:0, inbound:0, outbound:0, failed:0, last_30d:0 }] })),
+          (SELECT COUNT(*)::int FROM sms_log WHERE store_id = $1)                                                       AS outbound,
+          (SELECT COUNT(*)::int FROM sms_conversations WHERE store_id = $1 AND direction = 'inbound')
+            + (SELECT COUNT(*)::int FROM business_phone_texts WHERE store_id = $1)                                       AS inbound,
+          (SELECT COUNT(*)::int FROM sms_log WHERE store_id = $1 AND status = 'failed')                                 AS failed,
+          (SELECT COUNT(*)::int FROM sms_log WHERE store_id = $1 AND sent_at >= now() - interval '30 days')             AS last_30d
+      `, [storeId]).catch(() => ({ rows: [{ outbound:0, inbound:0, failed:0, last_30d:0 }] })),
+      // Phones (Certxa Pro app): the Business Phone number, if any, and the calls and texts on it or on the Plus number.
+      pool.query(`SELECT phone_number, ring, billing_status, paid_until, cancel_at_period_end, created_at FROM business_phone_lines WHERE store_id = $1`, [storeId]),
+      pool.query(`
+        SELECT c.id, c.direction, c.other_number, c.status, c.duration_seconds, c.started_at,
+               (SELECT COALESCE(NULLIF(cl.full_name, ''), TRIM(CONCAT_WS(' ', cl.first_name, cl.last_name)))
+                  FROM client_phones cp JOIN clients cl ON cl.id = cp.client_id
+                 WHERE cp.store_id = c.store_id AND cp.phone_number_e164 = c.other_number LIMIT 1) AS client_name
+          FROM business_phone_calls c WHERE c.store_id = $1 ORDER BY c.started_at DESC LIMIT 30
+      `, [storeId]),
+      pool.query(`SELECT id, client_phone, client_name, direction, body, created_at FROM sms_conversations WHERE store_id = $1 ORDER BY created_at DESC LIMIT 30`, [storeId]),
+      pool.query(`SELECT id, from_number, body, media_count, received_at FROM business_phone_texts WHERE store_id = $1 ORDER BY received_at DESC LIMIT 30`, [storeId]),
+      pool.query(`
+        SELECT u.account_type, l.preferences,
+               (SELECT sp.code FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+                 WHERE ss.store_id = $1 AND ss.status IN ('active', 'trialing') ORDER BY ss.id DESC LIMIT 1) AS plan_code
+          FROM locations lo LEFT JOIN users u ON u.id = lo.user_id LEFT JOIN store_settings l ON l.store_id = lo.id WHERE lo.id = $1
+      `, [storeId]),
     ]);
-    res.json({ smsLog: smsR.rows, tickets: ticketsR.rows, smsStats: statsR.rows[0] ?? { total:0, inbound:0, outbound:0, failed:0, last_30d:0 } });
+    const stats = statsR.rows[0] ?? { outbound: 0, inbound: 0, failed: 0, last_30d: 0 };
+    const line = lineR.rows[0] ?? null;
+    const acct = plusR.rows[0] ?? {};
+    let plusRing = "hours";
+    try { plusRing = JSON.parse(acct.preferences ?? "{}")?.plusRing === "always" ? "always" : "hours"; } catch { /* default */ }
+    // How this account takes calls: its own Business Phone number, else Plus calling on the shared Plus number.
+    const phone = line
+      ? { mode: "line", number: line.phone_number, ring: line.ring, billingStatus: line.billing_status, paidUntil: line.paid_until, cancelAtPeriodEnd: line.cancel_at_period_end, since: line.created_at }
+      : acct.plan_code === "solo_plus"
+        ? { mode: "plus", number: process.env.CERTXA_PLUS_PHONE_NUMBER || "+19497495557", ring: plusRing, billingStatus: null, paidUntil: null, cancelAtPeriodEnd: false, since: null }
+        : null;
+    res.json({
+      smsLog: smsR.rows, tickets: ticketsR.rows,
+      smsStats: { total: stats.outbound + stats.inbound, inbound: stats.inbound, outbound: stats.outbound, failed: stats.failed, last_30d: stats.last_30d },
+      phone, calls: callsR.rows, conversations: convR.rows, phoneTexts: phoneTextsR.rows,
+    });
   } catch (e) {
     console.error("[communications tab]", e);
     res.status(500).json({ error: "Failed to load communications data" });
@@ -3681,24 +3796,30 @@ router.get("/api/support/accounts/:id/website", requireSupportAuth, async (req: 
   const storeId = paramInt(req.params.id);
   if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });
   try {
-    const [websiteR, viewsR] = await Promise.all([
+    // Both queries named things that don't exist (a wb_pages table; store_id on wb_page_views), and their errors were
+    // swallowed, so no account ever showed its website or a visit (found 2026-11-04). A site is one template; its page
+    // views are kept per website.
+    const [websiteR, viewsR, storeR] = await Promise.all([
       pool.query(`
         SELECT w.id, w.name, w.published, w.published_at, w.custom_domain, w.assigned_subdomain,
-          w.created_at, w.updated_at, w.publisher_type,
-          (SELECT COUNT(*)::int FROM wb_pages WHERE website_id = w.id) AS page_count
+          w.created_at, w.updated_at, w.publisher_type
         FROM wb_websites w WHERE w.storeid = $1::text ORDER BY w.id ASC LIMIT 1
-      `, [storeId]).catch(() => ({ rows: [] })),
+      `, [storeId]),
       pool.query(`
         SELECT
-          COUNT(*)::int                                                         AS total_views,
-          COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS views_30d,
-          COUNT(*) FILTER (WHERE created_at >= now() - interval '7 days')::int  AS views_7d
-        FROM wb_page_views WHERE store_id = $1
-      `, [storeId]).catch(() => ({ rows: [{ total_views:0, views_30d:0, views_7d:0 }] })),
+          COUNT(*)::int                                                           AS total_views,
+          COUNT(*) FILTER (WHERE v.created_at >= now() - interval '30 days')::int AS views_30d,
+          COUNT(*) FILTER (WHERE v.created_at >= now() - interval '7 days')::int  AS views_7d
+        FROM wb_page_views v JOIN wb_websites w ON w.id = v.website_id WHERE w.storeid = $1::text
+      `, [storeId]),
+      pool.query(`SELECT l.booking_slug, u.account_type FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1`, [storeId]),
     ]);
+    const store = storeR.rows[0] ?? {};
     res.json({
       website:   websiteR.rows[0] ?? null,
       pageViews: viewsR.rows[0]   ?? { total_views:0, views_30d:0, views_7d:0 },
+      // A Certxa Pro app account's website is its booking site (the app's Website screen), not the Website Builder.
+      bookingSite: store.account_type === "certxa_pro" && store.booking_slug ? { slug: store.booking_slug, url: `https://${store.booking_slug}.certxa.com` } : null,
     });
   } catch (e) {
     console.error("[website tab]", e);

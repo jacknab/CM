@@ -19,7 +19,6 @@ import BookingSystemTab from "@/components/isTeam/customer360/BookingSystemTab";
 import WebsiteTab from "@/components/isTeam/customer360/WebsiteTab";
 import CommunicationsTab from "@/components/isTeam/customer360/CommunicationsTab";
 import PosTab from "@/components/isTeam/customer360/PosTab";
-import { format } from "date-fns";
 import { formatInTimeZone } from "date-fns-tz";
 
 function useLocalTime(timezone: string) {
@@ -74,8 +73,10 @@ export default function TeamCustomer360Page() {
 
   const { store, owner, subscription, stats, health } = overview;
   const initials = [owner.firstName?.[0], owner.lastName?.[0]].filter(Boolean).join("").toUpperCase() || store.name[0]?.toUpperCase() || "?";
-  const mrr = subscription?.priceCents ? (subscription.priceCents / 100).toFixed(2) : "0.00";
-  const signupDate = owner.signupDate ? format(new Date(owner.signupDate), "MMM d, yyyy") : "—";
+  // The plan plus paid add-ons (Business Phone), as the server works it out.
+  const mrr = ((overview.mrrCents ?? subscription?.priceCents ?? 0) / 100).toFixed(2);
+  // In the salon's time zone, like the Account Summary card.
+  const signupDate = owner.signupDate ? formatInTimeZone(new Date(owner.signupDate), store.timezone || "UTC", "MMM d, yyyy") : "—";
   const isFullHeightTab = activeTab === "Activity";
 
   return (
@@ -98,6 +99,12 @@ export default function TeamCustomer360Page() {
               <h1 className="text-xl font-bold text-slate-900">{store.name}</h1>
               <StatusBadge status={store.accountStatus ?? "Unknown"} size="sm" />
               {store.category && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{store.category}</span>}
+              {/* An account made in the Certxa Pro app (it signs in only there): support needs to know at a glance. */}
+              {owner.proApp && (
+                <span className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-medium" data-testid="pro-app-badge">
+                  {owner.proApp === "plus" ? "Certxa Pro+ app" : "Certxa Pro app"}
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-4 mt-1 text-xs text-slate-500">
               {store.bookingSlug && (
@@ -170,7 +177,8 @@ export default function TeamCustomer360Page() {
                 <HealthStatusCard health={health} />
                 <OnboardingCard accountId={accountId} />
                 <QuickStatsCard stats={stats} />
-                <AIUsageCard stats={stats} />
+                {/* The Certxa Pro app has no AI receptionist. */}
+                {!owner.proApp && <AIUsageCard stats={stats} />}
               </div>
               <div className="space-y-5">
                 <CustomerActionsCard accountId={accountId} store={store} owner={owner} subscription={subscription} />
@@ -184,7 +192,9 @@ export default function TeamCustomer360Page() {
         {activeTab === "AI Receptionist" && (
           <div className="p-6 max-w-3xl">
             <h2 className="text-base font-semibold text-slate-800 mb-4">AI Receptionist Usage</h2>
-            <AIUsageCard stats={stats} full />
+            {owner.proApp
+              ? <p className="text-sm text-slate-500">This account uses the Certxa Pro app, which has no AI receptionist.</p>
+              : <AIUsageCard stats={stats} full />}
           </div>
         )}
         {activeTab === "Tickets" && (
@@ -209,7 +219,7 @@ export default function TeamCustomer360Page() {
           <CommunicationsTab accountId={accountId} />
         )}
         {activeTab === "Devices" && (
-          <PosTab accountId={accountId} />
+          <PosTab accountId={accountId} proApp={!!owner.proApp} />
         )}
         {!["Overview", "Activity", "Account Diagnostics", "Billing", "AI Receptionist", "Booking System", "Website", "Communications", "Tickets", "Notes & History", "Devices"].includes(activeTab) && (
           <div className="p-6 flex items-center justify-center h-64">

@@ -87,12 +87,10 @@ function StaffServicesTable({ rows }: { rows: Record<string, unknown>[] }) {
       {(rows as any[]).map((r, i) => (
         <div key={i} className="text-xs flex gap-2 flex-wrap items-start">
           <span className="font-medium text-slate-700 min-w-[110px]">{r.staffName}</span>
-          {r.missing?.length > 0 && (
-            <span className="text-red-600">Missing: {(r.missing as string[]).join(", ")}</span>
-          )}
-          {(!r.missing || r.missing.length === 0) && (
-            <span className="text-emerald-600">All services assigned</span>
-          )}
+          <span className="flex-1 min-w-0 text-slate-700">
+            {/* A run saved before 2026-11-03 has no assigned list: a dash until it is re-run. */}
+            {r.assigned === undefined ? "—" : r.assigned.length > 0 ? (r.assigned as string[]).join(", ") : "No services assigned"}
+          </span>
         </div>
       ))}
     </div>

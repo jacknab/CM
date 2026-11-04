@@ -28,6 +28,7 @@ const BASE_NAV: NavItem[] = [
       { label: "Active Accounts",  to: "/isTeam/accounts?status=Active" },
       { label: "Trials",           to: "/isTeam/accounts?status=Trial" },
       { label: "Suspended",        to: "/isTeam/accounts?status=Suspended" },
+      { label: "Certxa Pro",       to: "/isTeam/accounts?status=Pro" },
       { label: "Unfinished Signups", to: "/isTeam/signups" },
     ],
   },

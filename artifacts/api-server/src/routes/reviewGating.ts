@@ -189,7 +189,7 @@ router.post("/api/reviews/gate/submit", async (req: Request, res: Response) => {
       if (apt) { staffId = apt.staffId; serviceName = apt.serviceName; staffName = apt.staffName; }
     }
 
-    await db.insert(reviews).values({
+    const [saved] = await db.insert(reviews).values({
       storeId: row.storeId,
       customerId: row.customerId,
       appointmentId: row.appointmentId,
@@ -205,9 +205,12 @@ router.post("/api/reviews/gate/submit", async (req: Request, res: Response) => {
       photoUrl: photoUrl || null,
       isPublic: true,
       isFeatured: false,
-    });
+    }).returning({ id: reviews.id });
 
     await markReviewTokenUsed(row.id);
+
+    // The owner's phone (Certxa Pro): a new review, to read and reply to. Never blocks the review.
+    void import("../lib/ownerPush").then(({ pushNewReview }) => pushNewReview(row.storeId, { id: saved?.id ?? null, customerName: row.customerName, rating: rating!, comment: comment ?? null })).catch(() => {});
 
     return res.json({ ok: true });
   } catch (e: any) {

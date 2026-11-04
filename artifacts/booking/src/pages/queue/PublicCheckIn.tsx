@@ -34,6 +34,7 @@ export default function PublicCheckIn() {
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   // Ref so the WS handler can call the latest refreshPosition without stale closures
   const refreshPositionRef = useRef<(() => void) | null>(null);
+  const cancelToken = useRef<string | null>(null);
 
   const fetchQueue = useCallback(async () => {
     try {
@@ -138,6 +139,7 @@ export default function PublicCheckIn() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to check in"); setSubmitting(false); return; }
       setPositionInfo({ id: data.id, position: data.position, estimatedWaitMinutes: data.estimatedWaitMinutes, status: "waiting" });
+      cancelToken.current = data.token ?? null;
       setPage("confirmed");
     } catch {
       setError("Network error. Please try again.");
@@ -148,10 +150,11 @@ export default function PublicCheckIn() {
   const handleCancel = async () => {
     if (!positionInfo) return;
     try {
-      await fetch(`/api/waitlist/${positionInfo.id}`, {
+      // The public cancel, with the key only this check-in was given (the staff route needs a sign-in).
+      await fetch(`/api/public/queue/cancel/${positionInfo.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "cancelled" }),
+        body: JSON.stringify({ token: cancelToken.current }),
       });
     } catch {}
     setPage("form");

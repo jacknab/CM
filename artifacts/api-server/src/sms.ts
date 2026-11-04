@@ -118,6 +118,8 @@ export interface SendSmsOptions {
    * Explicit source to store in sms_log.sms_source when deduction is skipped.
    */
   smsSource?: string;
+  /** Send from this number instead of the platform's (the shared Plus number for Plus replies, lib/plusLine.ts). */
+  fromNumber?: string;
 }
 
 async function deductSmsCredit(storeId: number): Promise<DeductResult> {
@@ -212,6 +214,21 @@ export async function sendSms(
     }
   }
 
+  // ── Text consent ─────────────────────────────────────────────────────────
+  // A client who left the booking form's text box unticked isn't sent automatic texts by this business. A reply the
+  // pro types in Messages is a conversation the client started, so it still goes. No answer on file: nothing changes.
+  if (messageType !== "two_way_reply") {
+    try {
+      const consent = await db.execute(sql`SELECT consented FROM sms_consents WHERE store_id = ${storeId} AND phone_e164 = ${e164Phone} ORDER BY id DESC LIMIT 1`);
+      if ((consent.rows[0] as { consented?: boolean } | undefined)?.consented === false) {
+        console.log(`[SMS] Skipping store=${storeId} type=${messageType}: no text consent`);
+        return { success: true, skipped: true };
+      }
+    } catch (err) {
+      console.warn("[SMS] Consent check failed:", err);
+    }
+  }
+
   // ── Landline gate ──────────────────────────────────────────────────────────
   // A landline physically cannot receive SMS. Skip before ever calling Twilio
   // so we don't pay for (or, for billed message types, charge the store for)
@@ -282,9 +299,10 @@ export async function sendSms(
     }
   }
 
-  // ── Certxa Pro (Solo plan): every text to a client spends 1 credit ──────────
-  // (lib/soloSmsCredits.ts, owner 2026-10-30). Plus sends notifications free. No credit left → the text
-  // is not sent and is logged as skipped; e-mails still go. This replaces the rules below for Solo accounts.
+  // ── Certxa Pro (Solo plan): every text spends 1 credit ──────────────────────
+  // (lib/soloSmsCredits.ts, owner 2026-10-30 / 11-03). With Plus on, notification texts are free. No credit
+  // left → the text is not sent and is logged as skipped; e-mails still go. This replaces the rules below
+  // for Solo accounts.
   const soloCharge = await soloTextCharge(storeId, messageType).catch((err) => {
     console.warn(`[SMS] Solo plan check failed store=${storeId}:`, err?.message ?? err);
     return null;
@@ -396,9 +414,11 @@ export async function sendSms(
     const sendParams: Parameters<typeof twilioClient.messages.create>[0] = {
       to: e164Phone,
       body,
-      ...(messagingServiceSid
-        ? { messagingServiceSid }
-        : { from: fromNumber! }),
+      ...(options?.fromNumber
+        ? { from: options.fromNumber }
+        : messagingServiceSid
+          ? { messagingServiceSid }
+          : { from: fromNumber! }),
     };
     const msg = await twilioClient.messages.create(sendParams);
 
@@ -427,8 +447,8 @@ export async function sendSms(
   } catch (err: any) {
     const errorMessage = err.message || "Unknown error";
 
-    // Provider failed after deduction — refund the credit so it isn't lost
-    if (soloSpent) await refundSoloCredit(storeId, messageType, "Text could not be sent");
+    // Provider failed after deduction. A Solo credit is NOT given back: a text Twilio fails still costs its
+    // credit (owner, 2026-11-03). The older allowance/wallet billing below is refunded as before.
     if (deductResult?.source === "allowance") {
       await db.update(locations)
         .set({ smsAllowance: sql`sms_allowance + 1` })
@@ -576,6 +596,20 @@ export async function sendRescheduleNotice(appointment: AppointmentWithDetails):
     manageUrl,
   });
   const r = await sendSms(appointment.storeId, customerPhone, body, "reschedule_notice", appointment.id, appointment.customer?.id,
+    { skipCreditDeduction: true, smsSource: "platform" });
+  return r.success && !r.skipped ? { sent: true } : { sent: false, reason: r.skipped ? "opted out" : r.error };
+}
+
+/** The business cancelled a booking (Certxa Pro app, "Notify client" on). */
+export async function sendCancellationNotice(appointment: AppointmentWithDetails): Promise<{ sent: boolean; reason?: string }> {
+  if (!appointment.storeId) return { sent: false, reason: "no store" };
+  const customerPhone = await appointmentCustomerPhone(appointment);
+  if (!customerPhone) return { sent: false, reason: "no phone" };
+  const timezone = appointment.store?.timezone || "UTC";
+  const name = String((appointment.customer as any)?.fullName || appointment.customer?.name || "").trim().split(/\s+/)[0] || "there";
+  const body = `Hi ${name}, your ${appointment.service?.name || "appointment"} at ${appointment.store?.name || "our salon"} on `
+    + `${formatInTimeZone(appointment.date, timezone, "EEEE, MMMM d")} at ${formatInTimeZone(appointment.date, timezone, "h:mm a")} has been cancelled.`;
+  const r = await sendSms(appointment.storeId, customerPhone, body, "cancellation_notice", appointment.id, appointment.customer?.id,
     { skipCreditDeduction: true, smsSource: "platform" });
   return r.success && !r.skipped ? { sent: true } : { sent: false, reason: r.skipped ? "opted out" : r.error };
 }

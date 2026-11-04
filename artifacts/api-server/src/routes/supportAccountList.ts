@@ -1,7 +1,7 @@
 /**
  * routes/supportAccountList.ts — the account lists behind the support sidebar's Accounts menu
  *
- *   GET /api/support/accounts?status=all|active|trial|suspended     (support agent session)
+ *   GET /api/support/accounts?status=all|active|trial|suspended|pro     (support agent session)
  *
  * The lists, and why an account can appear in more than one:
  *   all         every account
@@ -9,6 +9,7 @@
  *               on a free trial is Active too.
  *   trial       the owner is on a free trial, whatever the account status
  *   suspended   account status is Suspended
+ *   pro         created in the Certxa Pro app (users.account_type, shared/proAccount.ts)
  *
  * Rows have the same shape as GET /api/support/search, so the same row rendering works for both.
  * Read-only.
@@ -28,6 +29,7 @@ const FILTERS: Record<string, string> = {
   active: "COALESCE(l.account_status, 'Active') = 'Active'",
   trial: "(u.subscription_status = 'trial' OR s.status IN ('trial', 'trialing'))",
   suspended: "l.account_status = 'Suspended'",
+  pro: "u.account_type = 'certxa_pro'",
 };
 
 router.get("/api/support/accounts", requireSupportAuth, async (req: Request, res: Response) => {
@@ -42,13 +44,19 @@ router.get("/api/support/accounts", requireSupportAuth, async (req: Request, res
               l.booking_slug, l.account_status, l.city, l.state, l.category,
               u.email AS owner_email, u.first_name, u.last_name,
               u.subscription_status, u.trial_ends_at, u.created_at AS signup_date,
-              s.plan_code, bp.name AS plan_name, bp.price_cents
+              s.plan_code,
+              CASE WHEN u.account_type = 'certxa_pro' THEN CASE WHEN s.plan_code = 'solo_plus' THEN 'Certxa Pro+' ELSE 'Certxa Pro' END
+                   ELSE s.plan_name END AS plan_name,
+              s.price_cents
          FROM locations l
          LEFT JOIN users u ON u.id = l.user_id
+         -- The plan as billing runs it today (store_subscriptions); the old subscriptions table is no longer written.
          LEFT JOIN LATERAL (
-           SELECT plan_code, status FROM subscriptions WHERE store_number = l.id ORDER BY id DESC LIMIT 1
+           SELECT sp.code AS plan_code, sp.name AS plan_name, COALESCE(bp.amount_cents, sp.price_monthly_cents) AS price_cents, ss.status
+             FROM store_subscriptions ss JOIN subscription_plans sp ON sp.id = ss.plan_id
+             LEFT JOIN saas_billing_profiles bp ON bp.store_id = ss.store_id AND bp.plan_id = ss.plan_id
+            WHERE ss.store_id = l.id AND ss.status IN ('active', 'trialing', 'past_due') ORDER BY ss.id DESC LIMIT 1
          ) s ON true
-         LEFT JOIN billing_plans bp ON bp.code = s.plan_code
         WHERE ${filter}
         ORDER BY l.id DESC
         LIMIT ${LIMIT}`,

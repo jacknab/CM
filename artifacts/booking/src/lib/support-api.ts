@@ -53,6 +53,8 @@ export const supportApi = {
       request(`/accounts/${id}/tags/${tagId}`, { method: "DELETE" }),
     owners:      (id: number) => request<Owner[]>(`/accounts/${id}/owners`),
     suspend:     (id: number) => request(`/accounts/${id}/suspend`,     { method: "POST" }),
+    /** Show (or hide) the salon's front-desk keypad on the /nail or /barber lock screen. */
+    setKeypad:   (id: number, visible: boolean) => request(`/accounts/${id}/keypad`, { method: "POST", body: JSON.stringify({ visible }) }),
     unsuspend:   (id: number) => request(`/accounts/${id}/unsuspend`,   { method: "POST" }),
     extendTrial: (id: number, days: number) =>
       request(`/accounts/${id}/extend-trial`, { method: "POST", body: JSON.stringify({ days }) }),
@@ -179,6 +181,8 @@ export interface AccountOnboarding {
     storeCreated: boolean;
     /** False for accounts that signed up before steps were recorded, or used the classic setup. */
     tracked: boolean;
+    /** Signed up in the Certxa Pro app (no website-platform setup checklist). */
+    proApp?: boolean;
   };
   essentials: { hoursSet: boolean; openDays: number; services: number; staff: number; websitePublished: boolean };
   flows: { key: string; title: string; category: string; status: string; completedAt: string | null }[];
@@ -230,6 +234,10 @@ export interface AccountOverview {
     accountStatus: string;
     smsTokens: number;
     smsAllowance: number;
+    /** Text credits (the Certxa Pro app's balance; marketing credits on the website plans). */
+    smsCredits?: number;
+    /** Plus is on: notification texts are free. */
+    smsPlus?: boolean;
     platformCredits: string;
   };
   owner: {
@@ -244,6 +252,8 @@ export interface AccountOverview {
     trialEndsAt: string | null;
     profileImageUrl: string | null;
     lastLoginAt: string | null;
+    /** Made in the Certxa Pro app: 'plus' while on Plus (Certxa Pro+), else 'pro'; null for a website account. */
+    proApp?: "pro" | "plus" | null;
   };
   subscription: {
     planCode: string;
@@ -256,7 +266,11 @@ export interface AccountOverview {
     paymentBrand: string | null;
     paymentLast4: string | null;
     renewalDate: string | null;
+    /** Add-ons billed with the plan, e.g. Business Phone ($10/month; free on test lines). */
+    addOns?: { name: string; detail: string | null; priceCents: number; status: string; renewalDate: string | null; cancelAtPeriodEnd: boolean }[];
   } | null;
+  /** Monthly revenue: the plan plus paid add-ons. */
+  mrrCents?: number;
   stats: {
     appointmentsThisMonth: number;
     smsSentThisMonth: number;
@@ -404,6 +418,13 @@ export interface BookingOverview {
 }
 
 export interface CommunicationsData {
+  /** How the account takes calls (Certxa Pro app): its own Business Phone number, or Plus calling on the shared number. */
+  phone?: { mode: "line" | "plus"; number: string; ring: string; billingStatus: string | null; paidUntil: string | null; cancelAtPeriodEnd: boolean; since: string | null } | null;
+  calls?: Array<{ id: number; direction: string; other_number: string; status: string; duration_seconds: number | null; started_at: string; client_name: string | null }>;
+  /** The two-way texting with clients (both directions), including texts on the Plus number. */
+  conversations?: Array<{ id: number; client_phone: string; client_name: string | null; direction: string; body: string; created_at: string }>;
+  /** Texts received on a Business Phone number. */
+  phoneTexts?: Array<{ id: number; from_number: string; body: string; media_count: number; received_at: string }>;
   smsLog: Array<{
     id: number;
     sent_at: string;
@@ -437,9 +458,10 @@ export interface WebsiteData {
     created_at: string;
     updated_at: string;
     publisher_type: string | null;
-    page_count: number;
   } | null;
   pageViews: { total_views: number; views_30d: number; views_7d: number };
+  /** A Certxa Pro app account's website: its booking site. */
+  bookingSite?: { slug: string; url: string } | null;
 }
 
 /** Back office POS tab: a salon's POS set-up and devices (GET /api/support/accounts/:id/pos). */

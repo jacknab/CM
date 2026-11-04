@@ -2,7 +2,7 @@
  * BloomTheme — public booking page built to match the nail-salon-bloom website template.
  *
  * Sections (in order):
- *   Header → Hero → Services → [Gallery] → Visit Us → Footer
+ *   Header → Services → [Gallery] → Visit Us → Footer
  *
  * Booking flow opens as a slide-in panel from the right, matching the
  * BookingPanel in templates-storage/nail-salon-bloom/project/src/components/BookingPanel.tsx
@@ -35,6 +35,7 @@ import { TimeZoneNote } from "./TimeZoneNote";
 import { facebookUrl, instagramUrl, siteStyle } from "./SiteLook";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
+import SiteLegal from "./SiteLegal";
 import type { StoreData } from "./types";
 import { useHouseCall, HouseCallFields } from "./houseCall";
 
@@ -130,7 +131,6 @@ interface BloomThemeProps {
 }
 
 // ── Static fallbacks ──────────────────────────────────────────────────────────
-const HERO_IMAGE = "/images/bloom-hero.jpg";
 
 // Per-service-type Pexels fallback images — keyed to match the template's categoryKey buckets.
 const FALLBACK_IMAGES: Record<string, string> = {
@@ -316,6 +316,10 @@ function BookingPanel({
   const [submitting, setSubmitting]   = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [cancellationAccepted, setCancellationAccepted] = useState(false);
+  // The client's own agreement to texts (sms_consents, migration 0305); needed when the business replies by text.
+  const [smsConsent, setSmsConsent] = useState(false);
+  const smsConsentNeeded = store.bookingApproval === "manual";
+  const smsConsentText = `Text me appointment confirmations, reminders and follow-ups from ${store.name}. Message frequency varies. Msg & data rates may apply. Reply STOP to stop or HELP for help.`;
   const cancelPolicy = useCancellationPolicy(slug);
   const cancelAckNeeded = !!cancelPolicy.data?.required && !!cancelPolicy.data?.text;
 
@@ -411,6 +415,7 @@ function BookingPanel({
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
+          payStep: "link",
           serviceId: selectedService.id,
           staffId: selectedSlot.staffId,
           date: selectedSlot.time,
@@ -419,6 +424,8 @@ function BookingPanel({
           customerPhone: phone.trim(),
           customerEmail: email.trim() || undefined,
           cancellationPolicyAccepted: cancellationAccepted,
+          smsConsent,
+          smsConsentText,
           ...hc.bookFields,
         }),
       });
@@ -435,16 +442,20 @@ function BookingPanel({
     } finally {
       setSubmitting(false);
     }
-  }, [selectedService, selectedSlot, name, phone, email, slug, cancellationAccepted, hc.bookFields]);
+  }, [selectedService, selectedSlot, name, phone, email, slug, cancellationAccepted, smsConsent, hc.bookFields]);
 
   const weekStart = getWeekStart(weekOffset);
   const weekDays  = getWeekDays(weekStart);
 
-  const slotGroups = useMemo(() => ({
-    Morning:   slots.filter((s) => new Date(s.time).getHours() < 12),
-    Afternoon: slots.filter((s) => { const h = new Date(s.time).getHours(); return h >= 12 && h < 17; }),
-    Evening:   slots.filter((s) => new Date(s.time).getHours() >= 17),
-  }), [slots]);
+  // By the business's clock, like the times shown: a visitor elsewhere still sees 9 AM under Morning.
+  const slotGroups = useMemo(() => {
+    const hourOf = (iso: string) => Number(new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", hourCycle: "h23" }).format(new Date(iso)));
+    return {
+      Morning:   slots.filter((s) => hourOf(s.time) < 12),
+      Afternoon: slots.filter((s) => { const h = hourOf(s.time); return h >= 12 && h < 17; }),
+      Evening:   slots.filter((s) => hourOf(s.time) >= 17),
+    };
+  }, [slots, timezone]);
 
   if (!isOpen) return null;
 
@@ -801,10 +812,21 @@ function BookingPanel({
                 </div>
               )}
 
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border bg-white p-3.5" style={{ borderColor: C.cream200 }}>
+                <input type="checkbox" checked={smsConsent} onChange={(e) => setSmsConsent(e.target.checked)} data-testid="bloom-sms-consent" className="mt-0.5 h-4 w-4 shrink-0" style={{ accentColor: C.gold700 }} />
+                <span className="text-xs leading-relaxed" style={{ color: C.ink600 }}>
+                  {smsConsentText}{" "}
+                  <a href="#terms" className="underline">Terms</a>
+                  {" & "}
+                  <a href="#privacy" className="underline">Privacy</a>.
+                  {smsConsentNeeded ? ` ${store.name} replies to booking requests by text, so this is needed to book online.${store.phone ? " You can also call to book." : ""}` : ""}
+                </span>
+              </label>
+
               <button
                 type="button"
                 onClick={handleBook}
-                disabled={submitting || !name.trim() || !phone.trim() || (cancelAckNeeded && !cancellationAccepted)}
+                disabled={submitting || !name.trim() || !phone.trim() || (cancelAckNeeded && !cancellationAccepted) || (smsConsentNeeded && !smsConsent)}
                 className="mt-5 w-full rounded-full px-6 py-4 text-base font-semibold text-white shadow-md transition-all hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:transform-none disabled:opacity-50"
                 style={{ background: C.gold700 }}
               >
@@ -915,7 +937,6 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   const reviewCount    = store.displayReviewCount ?? store.googleReviewCount ?? reviews.length;
   const avgRating      = typeof store.displayRating === "number" ? store.displayRating
                         : typeof store.googleRating === "number" ? store.googleRating : 0;
-  const filledStars    = Math.round(avgRating);
   const isGoogleSourced = store.reviewSource ? store.reviewSource === "google" : true; // unset (older cached data) defaults to the prior Google-only behavior
   const hours          = formatBusinessHours(store.businessHours);
 
@@ -1065,6 +1086,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   return (
     <div className="min-h-screen" style={{ ...siteStyle(store.bookingSite), background: C.cream50, color: C.ink900 }}>
 
+      <SiteLegal store={store} />
       {/* ── BOOKING PANEL ─────────────────────────────────────────────────── */}
       <BookingPanel
         isOpen={bookingOpen}
@@ -1086,46 +1108,58 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
         }}
       >
         <nav
-          className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-5 sm:h-16 sm:px-8 lg:h-[72px] lg:px-10"
+          className="mx-auto grid h-14 w-full max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-2 px-5 sm:h-16 sm:px-8 lg:h-[72px] lg:px-10"
           aria-label="Primary navigation"
         >
-          {/* Salon name */}
-          <a
-            href="#top"
-            className="text-xl font-semibold sm:text-2xl"
-            style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
-            aria-label={`${salonName} — home`}
-          >
-            <span className="inline-flex items-center gap-2.5">
-              {store.bookingSite?.logoImage ? <img src={store.bookingSite.logoImage} alt="" className="h-9 w-9 rounded-full object-cover" /> : null}
-              {salonName}
-            </span>
-          </a>
-
-          {/* Desktop nav */}
-          <div className="hidden items-center gap-6 md:flex">
-            {[
-              { label: "Services", href: "#services" },
-              { label: "Gallery", href: "#gallery" },
-              { label: "Visit Us", href: "#visit" },
-            ].map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="text-sm font-semibold tracking-wide transition-colors hover:opacity-80"
-                style={{ color: C.ink700 }}
-              >
-                {link.label}
-              </a>
-            ))}
+          <div className="flex min-w-0 items-center gap-6">
+            {/* Salon name, and the page links on large screens */}
+            <a
+              href="#top"
+              className="min-w-0 text-xl font-semibold sm:text-2xl"
+              style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+              aria-label={`${salonName} — home`}
+            >
+              <span className="flex min-w-0 items-center gap-2.5">
+                {store.bookingSite?.logoImage ? <img src={store.bookingSite.logoImage} alt="" className="h-9 w-9 rounded-full object-cover" /> : null}
+                <span className="truncate">{salonName}</span>
+              </span>
+            </a>
+            <div className="hidden shrink-0 items-center gap-6 lg:flex">
+              {[
+                { label: "Services", href: "#services" },
+                { label: "Gallery", href: "#gallery" },
+                { label: "Visit Us", href: "#visit" },
+              ].map((link) => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="text-sm font-semibold tracking-wide transition-colors hover:opacity-80"
+                  style={{ color: C.ink700 }}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </div>
           </div>
 
-          {/* Desktop actions */}
-          <div className="hidden items-center gap-3 md:flex">
+          {/* Book Now, in the centre of the header on every screen */}
+          <button
+            type="button"
+            onClick={() => openBookingFor()}
+            data-testid="bloom-header-book"
+            className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
+            style={{ background: C.gold700 }}
+            aria-label="Book an appointment"
+          >
+            Book Now
+            <ArrowRight className="hidden h-3.5 w-3.5 sm:block" aria-hidden="true" />
+          </button>
+
+          <div className="flex items-center justify-end gap-3">
             {store.phone && (
               <a
                 href={phoneHref}
-                className="inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold"
+                className="hidden items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold lg:inline-flex"
                 style={{ borderColor: C.cream300, color: C.ink700 }}
                 aria-label={`Call ${store.phone}`}
               >
@@ -1133,30 +1167,19 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                 {store.phone}
               </a>
             )}
+            {/* Mobile hamburger */}
             <button
               type="button"
-              onClick={() => openBookingFor()}
-              className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors"
-              style={{ background: C.rose600 }}
-              aria-label="Book an appointment"
+              className="grid h-10 w-10 place-items-center rounded-lg transition-colors hover:bg-gray-100 lg:hidden"
+              aria-label={menuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
             >
-              Book Now
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              {menuOpen
+                ? <X className="h-5 w-5" style={{ color: C.ink800 }} />
+                : <Menu className="h-5 w-5" style={{ color: C.ink800 }} />}
             </button>
           </div>
-
-          {/* Mobile hamburger */}
-          <button
-            type="button"
-            className="grid h-10 w-10 place-items-center rounded-lg transition-colors hover:bg-gray-100 md:hidden"
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((v) => !v)}
-          >
-            {menuOpen
-              ? <X className="h-5 w-5" style={{ color: C.ink800 }} />
-              : <Menu className="h-5 w-5" style={{ color: C.ink800 }} />}
-          </button>
         </nav>
 
         {/* Mobile drawer */}
@@ -1207,167 +1230,10 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
         )}
       </header>
 
-      {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section id="top" aria-label="Welcome" className="relative overflow-hidden pt-14 sm:pt-16 lg:pt-[72px]" style={{ background: C.cream100 }}>
-        {/* Gold accent bar */}
-        <div className="absolute inset-x-0 top-0 h-1" style={{ background: C.gold700 }} aria-hidden="true" />
-
-        <div className="mx-auto grid w-full max-w-7xl items-center gap-8 px-5 py-12 sm:px-8 sm:py-16 lg:min-h-[580px] lg:grid-cols-2 lg:gap-16 lg:py-24">
-          {/* Left: content */}
-          <div className="flex flex-col">
-            {/* Rating pill */}
-            {reviewCount > 0 && (
-              <div
-                className="mb-5 inline-flex w-fit items-center gap-2 rounded-full border px-3.5 py-1.5"
-                style={{ borderColor: "#FDE68A", background: C.gold50 }}
-                aria-label={`${avgRating} stars from ${reviewCount} reviews`}
-              >
-                <span className="flex gap-0.5" aria-hidden="true">
-                  {Array.from({ length: 5 }, (_, i) => (
-                    <Star
-                      key={i}
-                      className="h-3.5 w-3.5"
-                      style={{
-                        fill: i < filledStars ? "#F59E0B" : C.cream200,
-                        color: i < filledStars ? "#F59E0B" : C.cream200,
-                      }}
-                    />
-                  ))}
-                </span>
-                <span className="text-xs font-semibold" style={{ color: "#92400E" }}>
-                  {avgRating > 0 ? Number(avgRating).toFixed(1) : "★★★★★"} — {reviewCount.toLocaleString()} {isGoogleSourced ? "Google Reviews" : "Reviews"}
-                </span>
-              </div>
-            )}
-
-            {/* The business's cover photo on phones (the desktop layout shows it beside the text). */}
-            {store.bookingSite?.coverImage && (
-              <img src={store.bookingSite.coverImage} alt="" className="mb-6 aspect-[4/3] w-full rounded-2xl object-cover lg:hidden" />
-            )}
-
-            {/* Salon name + city */}
-            <h1
-              className="text-balance text-[2.4rem] font-semibold leading-[1.05] sm:text-5xl lg:text-6xl"
-              style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
-            >
-              {salonName}
-              {city && (
-                <span
-                  className="mt-1 block text-[1.6rem] font-normal leading-snug sm:text-3xl lg:text-[2rem]"
-                  style={{ color: C.ink400 }}
-                >
-                  {store.category || "Nail Salon"} in {city}
-                </span>
-              )}
-            </h1>
-
-            <p className="mt-4 max-w-lg text-base leading-relaxed sm:mt-5 sm:text-lg" style={{ color: C.ink600 }}>
-              {store.bookingSite?.about || "Luxury nail services crafted by master technicians. See real client results below and book your appointment in seconds — no account needed."}
-            </p>
-
-            {/* Contact CTA */}
-            <div className="mt-7 flex flex-wrap gap-3 sm:mt-8">
-              {store.phone && (
-                <a
-                  href={phoneHref}
-                  className="inline-flex items-center justify-center gap-2 rounded-full border bg-white px-6 py-3.5 text-base font-semibold shadow-sm transition-all"
-                  style={{ borderColor: C.cream300, color: C.ink800 }}
-                  aria-label={`Call ${store.phone}`}
-                >
-                  <Phone className="h-4 w-4" aria-hidden="true" />
-                  Call
-                </a>
-              )}
-              {store.address && (
-                <a
-                  href={directionsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border bg-white px-6 py-3.5 text-base font-semibold shadow-sm transition-all"
-                  style={{ borderColor: C.cream300, color: C.ink800 }}
-                  aria-label="Get directions"
-                >
-                  <MapPin className="h-4 w-4" aria-hidden="true" />
-                  Directions
-                </a>
-              )}
-              {instagramUrl(store.bookingSite) && (
-                <a
-                  href={instagramUrl(store.bookingSite)!}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border bg-white px-6 py-3.5 text-base font-semibold shadow-sm transition-all"
-                  style={{ borderColor: C.cream300, color: C.ink800 }}
-                  aria-label={`Instagram @${store.bookingSite?.instagram}`}
-                >
-                  <Instagram className="h-4 w-4" aria-hidden="true" />
-                  Instagram
-                </a>
-              )}
-              {facebookUrl(store.bookingSite) && (
-                <a
-                  href={facebookUrl(store.bookingSite)!}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 rounded-full border bg-white px-6 py-3.5 text-base font-semibold shadow-sm transition-all"
-                  style={{ borderColor: C.cream300, color: C.ink800 }}
-                  aria-label="Facebook"
-                >
-                  <Facebook className="h-4 w-4" aria-hidden="true" />
-                  Facebook
-                </a>
-              )}
-            </div>
-
-            {/* Quick stats */}
-            <dl
-              className="mt-8 flex flex-wrap gap-6 border-t pt-6 sm:mt-10 sm:gap-8 sm:pt-8"
-              style={{ borderColor: C.cream200 }}
-            >
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold700 }}>Same-Day</dt>
-                <dd className="mt-1 text-2xl font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>Booking</dd>
-              </div>
-              {/* Only a business that has reviews shows a count; none never shows as five stars. */}
-              {reviewCount > 0 && (
-              <div>
-                <dt className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold700 }}>Reviews</dt>
-                <dd className="mt-1 text-2xl font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
-                  {`${reviewCount}+`}
-                </dd>
-              </div>
-              )}
-              {avgRating > 0 && (
-                <div>
-                  <dt className="text-xs font-semibold uppercase tracking-widest" style={{ color: C.gold700 }}>Rating</dt>
-                  <dd className="mt-1 text-2xl font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>{Number(avgRating).toFixed(1)} / 5</dd>
-                </div>
-              )}
-            </dl>
-          </div>
-
-          {/* Right: hero image (desktop only) */}
-          <div className="relative hidden lg:block" aria-hidden="true">
-            <div className="relative overflow-hidden rounded-3xl shadow-2xl">
-              <img
-                src={store.bookingSite?.coverImage || HERO_IMAGE}
-                alt={`Professional nail technician at ${salonName}`}
-                className="h-[520px] w-full object-cover"
-                width={640}
-                height={520}
-              />
-              <div className="absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/10" />
-            </div>
-          </div>
-        </div>
-
-        {/* Wave separator */}
-        <div className="overflow-hidden" aria-hidden="true">
-          <svg viewBox="0 0 1440 28" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full" style={{ color: C.cream50 }}>
-            <path d="M0 0 Q360 28 720 14 Q1080 0 1440 20 L1440 28 L0 28 Z" fill={C.cream50} />
-          </svg>
-        </div>
-      </section>
+      {/* The site opens on the services (owner, 2026-11-04: phones first, no hero). This keeps them clear of the fixed
+          header; on phones the body's own 56px top padding (index.css) already does. */}
+      <div id="top" className="sm:h-2 md:h-16 lg:h-[72px]" aria-hidden="true" />
+      <h1 className="sr-only">{store.byLabel || salonName}{store.city ? ` in ${store.city}` : ""}</h1>
 
       {/* ── SERVICES ──────────────────────────────────────────────────────── */}
       <section
@@ -1464,7 +1330,6 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
               const displayName      = svcReview?.customerName ?? "Verified Client";
               const quote            = (svcReview?.comment ?? "").slice(0, 120);
               const starRating       = svcReview ? Number(svcReview.rating) : avgRating;
-              const svcReviewCount   = reviewCount > 0 ? Math.min(reviewCount, 87) : 24;
 
               return (
                 <article key={svc.id} className="overflow-hidden rounded-2xl bg-white shadow-sm">
@@ -1546,11 +1411,14 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                       )}
 
                       {/* Rating summary */}
-                      <div className="flex items-center gap-1.5 text-[12px]" style={{ color: C.ink600 }}>
-                        <Star className="h-3.5 w-3.5 flex-shrink-0 fill-amber-400 text-amber-400" aria-hidden="true" />
-                        <span className="font-semibold" style={{ color: C.ink800 }}>{starRating.toFixed(1)}</span>
-                        <span style={{ color: C.ink400 }}>({svcReviewCount} reviews)</span>
-                      </div>
+                      {/* Real numbers only: it used to show "(24 reviews)" for a business with none (found 2026-11-04). */}
+                      {reviewCount > 0 && starRating > 0 && (
+                        <div className="flex items-center gap-1.5 text-[12px]" style={{ color: C.ink600 }}>
+                          <Star className="h-3.5 w-3.5 flex-shrink-0 fill-amber-400 text-amber-400" aria-hidden="true" />
+                          <span className="font-semibold" style={{ color: C.ink800 }}>{starRating.toFixed(1)}</span>
+                          <span style={{ color: C.ink400 }}>({reviewCount.toLocaleString()} {reviewCount === 1 ? "review" : "reviews"})</span>
+                        </div>
+                      )}
 
                       {/* Reviewer */}
                       {hasReview && (
@@ -1595,7 +1463,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
               );
             })}
 
-            {filteredServices.length === 0 && (
+            {services.length > 0 && filteredServices.length === 0 && (
               <p className="col-span-full py-10 text-center text-[14px]" style={{ color: C.ink500 }}>
                 No services in this category.
               </p>
@@ -1794,6 +1662,10 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
             <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed" style={{ color: C.ink600 }}>
               Walk-ins welcome based on availability. Book ahead to guarantee your spot.
             </p>
+            {/* The business's own about text (it was in the hero). */}
+            {store.bookingSite?.about && (
+              <p className="mx-auto mt-3 max-w-xl whitespace-pre-line text-base leading-relaxed" style={{ color: C.ink600 }}>{store.bookingSite.about}</p>
+            )}
           </div>
 
           <div className="mt-10 grid gap-6 sm:mt-12 lg:grid-cols-2 lg:gap-8">
@@ -1978,12 +1850,14 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
             {/* Social */}
             <div className="flex gap-3" aria-label="Social media links">
               {[
-                { Icon: Instagram, label: "Instagram", href: "#" },
-                { Icon: Facebook,  label: "Facebook",  href: "#" },
-              ].map(({ Icon, label, href }) => (
+                { Icon: Instagram, label: "Instagram", href: instagramUrl(store.bookingSite) },
+                { Icon: Facebook,  label: "Facebook",  href: facebookUrl(store.bookingSite) },
+              ].filter((x) => x.href).map(({ Icon, label, href }) => (
                 <a
                   key={label}
-                  href={href}
+                  href={href!}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   aria-label={label}
                   className="grid h-10 w-10 place-items-center rounded-full transition-all focus:outline-none"
                   style={{ background: C.ink800, color: C.ink400 }}
@@ -1994,6 +1868,12 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
             </div>
 
             <div className="w-full border-t" style={{ borderColor: C.ink800 }} />
+
+            {/* Terms and Privacy (SiteLegal.tsx). */}
+            <nav aria-label="Legal" className="flex gap-5 text-xs">
+              <a href="#terms" className="underline" style={{ color: C.ink400 }}>Terms of Service</a>
+              <a href="#privacy" className="underline" style={{ color: C.ink400 }}>Privacy Policy</a>
+            </nav>
 
             {/* Copyright */}
             <div className="flex w-full flex-col items-center gap-2 sm:flex-row sm:justify-between sm:gap-0">

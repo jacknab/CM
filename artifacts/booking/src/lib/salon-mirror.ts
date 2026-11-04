@@ -51,6 +51,8 @@ async function getJson<T>(url: string): Promise<T> {
 }
 
 const running = new Map<number, Promise<void>>();
+/** Salons whose list of copied tables was compared with the server's since the app started. */
+const tablesChecked = new Set<number>();
 
 /** Brings this tablet's copy of the salon up to date. Never throws; does nothing outside the app or offline. */
 export function syncSalonMirror(storeId: number): Promise<void> {
@@ -82,6 +84,26 @@ async function syncOnce(storeId: number, again = true): Promise<void> {
     }
     st = { ...st, complete: true, syncedAt: new Date().toISOString() };
     await apply(storeId, { state: st });
+    tablesChecked.add(storeId);
+  }
+  // Tables the server copies now that it didn't when this tablet made its copy (pricing levels, 2026-11-03): copied
+  // once in full; changes to them since come with the change log below. Asked once each time the app starts.
+  if (!tablesChecked.has(storeId)) {
+    const info = await getJson<{ tables: string[]; children: Child[] }>("/api/offline/mirror/tables");
+    for (const tbl of info.tables.filter((t) => !st!.tables.includes(t))) {
+      for (let afterId = 0; ;) {
+        const page = await getJson<{ rows: Row[]; lastId: number | null; more: boolean }>(
+          `/api/offline/mirror/rows?table=${encodeURIComponent(tbl)}&afterId=${afterId}&limit=1000`);
+        await apply(storeId, { upserts: page.rows.map((row) => ({ tbl, row })) });
+        if (!page.more || page.lastId == null) break;
+        afterId = page.lastId;
+      }
+      st = { ...st, tables: [...st.tables, tbl], table: st.table + 1 };
+      await apply(storeId, { state: st });
+    }
+    st = { ...st, children: info.children ?? st.children };
+    await apply(storeId, { state: st });
+    tablesChecked.add(storeId);
   }
   // Everything that changed since (rows changed during the first copy are applied again, which is harmless).
   for (;;) {

@@ -3,7 +3,8 @@
  * accent colour, cover photo, profile photo or logo, about text, Instagram and Facebook. Every theme uses these:
  *  - siteStyle(): CSS variables on the theme's root. --primary recolours the Tailwind primary colour (Simple,
  *    Classic); --site-accent / --site-accent-dark are used where a theme has its own colours (Bloom, Mobile).
- *  - <SiteHeader>: cover, photo, name, about and Instagram for the themes that have no header of their own.
+ *  - <SiteHeader>: a slim bar with the photo, name, city, Instagram and Facebook for the themes that have no header
+ *    of their own (owner, 2026-11-04: phones first, no cover banner).
  */
 import type { CSSProperties } from "react";
 import { Facebook, Instagram } from "lucide-react";
@@ -59,40 +60,24 @@ export function instagramUrl(site: BookingSiteLook | null | undefined): string |
 /** Cover photo, profile photo or logo, name, about text and Instagram, at the top of the page. */
 export function SiteHeader({ store }: { store: StoreData }) {
   const site = store.bookingSite ?? {};
-  const place = [store.city, store.state].filter(Boolean).join(", ");
   const insta = instagramUrl(site);
   const fb = facebookUrl(site);
-  const initials = (store.name || "").split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+  const place = [store.city, store.state].filter(Boolean).join(", ");
   return (
-    <header data-testid="site-header" className="bg-white">
-      <div
-        className="h-36 sm:h-48 w-full bg-cover bg-center"
-        style={site.coverImage
-          ? { backgroundImage: `url("${site.coverImage}")` }
-          : { background: "linear-gradient(135deg, hsl(var(--primary) / 0.85), hsl(var(--primary) / 0.45))" }}
-        role={site.coverImage ? "img" : undefined}
-        aria-label={site.coverImage ? `${store.name} cover photo` : undefined}
-      />
-      <div className="max-w-2xl mx-auto px-4 -mt-10 pb-4 text-center">
-        {site.logoImage ? (
-          <img src={site.logoImage} alt={store.name} className="mx-auto h-20 w-20 rounded-full object-cover border-4 border-white shadow-sm bg-white" />
-        ) : (
-          <div className="mx-auto h-20 w-20 rounded-full border-4 border-white shadow-sm bg-primary text-primary-foreground flex items-center justify-center text-xl font-semibold">{initials}</div>
-        )}
-        <h1 className="mt-2 text-xl font-bold text-gray-900">{store.name}</h1>
-        {place ? <p className="text-sm text-gray-500">{place}</p> : null}
-        {site.about ? <p className="mt-2 text-sm text-gray-600 whitespace-pre-line">{site.about}</p> : null}
-        {insta ? (
-          <a href={insta} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-            <Instagram className="h-4 w-4" />@{site.instagram}
-          </a>
-        ) : null}
-        {fb ? (
-          <a href={fb} target="_blank" rel="noopener noreferrer" className="mt-2 ml-4 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-            <Facebook className="h-4 w-4" />Facebook
-          </a>
-        ) : null}
-      </div>
-    </header>
+    <>
+      {/* Stays at the top. On phones the body's own 56px top padding (index.css) makes the room; larger screens use the spacer. */}
+      <header data-testid="site-header" className="fixed inset-x-0 top-0 z-40 border-b border-gray-200 bg-white">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center gap-2.5 px-4">
+          {site.logoImage ? <img src={site.logoImage} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" /> : null}
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-bold leading-tight text-gray-900">{store.name}</h1>
+            {place ? <p className="truncate text-xs text-gray-500">{place}</p> : null}
+          </div>
+          {insta ? <a href={insta} target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="grid h-10 w-10 shrink-0 place-items-center text-gray-700"><Instagram className="h-5 w-5" /></a> : null}
+          {fb ? <a href={fb} target="_blank" rel="noopener noreferrer" aria-label="Facebook" className="grid h-10 w-10 shrink-0 place-items-center text-gray-700"><Facebook className="h-5 w-5" /></a> : null}
+        </div>
+      </header>
+      <div className="hidden h-14 md:block" aria-hidden="true" />
+    </>
   );
 }

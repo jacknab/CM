@@ -16,15 +16,17 @@ interface OpenRegisterModalProps {
   userName: string;
   /** Which cash drawer to open — 0/undefined = the store's default/shared drawer. */
   drawerId?: number;
+  /** Shown as a page of the staff screens' Manager screen (ManagerScreen.tsx) instead of a dialog. */
+  inline?: boolean;
 }
 
-export function OpenRegisterModal({ open, onClose, storeId, userName, drawerId = 0 }: OpenRegisterModalProps) {
+export function OpenRegisterModal({ open, onClose, storeId, userName, drawerId = 0, inline = false }: OpenRegisterModalProps) {
   const { toast } = useToast();
   const [openingAmount, setOpeningAmount] = useState("");
 
   const { data: openSession, isLoading: sessionLoading } = useQuery<CashDrawerSessionWithActions | null>({
     queryKey: [`/api/cash-drawer/open?storeId=${storeId}&drawerId=${drawerId}`],
-    enabled: open && !!storeId,
+    enabled: (open || inline) && !!storeId,
   });
 
   // Check if this is the initial setup (no sessions exist yet for THIS drawer)
@@ -82,24 +84,8 @@ export function OpenRegisterModal({ open, onClose, storeId, userName, drawerId =
     openDrawerMutation.mutate();
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader>
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center">
-              <LockOpen className="w-4.5 h-4.5 text-emerald-600" />
-            </div>
-            <DialogTitle className="text-lg">Open Register</DialogTitle>
-          </div>
-          <DialogDescription>
-            {alreadyOpen
-              ? "The register is already open for today."
-              : isInitialSetup
-              ? "Enter the opening cash amount to start the day."
-              : "Enter the opening cash amount to start the day."}
-          </DialogDescription>
-        </DialogHeader>
+  const body = (
+      <>
 
         {isLoading ? (
           <div className="py-6 text-center text-sm text-muted-foreground">Checking register status…</div>
@@ -151,6 +137,39 @@ export function OpenRegisterModal({ open, onClose, storeId, userName, drawerId =
             </div>
           </form>
         )}
+
+      </>
+  );
+  if (inline) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border bg-white p-6 text-slate-900" data-testid="open-register-inline">
+        <h3 className="text-xl font-semibold mb-1">Open Register</h3>
+        <p className="text-sm text-slate-500 mb-4">{alreadyOpen
+              ? "The register is already open for today."
+              : "Enter the opening cash amount to start the day."}</p>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center">
+              <LockOpen className="w-4.5 h-4.5 text-emerald-600" />
+            </div>
+            <DialogTitle className="text-lg">Open Register</DialogTitle>
+          </div>
+          <DialogDescription>
+            {alreadyOpen
+              ? "The register is already open for today."
+              : isInitialSetup
+              ? "Enter the opening cash amount to start the day."
+              : "Enter the opening cash amount to start the day."}
+          </DialogDescription>
+        </DialogHeader>
+        {body}
       </DialogContent>
     </Dialog>
   );

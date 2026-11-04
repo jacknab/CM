@@ -4,6 +4,8 @@ const configs: Record<string, { bg: string; text: string; dot: string }> = {
   active:      { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
   Active:      { bg: "bg-emerald-100", text: "text-emerald-700", dot: "bg-emerald-500" },
   trial:       { bg: "bg-blue-100",    text: "text-blue-700",    dot: "bg-blue-500" },
+  trialing:    { bg: "bg-blue-100",    text: "text-blue-700",    dot: "bg-blue-500" },
+  expired:     { bg: "bg-red-100",     text: "text-red-700",     dot: "bg-red-500" },
   Trial:       { bg: "bg-blue-100",    text: "text-blue-700",    dot: "bg-blue-500" },
   past_due:    { bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-500" },
   "Past Due":  { bg: "bg-amber-100",   text: "text-amber-700",   dot: "bg-amber-500" },

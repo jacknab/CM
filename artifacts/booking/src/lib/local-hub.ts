@@ -95,6 +95,9 @@ class LocalHubClient {
   private storeId: number | null = null;
   private role: HubRole | null = null;
   private registerId = 0;
+  /** This tablet's station is known (or the salon has none). Until then it reports no address: a heartbeat with
+   *  no station is refused once a salon has stations (on every page load, before the station had loaded). */
+  private registerKnown = true;
   private hostRegisterId: number | null = null;
   private selectedHost = false;
   private heartbeatRevision = 0;
@@ -182,7 +185,7 @@ class LocalHubClient {
    *  True when the server answered and its settings were saved here. */
   private async reportAddress(address: string, force = false): Promise<boolean> {
     if (this.storeId == null || (this.role !== "pos" && this.role !== "station")) return false;
-    if (syncEngine.isOffline()) return false;
+    if (syncEngine.isOffline() || !this.registerKnown) return false;
     const storeId = this.storeId;
     const registerId = this.registerId;
     const role = this.role;
@@ -330,10 +333,11 @@ class LocalHubClient {
    * Bring the hub up for this screen. POS stations serve or connect to the elected host; screens always connect.
    * Safe to call again (with a new role too); does nothing outside the Android app.
    */
-  async start(storeId: number, role: HubRole, registerId = 0): Promise<void> {
+  async start(storeId: number, role: HubRole, registerId = 0, registerKnown = true): Promise<void> {
     this.storeId = storeId;
     this.role = role;
     this.registerId = registerId;
+    this.registerKnown = registerKnown;
     // What this tablet already knows first, so the link comes up with no internet.
     const saved = readSaved(storeId) ?? (hasLocalHub() ? await this.savedSettings(storeId) : null);
     this.hostRegisterId = saved?.hostRegisterId ?? null;

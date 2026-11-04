@@ -63,6 +63,9 @@ export const MIRROR_TABLES: MirrorTable[] = [
   { table: "service_nail_art_applications", scope: "store" },
   { table: "service_nail_art_effects", scope: "store" },
   { table: "salon_resources", scope: "store" },
+  // Pricing levels (barbershops, hair salons; migration 0290): the price each professional charges, offline too.
+  { table: "pricing_levels", scope: "store" },
+  { table: "service_level_prices", scope: { parent: "pricing_levels", fk: "pricing_level_id" } },
   // Staff, turns, time clock
   { table: "staff", scope: "store", omit: ["invite_token"] },
   { table: "staff_services", scope: { parent: "staff", fk: "staff_id" } },

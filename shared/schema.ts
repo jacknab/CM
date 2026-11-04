@@ -213,6 +213,8 @@ export const locations = pgTable("locations", {
   smsAllowance: integer("sms_allowance").notNull().default(0),
   smsCredits: integer("sms_credits").notNull().default(0),
   smsCreditsTotalPurchased: integer("sms_credits_total_purchased").notNull().default(0),
+  // Certxa Pro Plus: notification texts are free while on (migration 0295, lib/soloSmsCredits.ts).
+  smsPlus: boolean("sms_plus").notNull().default(false),
   userId: text("user_id").references(() => users.id),
   accountStatus: text("account_status").default("Active"),
   storeLatitude: text("store_latitude"),
@@ -253,7 +255,8 @@ export const locations = pgTable("locations", {
   autoRefillAmount:    decimal("auto_refill_amount",    { precision: 10, scale: 2 }).notNull().default("25.00"),
   // ── Online booking payment policy ────────────────────────────────────────
   bookingPaymentPolicy: text("booking_payment_policy").notNull().default("none"),
-  depositType:          text("deposit_type"),   // 'percentage' | 'fixed'
+  depositType:          text("deposit_type"),   // 'percentage' | 'fixed' | 'full'
+  depositIncludeTravelFee: boolean("deposit_include_travel_fee").notNull().default(false),
   depositValue:         decimal("deposit_value", { precision: 10, scale: 2 }),
   // ── Online booking controls ─────────────────────────────────────────────
   onlineBookingMode:            text("online_booking_mode").notNull().default("all"), // 'all' | 'existing' | 'off'
@@ -263,6 +266,7 @@ export const locations = pgTable("locations", {
   addressPrivate:               boolean("address_private").notNull().default(false),
   houseCalls:                   boolean("house_calls").notNull().default(false),
   houseCallRadiusMiles:         integer("house_call_radius_miles").notNull().default(15),
+  houseCallAlarmMinutes:        integer("house_call_alarm_minutes").notNull().default(0),
   houseCallFee:                 decimal("house_call_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   houseCallTravelMinutes:       integer("house_call_travel_minutes").notNull().default(15),
   bookingApproval:              text("booking_approval").notNull().default("auto"), // 'auto' | 'manual'
@@ -595,6 +599,8 @@ export const staffAvailability = pgTable("staff_availability", {
 // (defined below) so existing API routes keep working without a rename.
 
 export const appointments = pgTable("appointments", {
+  /** The client's name on the booking/sale itself, so it survives the client being deleted (filled by a trigger, migration 0307). */
+  customerName: text("customer_name"),
   id: serial("id").primaryKey(),
   // Per-store sequential display number (see locations.nextTicketNumber /
   // storage.getNextTicketNumber) — null on every row created before this

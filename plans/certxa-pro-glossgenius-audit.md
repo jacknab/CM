@@ -153,3 +153,116 @@ Ordered by what makes money for Certxa (card volume), then what a solo pro notic
   - Done: the sales tax line (only when turned on), the pro's own tip presets (Certxa default 15/18/20/25) and text or e-mail receipts after a card payment (Pro repo).
   - The e-mail receipt endpoint now uses the signed-in store and its real name, and escapes everything it puts into the e-mail. Before this, any signed-in account could send a receipt e-mail under another business's name with its own HTML.
   - Still to do in step 1: refunds. There's no Terminal refund endpoint yet.
+
+---
+
+## 8. Pre-build audit, 2026-11-03
+
+### How it was tested
+- Typecheck of the app and the API: clean. `expo-doctor`: 20/21 → **21/21** after updating 7 Expo packages to the
+  SDK 57 patch versions (`npx expo install --fix`; e.g. expo 57.0.25 → 57.0.31, expo-router 57.0.23 → 57.0.29).
+- Every screen (26 routes + all 14 Settings sections) opened in a browser build signed in as store 41, watching for
+  script errors and failed API calls: **0 errors, 0 failed calls** after the fixes below.
+- Every GET the app makes (38 endpoints) called with the app's token: all 2xx, all under 0.5 s.
+- Another business's client, notes, appointment and visit history with this account's token: refused (404/403);
+  writes to them refused.
+- Paid-booking lock: move, cancel, delete, add-ons on a paid booking all refused (409), booking unchanged.
+- Business AI: six live questions (earnings, clients not back, text draft, change proposed + cancelled, booking move
+  refused, how-to); answers matched the data; fact checks stored.
+
+### Found and fixed in this audit
+1. **Browser version had no icons and no Inter font** (pro.certxa.com): the server's static handler ignores folders
+   starting with a dot, and Expo puts fonts under `.pnpm/`; it served the page instead. `dotfiles: "allow"` for that
+   build folder only.
+2. **The automatic client summary invented no-shows and used an old name** ("Me has no-showed a few times before" for
+   Linda Parker, who has none and was renamed). It now gets the real no-show count, may not mention no-shows when
+   there are none, uses the business's real type (not always "nail salon"), and is rewritten after a rename.
+3. **Credit package prices** were on a leftover teal label → theme violet.
+4. **Calendar** day strip and Week view now start with today (owner request).
+5. Expo patch versions (above).
+6. **Moving a booking with "Notify client" on (the default) always failed** with "Invalid input": the app's move route
+   (certxaPro.ts) didn't accept `notifyClient` and never sent the text. Now accepted; a real move is logged as
+   "rescheduled" and the client gets the reschedule text, like the website's route. Tested with a throwaway booking.
+
+### Status of the October list (section 3)
+| # | Then | Now |
+|---|---|---|
+| B1 Sales tax | missing | Done 10-22 |
+| B2 Cash | — | Closed by decision ("Mark as paid") |
+| B3 Receipts | missing | Done 10-22 (text/e-mail) |
+| B4 Notes | couldn't add | Done (notes screen, pins) |
+| B5 Move times | fixed list | 15-minute list 6 AM–10 PM, server refuses clashes — acceptable |
+| B6 Notify after drag | did nothing | Fixed 11-03 (the move itself was failing; now moves and texts) |
+| B7 Drag | started at once | Done (press and hold) |
+| B8 Client profiles | empty | Done 11-03 (full CRM) |
+| B9 Cancel / no-show | Delete only | **Still missing** — see below |
+| B10 Placeholders | locked | Business AI real; Availability and Payments rows removed from More |
+| B11 Website editing | link only | Done 10-23 (link, design, look) |
+
+### Certxa Pro vs GlossGenius now
+GlossGenius: Standard about $24–28, Gold $48–56, Platinum $148–168 a month (2026 sources disagree; prices rose in
+April 2026), no free plan. Certxa Pro: free, earns on card payments; Plus $3/month for free notification texts.
+
+**Certxa Pro has (parity or better):** Tap to Pay on iPhone + Stripe M2, tips, tax, text/e-mail receipts, refunds,
+deposits (asked after approval when approval is on), booking approval with offered times, online booking site with
+designs and own link, client CRM (status, tags, notes, allergies, VIP, visit rhythm, marketing consent), reviews and
+replies, push notifications, business AI with real numbers and confirm-to-change, house calls with radius/fee/travel
+time, private home-studio address, loyalty points, Autumn AI receptionist (server), paid bookings locked.
+
+**Still missing vs GlossGenius (by value to a solo pro):**
+1. **Cancel and no-show** instead of Delete, with the no-show/late-cancel fee button (decided 10-22: fee only when
+   the pro taps). Server has `/api/appointments/:id/cancel`. Without it, no-show counts in the CRM stay at 0.
+2. **Money screen:** payouts, balance, instant payout, transactions list, simple sales report (Home shows today only;
+   Business AI can answer, but there's no screen).
+3. **Block personal time / days off** (the old preview-only screen saved nothing).
+4. **Card on file** at booking (server partly has it).
+5. **Two-way texting inbox** (server `/api/sms-inbox`), **intake forms** (server `/api/intake-forms`), **gift cards**
+   (server `/api/gift-cards`) — app screens only.
+6. Recurring appointments, waitlist, before/after photos, import phone contacts, payment links, memberships,
+   marketing campaigns and automated birthday/win-back texts in the app.
+
+### Before the iOS build
+- Build label is "Build Nov 3 · I"; version in app.json unchanged (bump if App Store needs a new version).
+- Untested on a real device today: Tap to Pay, M2, push, Messages/phone/e-mail links from the client profile and
+  Business AI drafts, the time-wheel sheet, dropdown sheets with the iOS keyboard.
+
+## 9. Build, 2026-11-03 (after the pre-build audit; app build label "Build Nov 3 · J")
+1. **Cancel and no-show** (B9): Cancel (with or without a text to the client, the text is now really sent) and No-show
+   replace Delete on an open booking; a cancelled/no-show booking offers Rebook, the fee button, and Delete. Fee
+   (decision 10-22: only on tap): the shop's % (Settings › Cancellation policy, new field) of the booking, charged
+   to the client's saved card, once (migration 0294 fee_* columns; POST /api/appointments/:id/no-show, /fee).
+   Cancelled bookings leave the calendar; no-shows stay, labelled.
+2. **Money screen** (More › Money): sales today/week/month, on its way to the bank + next payout, recent payouts,
+   this month's payments — all existing endpoints.
+3. **Block time / days off** (calendar +): time_blocks (migration 0295), grey blocks on the day view (tap to
+   remove), online booking offers no time inside a block (verified: 9 open times → 0 → 9).
+4. **Card on file**: "Save their card (no charge)" is now a normal choice in Settings › Deposits.
+5. **Messages** (two-way texting) and **Gift cards** (sell, use, balances) screens. Gift card POST now validates
+   the amount (a missing one was a 500).
+   **Intake forms: not built** — nothing in Certxa shows a form to a client (no public form page, no booking step
+   submits answers, 0 responses ever stored). Needs the client side first.
+
+## 10. Build, 2026-11-03 later (app build label "Build Nov 3 · K")
+- **Win-back texts** (owner: yes; birthday texts: not wanted): lib/winBack.ts replaces lapsed-client-scheduler.ts (it
+  never sent anything — stale visit columns — and would have re-texted daily). Settings › Client notifications switch +
+  "after N days"; one text per absence, marketing opt-in only, 10 AM shop time, advisory lock.
+- **Payment links**: "Text a payment link" on an open booking → certxa.com/pay/<token> (routes/payLinks.ts, migration
+  0296) — card on the business's own Stripe account, $0.60 fee; booking then marked paid (review text follows).
+- **Recurring bookings**: booking flow "Repeat" (every 1–4 weeks, 2–12 times); POST /api/appointments/:id/repeat skips
+  clashes and blocked time and lists them.
+- **Before/after photos**: client profile Photos (client_photos, migration 0297; private). Owner 11-03: photos go to the
+  pro's own Certxa website, never assume Google → "Show on website" puts one in the website gallery; **Portfolio**
+  screen (More) adds work photos to it. The public gallery endpoint Bloom asks for (/api/public/store/:slug/gallery)
+  never existed — added. Later: auto-post to Facebook Page / Instagram (see below).
+- **Waitlist** screen (More): add, book now, text, remove; push to the owner when a client cancels online on a day
+  someone is waiting for.
+- **Import phone contacts** (Clients › + › Import): expo-contacts added (native → needs the build).
+- **Campaigns** (More): text to all / lapsed 60 / lapsed 90. Server fixes: campaign texts went to clients who had
+  opted out of marketing texts; {{bookingLink}} used a Replit dev domain; Solo accounts were always refused (no wallet)
+  — now they use their text credits.
+- **Not built yet:** memberships (needs decisions: perks, billing), intake forms (no client side exists).
+
+**Facebook / Instagram auto-post (later):** Facebook only lets apps post to a business *Page* (not a personal
+profile), with the pages_manage_posts permission after Meta App Review. Instagram's Content Publishing API posts photos
+to Business/Creator accounts (Instagram login, instagram_business_content_publish, App Review). Both: the pro connects
+their account once in the app, then a photo marked "Show on website" can also go to their Page/Instagram.

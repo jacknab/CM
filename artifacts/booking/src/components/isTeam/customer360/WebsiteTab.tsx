@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supportApi, type WebsiteData } from "@/lib/support-api";
 import { format, parseISO } from "date-fns";
-import { Globe, Eye, FileText, CheckCircle2, XCircle, ExternalLink, Layout } from "lucide-react";
+import { Globe, Eye, CheckCircle2, XCircle, ExternalLink, Layout } from "lucide-react";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -27,7 +27,23 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
     </div>
   );
 
-  const { website, pageViews } = data;
+  const { website, pageViews, bookingSite } = data;
+
+  // A Certxa Pro app account has no Website Builder site: its website is the booking site.
+  if (!website && bookingSite) return (
+    <div className="p-6">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 max-w-lg space-y-2">
+        <div className="flex items-center gap-2">
+          <Globe size={14} className="text-slate-400" />
+          <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Booking website</h3>
+        </div>
+        <p className="text-xs text-slate-500">This Certxa Pro app account's website is its booking site, set up in the app's Website screen.</p>
+        <a href={bookingSite.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-indigo-600 hover:underline text-sm font-medium">
+          {bookingSite.url.replace("https://", "")}<ExternalLink size={11} />
+        </a>
+      </div>
+    </div>
+  );
 
   if (!website) return (
     <div className="flex flex-col items-center justify-center h-64 gap-2">
@@ -47,7 +63,6 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
     { icon: Eye,      label: "Views (7d)",   value: pageViews.views_7d,    color: "text-indigo-600",  bg: "bg-indigo-50"  },
     { icon: Eye,      label: "Views (30d)",  value: pageViews.views_30d,   color: "text-violet-600",  bg: "bg-violet-50"  },
     { icon: Eye,      label: "Views (All)",  value: pageViews.total_views, color: "text-blue-600",    bg: "bg-blue-50"    },
-    { icon: FileText, label: "Pages",        value: website.page_count,    color: "text-emerald-600", bg: "bg-emerald-50" },
   ];
 
   return (
@@ -70,7 +85,7 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
       )}
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         {kpis.map(k => (
           <div key={k.label} className={`rounded-xl ${k.bg} p-3 flex flex-col gap-1`}>
             <k.icon size={14} className={k.color} />

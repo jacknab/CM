@@ -135,7 +135,13 @@ export async function backToSolo(storeId: number, why: string): Promise<void> {
     [storeId, solo.rows[0].id],
   );
   cache.billing.invalidate(storeId);
+  // Every text spends a credit again (lib/soloSmsCredits.ts).
+  const { setSmsPlus } = await import("../lib/soloSmsCredits");
+  await setSmsPlus(storeId, false);
   console.log(`[saas-billing] storeId=${storeId} Plus ended (${why}) → free Solo`);
+  // The owner's phone says so (Certxa Pro app).
+  const { pushPlanChange } = await import("../lib/ownerPush");
+  void pushPlanChange(storeId, "pro", why);
 }
 
 let running = false;

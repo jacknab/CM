@@ -33,6 +33,16 @@ export function useHouseCall(store: unknown, slug: string, services: OfferedAtSe
   // Changing the address means checking it again.
   useEffect(() => { setConfirmed(null); setMessage(""); }, [address.line1, address.city, address.state, address.postcode]);
 
+  // A full ZIP code fills in the city and state; they can still be changed.
+  useEffect(() => {
+    if (!/^\d{5}$/.test(address.postcode)) return;
+    let stale = false;
+    fetch(`/api/public/zip/${address.postcode}`).then((r) => (r.ok ? r.json() : null)).then((place) => {
+      if (place && !stale) setAddress((a) => ({ ...a, city: place.city, state: place.state }));
+    }).catch(() => undefined);
+    return () => { stale = true; };
+  }, [address.postcode]);
+
   const check = async () => {
     setChecking(true);
     setMessage("");
@@ -104,11 +114,12 @@ export function HouseCallFields({ hc, className = "" }: { hc: HouseCall; classNa
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-900">Where should we come?</p>
           <input className={input} placeholder="Street address" autoComplete="address-line1" value={hc.address.line1} onChange={set("line1")} data-testid="house-call-line1" />
-          <input className={input} placeholder="City" autoComplete="address-level2" value={hc.address.city} onChange={set("city")} data-testid="house-call-city" />
+          {/* ZIP first: it fills in the city and state. */}
           <div className="grid grid-cols-2 gap-2">
-            <input className={input} placeholder="State (e.g. NY)" maxLength={2} autoComplete="address-level1" value={hc.address.state} onChange={set("state")} data-testid="house-call-state" />
             <input className={input} placeholder="ZIP code" inputMode="numeric" maxLength={10} autoComplete="postal-code" value={hc.address.postcode} onChange={set("postcode")} data-testid="house-call-zip" />
+            <input className={input} placeholder="State (e.g. NY)" maxLength={2} autoComplete="address-level1" value={hc.address.state} onChange={set("state")} data-testid="house-call-state" />
           </div>
+          <input className={input} placeholder="City" autoComplete="address-level2" value={hc.address.city} onChange={set("city")} data-testid="house-call-city" />
           {hc.ready ? (
             <p className="text-sm text-gray-600">
               {hc.travelFee > 0 ? `We come to you. A $${hc.travelFee.toFixed(2)} travel fee is added.` : "We come to you."}

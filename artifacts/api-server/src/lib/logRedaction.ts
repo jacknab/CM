@@ -8,7 +8,7 @@
  */
 export const NEVER_LOG_BODY_PREFIXES = ["/api/payments", "/api/auth", "/api/print-agent"];
 
-export const REDACT_KEYS = /^(secret|clientsecret|client_secret|token|password|pin|apikey|api_key|authorization|phone|displayphone|phonenumber|phone_number|email|ssn|cvc|cvv|cardnumber|card_number|accountnumber|account_number)$/i;
+export const REDACT_KEYS = /^(secret|clientsecret|client_secret|token|phonetoken|password|pin|apikey|api_key|authorization|phone|displayphone|phonenumber|phone_number|email|ssn|cvc|cvv|cardnumber|card_number|accountnumber|account_number)$/i;
 
 export function redactForLog(value: unknown, depth = 0): unknown {
   if (depth > 6 || value == null) return value;

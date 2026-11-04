@@ -1,5 +1,5 @@
 /**
- * certxa.com/pro-plus — buying Certxa Pro Plus ($3/month) with a card (owner, 2026-10-30).
+ * certxa.com/pro-plus — buying Certxa Pro Plus ($5/month) with a card (owner, 2026-10-30).
  *
  * Opened from the Certxa Pro app's Plus card through a one-time sign-in link (GET /pro-plus/start → here).
  * Apple lets a US app send people to a website for this; a card form inside the app itself is not allowed.

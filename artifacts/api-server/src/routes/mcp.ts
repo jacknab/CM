@@ -176,7 +176,65 @@ const TOOLS = [
     },
     annotations: { title: "Book an appointment", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
+  {
+    name: "check_walk_in_wait",
+    title: "Check the walk-in wait",
+    description:
+      "For barbershops and haircut studios that take walk-ins with online check-in: the current wait, how many people are waiting, how many barbers are in, and whether online check-in is open. Not an appointment: use this when the user wants to walk in or asks how long the wait is.",
+    inputSchema: { type: "object", properties: { salon_id: { type: "string", description: "salon_id from search_salons." } }, required: ["salon_id"], additionalProperties: false },
+    annotations: { title: "Check the walk-in wait", readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "join_walk_in_line",
+    title: "Join the walk-in line",
+    description:
+      "Put the user in a barbershop's walk-in line (online check-in) when check_walk_in_wait says it is open. This holds their place in line; it is not an appointment and the wait is an estimate. Only call it after the user confirmed the shop, their name and US mobile number. The shop texts them a link to their spot and texts again when it's time to come in.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        salon_id: { type: "string" },
+        customer_name: { type: "string", description: "The client's first name (and last name if given)." },
+        customer_phone: { type: "string", description: "The client's US mobile number, 10 digits." },
+      },
+      required: ["salon_id", "customer_name", "customer_phone"],
+      additionalProperties: false,
+    },
+    annotations: { title: "Join the walk-in line", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
 ] as const;
+
+const lineUrl = (slug: string) => `${SITE()}/q/${slug}`;
+function lineSlug(salonId: unknown): string {
+  const slug = String(salonId ?? "").trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{0,80}$/.test(slug)) throw new ToolError("Unknown salon_id. Use search_salons to find it.", "not_found");
+  return slug;
+}
+async function checkWalkInWait(args: any) {
+  const slug = lineSlug(args.salon_id);
+  const r = await localApi(`/api/public/line/${encodeURIComponent(slug)}`);
+  if (r.status === 404) throw new ToolError("This salon doesn't have online check-in for walk-ins. Use check_availability to book an appointment instead.", "no_walk_in_line");
+  if (r.status !== 200) throw new ToolError("The wait couldn't be checked right now.", "unavailable");
+  const l = r.data;
+  return {
+    salon_name: l.store.name, online_check_in_open: l.open, closed_reason: l.open ? null : l.closedReason,
+    wait: l.open && l.waitMin != null ? l.waitText : null, wait_minutes: l.waitMin, people_waiting: l.ahead, barbers_working: l.barbersWorking,
+    check_in_url: lineUrl(slug), note: "The wait is an estimate. Online check-in holds a place in line; it is not an appointment.",
+  };
+}
+async function joinWalkInLine(args: any) {
+  const slug = lineSlug(args.salon_id);
+  const name = String(args.customer_name ?? "").trim().slice(0, 60);
+  if (!name) throw new ToolError("The client's name is needed.", "invalid_input");
+  if (!toE164(String(args.customer_phone ?? ""))) throw new ToolError("A 10-digit US mobile number is needed: the shop texts the client.", "invalid_input");
+  const r = await localApi(`/api/public/line/${encodeURIComponent(slug)}/join`, { method: "POST", body: { names: [name], phone: String(args.customer_phone) } });
+  if (r.status === 404) throw new ToolError("This salon doesn't have online check-in for walk-ins.", "no_walk_in_line");
+  if (r.status !== 200) throw new ToolError(r.data?.error || "The client couldn't be added to the line.", "join_failed", { check_in_url: lineUrl(slug) });
+  const wait = await checkWalkInWait({ salon_id: slug }).catch(() => null);
+  return {
+    status: "in_line", salon_name: wait?.salon_name ?? null, spot_url: `${lineUrl(slug)}/s/${r.data.token}`,
+    message: "The client is in the line. They get a text with a link to their spot, and another text when it's time to head over.",
+  };
+}
 
 async function searchSalons(args: any) {
   const where: string[] = [
@@ -406,6 +464,8 @@ const HANDLERS: Record<string, (args: any) => Promise<unknown>> = {
   get_salon: getSalon,
   check_availability: checkAvailability,
   book_appointment: bookAppointment,
+  check_walk_in_wait: checkWalkInWait,
+  join_walk_in_line: joinWalkInLine,
 };
 
 // ── JSON-RPC / MCP ───────────────────────────────────────────────────────────
@@ -414,6 +474,7 @@ const INSTRUCTIONS =
   "Certxa is booking software used by nail salons, hair salons, barbershops and spas in the United States. " +
   "To book: search_salons → get_salon (pick a service) → check_availability → confirm the details with the user → book_appointment. " +
   "Always confirm the salon, service, staff member, date, time, the client's name and mobile number before booking. " +
+  "Barbershops that take walk-ins: check_walk_in_wait shows the live wait, and join_walk_in_line holds a place in line (not an appointment). " +
   "Times are in the salon's local time zone.";
 
 async function handleMessage(msg: any): Promise<any | null> {

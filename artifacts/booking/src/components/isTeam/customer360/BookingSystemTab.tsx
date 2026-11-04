@@ -5,8 +5,11 @@ import { Calendar, CheckCircle2, XCircle, UserX, Clock, DollarSign, Scissors, Us
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   completed:  { label: "Completed",  color: "text-emerald-700", bg: "bg-emerald-50" },
+  paid:       { label: "Paid",       color: "text-emerald-700", bg: "bg-emerald-50" },
   cancelled:  { label: "Cancelled",  color: "text-red-700",     bg: "bg-red-50"     },
   "no-show":  { label: "No-Show",    color: "text-orange-700",  bg: "bg-orange-50"  },
+  // Saved as no_show; a booking paid in the Certxa Pro app is "paid".
+  no_show:    { label: "No-Show",    color: "text-orange-700",  bg: "bg-orange-50"  },
   pending:    { label: "Booked",     color: "text-blue-700",    bg: "bg-blue-50"    },
   confirmed:  { label: "Confirmed",  color: "text-teal-700",    bg: "bg-teal-50"    },
   started:    { label: "In Progress",color: "text-amber-700",   bg: "bg-amber-50"   },

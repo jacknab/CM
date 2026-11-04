@@ -1,6 +1,6 @@
 import type { Pool } from "pg";
 import type { SegmentId, SegmentResult } from "./types";
-import { SEGMENT_IDS } from "./types";
+import { SEGMENT_IDS, pass, warn, rollup } from "./types";
 import { bookingReadiness }  from "./segments/bookingReadiness";
 import { teamRoster }        from "./segments/teamRoster";
 import { servicesCatalog }   from "./segments/servicesCatalog";
@@ -11,6 +11,7 @@ import { paymentsBilling }   from "./segments/paymentsBilling";
 import { aiReceptionist }    from "./segments/aiReceptionist";
 import { onlinePresence }    from "./segments/onlinePresence";
 import { kioskWaitlist }     from "./segments/kioskWaitlist";
+import { frontDesk }         from "./segments/frontDesk";
 
 export type { SegmentId, SegmentResult, CheckResult } from "./types";
 export { SEGMENT_IDS } from "./types";
@@ -28,7 +29,57 @@ const RUNNERS: Record<SegmentId, (id: number, pool: Pool) => Promise<SegmentResu
   ai_receptionist:    aiReceptionist,
   online_presence:    onlinePresence,
   kiosk_waitlist:     kioskWaitlist,
+  front_desk:         frontDesk,
 };
+
+// ── Certxa Pro app accounts (owner, 2026-11-04) ──────────────────────────────
+// An account made in the app (users.account_type 'certxa_pro') is one person with one calendar: no team, payroll,
+// front desk, kiosk, AI receptionist, Google profile or Website Builder (its website is the booking site), and its texts
+// come from text credits, not the allowance/wallet. Only what the app has is checked, so support sees no warnings that
+// don't apply to it.
+const PRO_SKIP_SEGMENTS: SegmentId[] = ["team_roster", "commission_payroll", "ai_receptionist", "kiosk_waitlist", "front_desk"];
+const PRO_SKIP_CHECKS: Partial<Record<SegmentId, string[]>> = {
+  booking_readiness: ["staff_service_assignments"],
+  services_catalog: ["service_staff_coverage"],
+  features_settings: ["pos", "loyalty", "grace_period"],
+  sms_communications: ["credits_balance", "sms_balance"],
+  payments_billing: ["platform_credits"],
+  online_presence: ["website", "gbp"],
+};
+
+async function isProAccount(accountId: number, pool: Pool): Promise<boolean> {
+  const r = await pool.query(`SELECT u.account_type FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1`, [accountId]);
+  return r.rows[0]?.account_type === "certxa_pro";
+}
+
+/** A segment's result as it applies to a Certxa Pro app account. */
+async function forProApp(result: SegmentResult, accountId: number, pool: Pool): Promise<SegmentResult> {
+  const skip = new Set(PRO_SKIP_CHECKS[result.segmentId as SegmentId] ?? []);
+  let checks = result.checks.filter((c) => !skip.has(c.id));
+  if (result.segmentId === "booking_readiness") {
+    // One person: with no hours of their own they are booked during the business hours.
+    checks = checks.map((c) => c.id === "staff_availability" && c.status !== "pass"
+      ? pass("staff_availability", "Staff availability configured", "Booked during the business hours (the app has one calendar).") : c);
+  }
+  if (result.segmentId === "sms_communications") {
+    // Texts to clients are paid from text credits; Plus makes notification texts free (lib/soloSmsCredits.ts).
+    const r = await pool.query(`SELECT sms_credits, sms_plus FROM locations WHERE id = $1`, [accountId]);
+    const credits = Number(r.rows[0]?.sms_credits ?? 0);
+    checks.push(r.rows[0]?.sms_plus
+      ? pass("text_credits", "Text credits", `Plus: notification texts are free. ${credits} credits for other texts.`)
+      : credits > 0
+        ? pass("text_credits", "Text credits", `${credits} text credits.`)
+        : warn("text_credits", "Text credits", "No text credits left — texts to clients (reminders, confirmations) won't be sent.", "App → More → Credit balance"));
+  }
+  return { ...result, checks, status: rollup(checks) };
+}
+
+async function runSegment(segId: SegmentId, accountId: number, pool: Pool, pro: boolean): Promise<SegmentResult> {
+  const runner = RUNNERS[segId];
+  if (!runner) throw new Error(`Unknown segment: ${segId}`);
+  const result = await runner(accountId, pool);
+  return pro ? forProApp(result, accountId, pool) : result;
+}
 
 export interface HealthCheckRunOptions {
   accountId: number;
@@ -56,14 +107,15 @@ export interface HealthCheckRun {
 
 export async function runHealthCheck(opts: HealthCheckRunOptions): Promise<HealthCheckRun> {
   const { accountId, agentId, agentName, pool } = opts;
-  const segments = (opts.segments && opts.segments.length > 0) ? opts.segments : [...SEGMENT_IDS];
+  const pro = await isProAccount(accountId, pool);
+  const segments = ((opts.segments && opts.segments.length > 0) ? opts.segments : [...SEGMENT_IDS])
+    .filter((segId) => !(pro && PRO_SKIP_SEGMENTS.includes(segId)));
 
   // Run all requested segments in parallel
   const resultArray = await Promise.all(
     segments.map(segId => {
-      const runner = RUNNERS[segId];
-      if (!runner) throw new Error(`Unknown segment: ${segId}`);
-      return runner(accountId, pool).catch(err => {
+      if (!RUNNERS[segId]) throw new Error(`Unknown segment: ${segId}`);
+      return runSegment(segId, accountId, pool, pro).catch(err => {
         console.error(`[HealthCheck] Segment ${segId} failed:`, err);
         return {
           segmentId: segId,
@@ -137,7 +189,7 @@ export async function rerunSegment(
   const runner = RUNNERS[segmentId];
   if (!runner) throw new Error(`Unknown segment: ${segmentId}`);
 
-  const freshResult = await runner(accountId, pool);
+  const freshResult = await runSegment(segmentId, accountId, pool, await isProAccount(accountId, pool));
 
   // Fetch existing run
   const existing = await pool.query(

@@ -2,13 +2,14 @@ import { useNavigate } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Sparkles, Receipt, Calendar, Percent, FileText, Star, Users, Scissors, UserCircle, Wallet, HandCoins, Gift, Clock, Repeat,
-  UserMinus, CalendarX, Award, Hourglass, Timer, BarChart3, MessageSquareHeart, MessageSquare, Phone, Ban,
+  UserMinus, CalendarX, Award, Hourglass, Timer, BarChart3, MessageSquareHeart, MessageSquare, Phone, Ban, Smartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useSelectedStore } from "@/hooks/use-store";
 import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
 
-type ReportCard = { title: string; description: string; icon: typeof Sparkles; to: string };
+type ReportCard = { title: string; description: string; icon: typeof Sparkles; to: string; /** Barbershops and haircut studios only. */ onlineLineOnly?: boolean };
 
 /**
  * Reports home (owner, 2026-10-29): cards grouped by what they are about, each opening its own report page. A report is
@@ -45,6 +46,7 @@ const GROUPS: { title: string; cards: ReportCard[] }[] = [
     { title: "Busiest times", description: "When clients come in, by day and hour, for staffing", icon: BarChart3, to: "/reports/busy-times" },
     { title: "Services & add-ons", description: "What sells, for how much, and add-on attach rates", icon: Scissors, to: "/reports/services" },
     { title: "Cancelled after service", description: "Tickets cancelled after a technician worked on them, with the reason", icon: Ban, to: "/reports/cancelled-after-service" },
+    { title: "Online check-in", description: "Clients who joined the line from their phone, and how good the wait estimate was", icon: Smartphone, to: "/reports/online-checkin", onlineLineOnly: true },
   ] },
   { title: "Marketing", cards: [
     { title: "Review requests", description: "Review texts sent, links opened, reviews received", icon: MessageSquareHeart, to: "/reports/reviews" },
@@ -60,6 +62,9 @@ export default function ReportsHub() {
   const { user: authUser } = useAuth();
   const proAccount = isProAccount((authUser as any)?.accountType);
   const navigate = useNavigate();
+  // Barbershops and haircut studios have the Online Check-In Line (and its report).
+  const { selectedStore } = useSelectedStore();
+  const onlineLineShop = /barber|hair/i.test(String((selectedStore as any)?.category ?? ""));
 
   return (
     <AppLayout>
@@ -67,7 +72,7 @@ export default function ReportsHub() {
         <h1 className="text-2xl font-bold mb-6">Reports</h1>
         <div className="space-y-8">
           {GROUPS.map((group) => {
-            const cards = group.cards.filter((card) => !(proAccount && isHiddenForProAccount(card.to)));
+            const cards = group.cards.filter((card) => !(proAccount && isHiddenForProAccount(card.to)) && !(card.onlineLineOnly && !onlineLineShop));
             if (!cards.length) return null;
             return (
               <section key={group.title} data-testid={`report-group-${group.title.toLowerCase().replace(/\s+/g, "-")}`}>

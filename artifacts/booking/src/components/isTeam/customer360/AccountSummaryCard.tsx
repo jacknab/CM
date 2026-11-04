@@ -8,7 +8,11 @@ type Props = {
 };
 
 export default function AccountSummaryCard({ store, owner }: Props) {
-  const formatPhone = (p: string) => p?.replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, "+$1 ($2) $3-$4") ?? p;
+  // 10 digits or +1 and 10 digits; anything else as it was entered.
+  const formatPhone = (p: string) => {
+    const d = (p ?? "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+    return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p;
+  };
   // Times in the salon's own time zone (owner, 2026-10-30), so support knows the client's local time.
   const tz = store.timezone || "UTC";
   const salonTime = (iso: string) => formatInTimeZone(new Date(iso), tz, "MMM d, yyyy · h:mm a zzz");
@@ -60,15 +64,24 @@ export default function AccountSummaryCard({ store, owner }: Props) {
         </div>
         <div className="border-t border-slate-100 pt-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Credits & Usage</p>
+          {/* A Certxa Pro account texts from its credits (free notification texts while on Plus); the website plans
+              have a monthly SMS allowance and credits for marketing texts. sms_tokens is an old column, no longer used. */}
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-slate-50 rounded-lg p-2.5 text-center">
-              <div className="text-lg font-bold text-slate-800">{store.smsTokens ?? 0}</div>
-              <div className="text-[10px] text-slate-500">SMS Remaining</div>
+              <div className="text-lg font-bold text-slate-800">{store.smsCredits ?? 0}</div>
+              <div className="text-[10px] text-slate-500">Text credits</div>
             </div>
-            <div className="bg-slate-50 rounded-lg p-2.5 text-center">
-              <div className="text-lg font-bold text-slate-800">{store.smsAllowance ?? 0}</div>
-              <div className="text-[10px] text-slate-500">SMS Allowance</div>
-            </div>
+            {owner.proApp ? (
+              <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+                <div className="text-lg font-bold text-slate-800">{store.smsPlus ? "Unlimited" : "—"}</div>
+                <div className="text-[10px] text-slate-500">{store.smsPlus ? "Notification texts (Plus)" : "Notification texts use credits"}</div>
+              </div>
+            ) : (
+              <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+                <div className="text-lg font-bold text-slate-800">{store.smsAllowance ?? 0}</div>
+                <div className="text-[10px] text-slate-500">SMS Allowance</div>
+              </div>
+            )}
           </div>
         </div>
       </div>

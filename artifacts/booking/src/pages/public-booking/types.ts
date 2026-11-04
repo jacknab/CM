@@ -13,6 +13,8 @@ export interface StoreData {
   bookingSite?: BookingSiteLook | null;
   city?: string | null;
   category?: string | null;
+  /** A Solo pro's label: "Nails by Toby" (server: lib/proCraft.ts). */
+  byLabel?: string | null;
   state?: string | null;
   googleRating?: number | null;
   googleReviewCount?: number;
@@ -93,6 +95,8 @@ export interface TimeSlot {
 
 export interface BookingSiteLook {
   accent?: string;
+  /** The pro's own photo, on the Solo website's About tab. */
+  aboutImage?: string;
   coverImage?: string;
   logoImage?: string;
   about?: string;

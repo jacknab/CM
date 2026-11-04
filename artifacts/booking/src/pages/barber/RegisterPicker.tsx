@@ -25,7 +25,7 @@ export function RegisterPicker({ registers, taken, onSelect }: {
         <h2>Which register is this?</h2>
         <p className="picker-hint">
           {registers.length > 0
-            ? "This salon has multiple checkout stations. Pick which one this terminal is — you won't be asked again on this device."
+            ? "This shop has multiple checkout stations. Pick which one this terminal is — you won't be asked again on this device."
             : "Every station is marked in use. If one of them is this tablet (for example after reinstalling the app), take it over below."}
         </p>
         {registers.map((r) => (

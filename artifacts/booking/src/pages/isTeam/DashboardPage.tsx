@@ -5,12 +5,13 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { supportApi, type SearchResult } from "@/lib/support-api";
 import { StatusBadge } from "@/components/isTeam/ui/StatusBadge";
 
-// One page behind the four Accounts links in the sidebar. The ?status= on the link picks the list.
+// One page behind the five Accounts links in the sidebar. The ?status= on the link picks the list.
 const VIEWS: Record<string, { status: string; title: string; subtitle: string; empty: string }> = {
   "":        { status: "all",       title: "Search Accounts",  subtitle: "Find any customer account by name, email, phone, or account ID", empty: "No accounts yet." },
   Active:    { status: "active",    title: "Active Accounts",  subtitle: "Accounts that are not suspended. Accounts on a free trial are included.", empty: "No active accounts." },
   Trial:     { status: "trial",     title: "Trials",           subtitle: "Accounts whose owner is on a free trial.", empty: "No accounts on a trial." },
   Suspended: { status: "suspended", title: "Suspended",        subtitle: "Accounts that have been suspended.", empty: "No suspended accounts." },
+  Pro:       { status: "pro",       title: "Certxa Pro",       subtitle: "Accounts created in the Certxa Pro app. Only these accounts can sign in to the app.", empty: "No Certxa Pro accounts yet." },
 };
 
 const day = (value: string | null) => (value ? format(new Date(value), "MMM d, yyyy") : "—");

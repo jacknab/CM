@@ -154,20 +154,56 @@ export function holdTimeLeft(expiresAt: Date, prefix: "next" | "about" = "about"
   return prefix === "next" ? `the next ${hours} hours` : `about ${hours} hours`;
 }
 
+export type DepositRule = { type: string | null; value: string | number | null; includeTravelFee?: boolean | null };
+
+/** A deposit rule is complete: the whole price needs no amount, a fixed amount or percent does. */
+export function depositIsSet(rule: DepositRule): boolean {
+  return rule.type === "full" || Number(rule.value) > 0;
+}
+
 /**
- * The deposit an online booking owes, in cents, when the business asks for one (POS → Booking payments, or
- * the Certxa Pro app's Settings → Deposits): a fixed amount or a percentage of the visit, at least Stripe's
- * 50-cent minimum. Null when the business takes no deposit or can't take cards yet.
+ * What a deposit comes to, in cents: the whole visit (services and add-ons, all of a two-service visit), a fixed amount
+ * or a percent of it, with the house call's travel fee counted only if the business says so. Never more than the visit
+ * costs; 0 for a free visit, otherwise at least Stripe's 50-cent minimum.
  */
-export async function depositCentsFor(storeId: number, visitTotalCents: number): Promise<number | null> {
-  const row = await pool.query<{ booking_payment_policy: string | null; deposit_type: string | null; deposit_value: string | null; connected: boolean }>(
-    `SELECT l.booking_payment_policy, l.deposit_type, l.deposit_value,
+export function depositFromRule(rule: DepositRule, visitCents: number, travelCents = 0): number {
+  const base = visitCents + (rule.includeTravelFee ? travelCents : 0);
+  if (base <= 0 || !depositIsSet(rule)) return 0;
+  const value = Number(rule.value);
+  const due = rule.type === "full" ? base : rule.type === "percentage" ? Math.round((base * value) / 100) : Math.round(value * 100);
+  return Math.min(base, Math.max(50, due));
+}
+
+/**
+ * The deposit an online booking owes, in cents, when the business asks for one (POS → Booking payments, or the Certxa
+ * Pro app's Settings → Deposits). Null when the business takes no deposit or can't take cards yet.
+ */
+export async function depositCentsFor(storeId: number, visitCents: number, travelCents = 0): Promise<number | null> {
+  const row = await pool.query<{ booking_payment_policy: string | null; deposit_type: string | null; deposit_value: string | null; deposit_include_travel_fee: boolean; connected: boolean }>(
+    `SELECT l.booking_payment_policy, l.deposit_type, l.deposit_value, l.deposit_include_travel_fee,
             EXISTS (SELECT 1 FROM store_payment_accounts p WHERE p.store_id = l.id AND p.provider = 'stripe' AND p.status = 'connected') AS connected
        FROM locations l WHERE l.id = $1`, [storeId]);
   const r = row.rows[0];
   if (!r || r.booking_payment_policy !== "deposit" || !r.connected || !process.env.STRIPE_SECRET_KEY) return null;
-  const value = Number(r.deposit_value);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  const cents = r.deposit_type === "percentage" ? Math.round(visitTotalCents * value / 100) : Math.round(value * 100);
-  return Math.max(50, cents);
+  return depositFromRule({ type: r.deposit_type, value: r.deposit_value, includeTravelFee: r.deposit_include_travel_fee }, visitCents, travelCents) || null;
+}
+
+/** What each appointment of a visit costs, the first one first (a two-service visit is two appointments). */
+export async function visitParts(appointmentId: number): Promise<{ id: number; cents: number }[]> {
+  const { rows } = await pool.query<{ id: number; cents: string }>(
+    `SELECT a.id, ROUND((COALESCE(s.price, 0) + COALESCE(a.travel_fee, 0)
+              + COALESCE((SELECT SUM(ad.price) FROM appointment_addons aa JOIN addons ad ON ad.id = aa.addon_id WHERE aa.appointment_id = a.id), 0)) * 100) AS cents
+       FROM appointments a LEFT JOIN services s ON s.id = a.service_id
+      WHERE a.id = $1 OR a.ticket_group_id = $1 ORDER BY (a.id = $1) DESC, a.id`, [appointmentId]);
+  return rows.map((r) => ({ id: Number(r.id), cents: Number(r.cents) }));
+}
+
+/** A deposit across a visit's appointments in turn, so a large one comes off both at checkout. */
+export function splitDeposit(depositCents: number, parts: { id: number; cents: number }[]): { id: number; cents: number }[] {
+  let left = depositCents;
+  return parts.map((part, i) => {
+    const cents = i === parts.length - 1 ? left : Math.min(left, part.cents);
+    left -= cents;
+    return { id: part.id, cents };
+  });
 }

@@ -25,12 +25,12 @@ export async function featuresSettings(accountId: number, pool: Pool): Promise<S
     checks.push(pass("online_booking", "Online booking enabled", "Online booking is active."));
   }
 
-  // Booking confirmation email
-  if (!prefs.notificationEmail && !prefs.bookingConfirmationEmail) {
-    checks.push(warn("confirmation_email", "Booking confirmation email configured", "No notification email address is set — confirmation and reminder emails may not be delivered correctly.", "Settings → Notifications → Email"));
+  // Booking confirmation email: sent to the client by Certxa's email service (lib/mail.ts). It used to look for a
+  // notificationEmail setting that nothing in Certxa sets, so it warned on every account (found 2026-11-04).
+  if (!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN)) {
+    checks.push(warn("confirmation_email", "Booking confirmation email configured", "Certxa's email service is not configured — confirmation emails to clients can't be sent.", "Platform Configuration → Email"));
   } else {
-    const email = (prefs.notificationEmail ?? prefs.bookingConfirmationEmail) as string;
-    checks.push(pass("confirmation_email", "Booking confirmation email configured", `Notification email: ${email}`));
+    checks.push(pass("confirmation_email", "Booking confirmation email configured", "Confirmation emails go to clients through Certxa's email service."));
   }
 
   // SMS reminders

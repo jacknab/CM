@@ -122,7 +122,7 @@ export default function WorkPlacesSettings() {
               <div className="space-y-2">
                 <p className="text-sm font-medium">How far you travel</p>
                 <Choice value={draft.houseCallRadiusMiles} options={withCurrent([5, 10, 15, 25, 40], draft.houseCallRadiusMiles).map((m) => ({ value: m, label: `${m} miles` }))} onChange={(houseCallRadiusMiles) => set({ houseCallRadiusMiles })} testId="house-call-radius" />
-                <p className="text-sm text-muted-foreground">Measured from your business address. Clients further away can't book a house call online.</p>
+                <p className="text-sm text-muted-foreground">Driving miles from your business address. Clients further away can't book a house call online.</p>
               </div>
               <div className="space-y-2">
                 <p className="text-sm font-medium">Travel fee</p>

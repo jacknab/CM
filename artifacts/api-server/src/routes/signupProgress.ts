@@ -101,7 +101,10 @@ router.get("/api/support/accounts/:id/onboarding", requireSupportAuth, async (re
               (SELECT count(*)::int FROM business_hours bh WHERE bh.store_id = l.id AND NOT bh.is_closed) AS open_days,
               (SELECT count(*)::int FROM services s WHERE s.store_id = l.id AND s.is_active = true) AS services,
               (SELECT count(*)::int FROM staff st WHERE st.store_id = l.id AND st.status = 'active') AS staff,
-              EXISTS (SELECT 1 FROM wb_websites w WHERE w.storeid = l.id::text AND w.published = true) AS website_published
+              EXISTS (SELECT 1 FROM wb_websites w WHERE w.storeid = l.id::text AND w.published = true) AS website_published,
+              -- Made in the Certxa Pro app: its website is the booking site, and the website platform's setup
+              -- checklist doesn't apply to it.
+              (u.account_type = 'certxa_pro') AS pro_app, l.booking_slug
          FROM locations l
          LEFT JOIN users u ON u.id = l.user_id
          LEFT JOIN signup_progress sp ON sp.user_id = u.id
@@ -119,11 +122,13 @@ router.get("/api/support/accounts/:id/onboarding", requireSupportAuth, async (re
     for (const r of saved.rows) savedByKey.set(r.flow_key, { status: r.status, completedAt: r.completed_at ?? null });
 
     // The same signals the owner's own checklist uses to tick a task that was done outside it.
+    const proApp = a.pro_app === true;
+    const websitePublished = proApp ? !!a.booking_slug : a.website_published === true;
     const detected: Record<string, boolean> = {
       business_setup: !!a.name && a.hours_rows > 0,
       services_menu: a.services > 0,
       team_members: a.staff > 0,
-      website_setup: a.website_published === true,
+      website_setup: websitePublished,
     };
 
     res.json({
@@ -131,6 +136,7 @@ router.get("/api/support/accounts/:id/onboarding", requireSupportAuth, async (re
         signedUpAt: a.signed_up_at ?? null,
         storeCreated: a.store_created === true,
         tracked: a.tracked === true,
+        proApp,
         ...signupOf(a),
       },
       essentials: {
@@ -138,9 +144,9 @@ router.get("/api/support/accounts/:id/onboarding", requireSupportAuth, async (re
         openDays: a.open_days,
         services: a.services,
         staff: a.staff,
-        websitePublished: a.website_published === true,
+        websitePublished,
       },
-      flows: FLOW_DEFINITIONS.map((def) => {
+      flows: proApp ? [] : FLOW_DEFINITIONS.map((def) => {
         const s = savedByKey.get(def.key);
         return {
           key: def.key,
@@ -180,11 +186,14 @@ router.get("/api/support/signups", requireSupportAuth, async (_req: Request, res
         LIMIT 300`,
     );
 
-    // People who asked for a verification code and never went on to create the account.
+    // People who asked for a verification code and never went on to create the account (codes since
+    // 2026-11-03 are in pro_phone_verifications; the older ones stay in owner_phone_otps).
     const codeOnly = await pool.query(
       `SELECT lower(o.email) AS email, max(o.phone) AS phone, max(o.created_at) AS requested_at,
-              bool_or(o.used_at IS NOT NULL) AS code_used
-         FROM owner_phone_otps o
+              bool_or(o.code_used) AS code_used
+         FROM (SELECT email, phone, created_at, used_at IS NOT NULL AS code_used FROM owner_phone_otps
+               UNION ALL
+               SELECT email, phone, created_at, verified_at IS NOT NULL FROM pro_phone_verifications) o
         WHERE o.email IS NOT NULL AND o.email <> ''
           AND NOT EXISTS (SELECT 1 FROM users u WHERE lower(u.email) = lower(o.email))
         GROUP BY lower(o.email)

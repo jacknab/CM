@@ -21,6 +21,8 @@ export type CancellationFeeParams = {
   stripePaymentMethodId: string;
   /** fee amount in cents */
   feeCents: number;
+  /** What it's for, on the client's statement and in Stripe (default a late cancellation). */
+  kind?: "late_cancel" | "no_show";
 };
 
 async function getConnectedAccountId(storeId: number): Promise<string | null> {
@@ -40,7 +42,7 @@ async function getConnectedAccountId(storeId: number): Promise<string | null> {
  * (we still let the cancellation through so the customer is never trapped).
  */
 export async function chargeCancellationFee(params: CancellationFeeParams): Promise<string> {
-  const { storeId, appointmentId, stripeCustomerId, stripePaymentMethodId, feeCents } = params;
+  const { storeId, appointmentId, stripeCustomerId, stripePaymentMethodId, feeCents, kind = "late_cancel" } = params;
 
   if (feeCents < 50) throw new Error(`cancellation fee ${feeCents}c is below Stripe's $0.50 minimum`);
   if (!isStripeConfigured()) throw new Error("Stripe is not configured");
@@ -57,14 +59,15 @@ export async function chargeCancellationFee(params: CancellationFeeParams): Prom
       payment_method: stripePaymentMethodId,
       off_session: true,
       confirm: true,
-      description: `Late-cancellation fee — appointment #${appointmentId}`,
+      description: `${kind === "no_show" ? "No-show fee" : "Late-cancellation fee"} — appointment #${appointmentId}`,
       metadata: {
         type: "cancellation_fee",
         certxa_store_id: String(storeId),
         appointmentId: String(appointmentId),
       },
     },
-    { stripeAccount: connectedAccountId },
+    // One fee of each kind per appointment, however often it is asked for.
+    { stripeAccount: connectedAccountId, idempotencyKey: `appointment_fee_${appointmentId}_${kind}_${feeCents}` },
   );
 
   if (pi.status !== "succeeded") {

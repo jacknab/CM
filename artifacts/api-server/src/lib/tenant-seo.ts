@@ -170,6 +170,7 @@ export function buildBusinessJsonLd(
     "@type": data.solo ? "HealthAndBeautyBusiness" : schemaType(business.category),
     "@id": `${canonical.replace(/\/$/, "")}#business`,
     name: business.name,
+    ...(data.solo?.byLabel ? { alternateName: data.solo.byLabel } : {}),
     url: canonical,
     ...(image ? { image } : {}),
     ...(toE164(business.phone) ? { telephone: toE164(business.phone) } : {}),
@@ -285,8 +286,10 @@ export function buildTenantSeo(
   const phone = displayPhone(business?.phone);
 
   // The salon's name first, as in "Nail Saints | Nail Salon in Lakewood, CO" (owner, 2026-11-02).
+  // A Solo pro's label first, as in "Nails by Toby in Denver, CO" (owner, 2026-11-04).
+  const byLabel = data.solo?.byLabel ?? null;
   const fallbackTitle = trimText(
-    location ? `${name} | ${type} in ${location}` : `${name} | ${type}`,
+    byLabel ? `${byLabel}${location ? ` in ${location}` : ""}` : location ? `${name} | ${type} in ${location}` : `${name} | ${type}`,
     60,
   );
   // "Toby's offers Gel Manicure, Pedicure, and Acrylic Fill in Denver, CO. Book online or call (720) 243-6886."
@@ -295,12 +298,12 @@ export function buildTenantSeo(
   const fallbackDescription = trimText(
     craft
       // "Toby’s nails in Denver, CO: Basic Manicure, …. Home studio and house calls. Book online or call …"
-      ? `${/['’]s$/i.test(name.trim()) ? `${name} ${craft.work}` : `${name} — ${craft.work}`}${location ? ` in ${location}` : ""}${serviceList ? `: ${serviceList}` : ""}.${soloPlaces ? ` ${soloPlaces}` : ""} Book online${phone ? ` or call ${phone}` : ""}.`
+      ? `${byLabel ?? (/['’]s$/i.test(name.trim()) ? `${name} ${craft.work}` : `${name} — ${craft.work}`)}${location ? ` in ${location}` : ""}${serviceList ? `: ${serviceList}` : ""}.${soloPlaces ? ` ${soloPlaces}` : ""} Book online${phone ? ` or call ${phone}` : ""}.`
       : `${serviceList ? `${name} offers ${serviceList}` : `${name} is a ${type.toLowerCase()}`}${location ? ` in ${location}` : ""}. Book online${phone ? ` or call ${phone}` : ""}.`,
     160,
   );
   const fallbackKeywords = (craft && data.solo
-    ? [...soloKeywords(craft, city || null, data.solo), "book online", ...data.services.slice(0, 8).map((service) => service.name.toLowerCase())]
+    ? [...(byLabel ? [byLabel] : []), ...soloKeywords(craft, city || null, data.solo), "book online", ...data.services.slice(0, 8).map((service) => service.name.toLowerCase())]
     : [
       type.toLowerCase(),
       city,

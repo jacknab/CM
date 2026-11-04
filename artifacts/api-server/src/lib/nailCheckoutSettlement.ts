@@ -281,6 +281,14 @@ export async function settleNailCheckout(a: NailCheckoutInput, salesTax: SalesTa
       if (row.staff_id) await tx.execute(sql`UPDATE appointments ap SET pricing_level_id = lv.id, pricing_level_name = lv.name
         FROM staff st JOIN pricing_levels lv ON lv.id = st.pricing_level_id
         WHERE ap.id = ${share.appointmentId} AND ap.store_id = ${a.storeId} AND st.id = ap.staff_id AND ap.pricing_level_id IS NULL`);
+      // A barbershop (owner, 2026-11-03): nobody knows a cut's length ahead, so the ticket's duration becomes the time it
+      // really took — from when the barber took the client to checkout (actual_minutes, filled by the database above).
+      if (updated?.actual_minutes != null && Number(updated.actual_minutes) > 0) {
+        const fixed: any = (await tx.execute(sql`UPDATE appointments ap SET duration = ap.actual_minutes FROM locations l
+          WHERE ap.id = ${share.appointmentId} AND ap.store_id = ${a.storeId} AND l.id = ap.store_id AND l.category ~* 'barber'
+          RETURNING ap.duration`)).rows[0];
+        if (fixed) updated.duration = fixed.duration;
+      }
       completed.push(updated);
     }
     await tx.execute(sql`INSERT INTO nail_checkout_operations (store_id, idempotency_key, request_hash, result)

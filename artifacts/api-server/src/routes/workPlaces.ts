@@ -34,6 +34,7 @@ export const WORK_PLACE_FIELDS = {
   houseCallRadiusMiles: locations.houseCallRadiusMiles,
   houseCallFee: locations.houseCallFee,
   houseCallTravelMinutes: locations.houseCallTravelMinutes,
+  houseCallAlarmMinutes: locations.houseCallAlarmMinutes,
   bookingApproval: locations.bookingApproval,
   bookingRequestExpiryHours: locations.bookingRequestExpiryHours,
   bookingOfferValidDays: locations.bookingOfferValidDays,
@@ -47,6 +48,7 @@ const input = z.object({
   houseCallRadiusMiles: z.number().int().min(1).max(100),
   houseCallFee: z.number().min(0).max(500),
   houseCallTravelMinutes: z.number().int().min(0).max(120),
+  houseCallAlarmMinutes: z.number().int().min(0).max(720),
   bookingApproval: z.enum(["auto", "manual"]),
   bookingRequestExpiryHours: z.number().int().min(1).max(168),
   // How long a link with other times offered to a client stays open.

@@ -17,6 +17,12 @@ export default function RentalsAuthPage({ mode }: { mode: RentalsAuthMode }) {
   const [lastName, setLastName] = useState("");
   const [businessName, setBusinessName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // Sign-up proves a mobile number by a texted code (owner, 2026-11-03: a mobile line no Certxa account has ever had).
+  const [mobile, setMobile] = useState("");
+  const [code, setCode] = useState("");
+  const [codeSent, setCodeSent] = useState(false);
+  const [phoneToken, setPhoneToken] = useState("");
+  const [sendingCode, setSendingCode] = useState(false);
 
   useDocumentMeta(
     mode === "login" ? "Sign In — Certxa Rentals" : "Create Your Certxa Rentals Account",
@@ -29,14 +35,45 @@ export default function RentalsAuthPage({ mode }: { mode: RentalsAuthMode }) {
   useEffect(() => { window.scrollTo(0, 0); }, [mode]);
   if (!isLoading && user) return <Navigate to="/rentals/today" replace />;
 
-  const pending = isLoggingIn || isRegistering;
+  const pending = isLoggingIn || isRegistering || sendingCode;
+  const mobileDigits = mobile.replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+  const apiMessage = async (res: Response, fallback: string) => ((await res.json().catch(() => ({}))) as { message?: string }).message || fallback;
+  const sendCode = async () => {
+    setSendingCode(true);
+    try {
+      const res = await fetch("/api/auth/owner-request-otp", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: mobileDigits, email }),
+      });
+      if (!res.ok) throw new Error(await apiMessage(res, "We couldn't send a code. Please try again."));
+      setCodeSent(true); setCode(""); setPhoneToken("");
+    } finally {
+      setSendingCode(false);
+    }
+  };
+  const otherNumber = () => { setCodeSent(false); setCode(""); setPhoneToken(""); };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     try {
       if (mode === "login") {
         await login({ email, password, keepSignedIn: true });
       } else {
-        await register({ email, password, firstName, lastName, keepSignedIn: true, source: "rentals" });
+        if (!codeSent) { await sendCode(); return; }
+        let token = phoneToken;
+        if (!token) {
+          const res = await fetch("/api/auth/owner-verify-otp", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: mobileDigits, code }),
+          });
+          if (!res.ok) throw new Error(await apiMessage(res, "That code isn't right. Please try again."));
+          token = ((await res.json()) as { phoneToken?: string }).phoneToken ?? "";
+          setPhoneToken(token);
+        }
+        try {
+          await register({ email, password, firstName, lastName, phone: mobileDigits, phoneToken: token, keepSignedIn: true, source: "rentals" });
+        } catch (error: any) {
+          // The number check expired or the number was taken meanwhile: ask for a new code.
+          if (/"field":"phone"/.test(String(error?.message ?? ""))) otherNumber();
+          throw error;
+        }
         const response = await fetch("/api/rentals/onboarding", {
           method: "POST",
           credentials: "include",
@@ -109,6 +146,26 @@ export default function RentalsAuthPage({ mode }: { mode: RentalsAuthMode }) {
                 </>
               )}
               <Field label="Email" type="email" value={email} onChange={setEmail} autoComplete="email" required />
+              {mode === "signup" && (
+                <>
+                  <label className="block">
+                    <span className="mb-2 block text-[13px] font-semibold text-neutral-700">Mobile number</span>
+                    <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} autoComplete="tel" required disabled={codeSent} className="h-12 w-full rounded-lg border border-neutral-300 bg-white px-3.5 text-[15px] outline-none transition focus:border-[#b47a26] focus:ring-4 focus:ring-[#e9ad48]/15 disabled:bg-neutral-100" />
+                  </label>
+                  {codeSent && (
+                    <>
+                      <label className="block">
+                        <span className="mb-2 block text-[13px] font-semibold text-neutral-700">The 6-digit code we texted you</span>
+                        <input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} required minLength={6} maxLength={6} className="h-12 w-full rounded-lg border border-neutral-300 bg-white px-3.5 text-[15px] tracking-[0.25em] outline-none transition focus:border-[#b47a26] focus:ring-4 focus:ring-[#e9ad48]/15" />
+                      </label>
+                      <div className="flex justify-between text-[13px]">
+                        <button type="button" disabled={sendingCode} onClick={() => void sendCode().catch((error: any) => toast({ title: "Code not sent", description: error?.message, variant: "destructive" }))} className="font-medium text-[#8b5a17] hover:underline">Send a new code</button>
+                        <button type="button" onClick={otherNumber} className="font-medium text-[#8b5a17] hover:underline">Use a different number</button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
               <label className="block">
                 <span className="mb-2 flex items-center justify-between text-[13px] font-semibold text-neutral-700">
                   Password
@@ -120,7 +177,7 @@ export default function RentalsAuthPage({ mode }: { mode: RentalsAuthMode }) {
                 </span>
               </label>
               <button disabled={pending} className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#171816] text-sm font-semibold text-white transition hover:bg-[#2a2c28] focus:outline-none focus:ring-4 focus:ring-[#e9ad48]/30 disabled:cursor-not-allowed disabled:opacity-60">
-                {pending && <Loader2 size={16} className="animate-spin" />}{mode === "login" ? "Sign In" : "Create Rentals Account"}
+                {pending && <Loader2 size={16} className="animate-spin" />}{mode === "login" ? "Sign In" : codeSent ? "Create Rentals Account" : "Text me a code"}
               </button>
             </form>
             <p className="mt-7 text-center text-sm text-neutral-500">

@@ -14,6 +14,7 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; d
   secure:             { label: "Secure",        color: "text-emerald-700", bg: "bg-emerald-50", dot: "bg-emerald-500" },
   no_recent_activity: { label: "No Recent Use", color: "text-amber-700",   bg: "bg-amber-50",   dot: "bg-amber-400" },
   not_configured:     { label: "Not Configured",color: "text-slate-600",   bg: "bg-slate-50",   dot: "bg-slate-300" },
+  not_available:      { label: "Not in this plan", color: "text-slate-500", bg: "bg-slate-50",   dot: "bg-slate-300" },
   disconnected:       { label: "Disconnected",  color: "text-red-700",     bg: "bg-red-50",     dot: "bg-red-500" },
   offline:            { label: "Offline",       color: "text-red-700",     bg: "bg-red-50",     dot: "bg-red-500" },
   unknown:            { label: "Unknown",       color: "text-slate-500",   bg: "bg-slate-50",   dot: "bg-slate-300" },
@@ -22,8 +23,9 @@ const statusConfig: Record<string, { label: string; color: string; bg: string; d
 export default function HealthStatusCard({ health }: { health: AccountOverview["health"] }) {
   const services = Object.entries(health);
   const onlineCount = services.filter(([, v]) => v === "online" || v === "connected" || v === "secure").length;
-  const total = services.length;
-  const score = Math.round((onlineCount / total) * 100);
+  // Optional services that aren't set up, and ones the plan doesn't have, don't count against the account.
+  const total = services.filter(([, v]) => v !== "not_configured" && v !== "not_available").length;
+  const score = total ? Math.round((onlineCount / total) * 100) : 100;
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -39,7 +41,7 @@ export default function HealthStatusCard({ health }: { health: AccountOverview["
           <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
             <div className={`h-full rounded-full transition-all ${score >= 80 ? "bg-emerald-500" : score >= 50 ? "bg-amber-400" : "bg-red-500"}`} style={{ width: `${score}%` }} />
           </div>
-          <p className="text-xs text-slate-500 mt-1.5">{onlineCount} of {total} services healthy</p>
+          <p className="text-xs text-slate-500 mt-1.5">{onlineCount} of {total} services in use healthy</p>
         </div>
         <div className="space-y-1.5">
           {services.map(([key, status]) => {

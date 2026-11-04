@@ -81,7 +81,7 @@ export async function computeDashboard(storeId: number): Promise<DashboardData> 
              a.tax_amount, a.tip_amount, a.ticket_group_id,
              a.date, a.duration, a.started_at, a.checked_in_at, a.completed_at,
              s.name AS staff_name, s.id AS staff_id, s.avatar_thumb_url AS staff_avatar_thumb_url,
-             sv.name AS service_name, c.full_name AS customer_name, a.customer_id, COALESCE(vc.visit_count, 0) AS visit_count
+             sv.name AS service_name, COALESCE(c.full_name, a.customer_name) AS customer_name, a.customer_id, COALESCE(vc.visit_count, 0) AS visit_count
         FROM appointments a
         LEFT JOIN staff s ON s.id = a.staff_id AND s.store_id = ${storeId}
         LEFT JOIN services sv ON sv.id = a.service_id AND sv.store_id = ${storeId}

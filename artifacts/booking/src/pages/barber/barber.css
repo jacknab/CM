@@ -1304,3 +1304,10 @@
 .barber-app .q-wait-grid { padding-top: 5px; }
 /* The empty slots' dotted outline, a little darker so it shows on the light Queue tab (owner, 2026-11-02). */
 .barber-app .q-wait-grid .q-detail-ghost-card { border: 1.5px dashed #a9b6c8; }
+/* The full-screen Manager screen in the barbershop's navy (components/staff-screen/managerScreen.css). */
+.barber-app .mgr-screen { --mgr-bg: #121a28; --mgr-head: #0e1420; --mgr-tile: #1b2433; --mgr-line: #2b3647; --mgr-text: #eceff3; }
+
+/* Online Check-In Line (2026-11-03): a client who checked in from their phone and isn't here yet — a dashed pill and a
+   lighter card, so the barber sees at a glance who can be served now. */
+.barber-app .q-unified-pill[data-kind="away"] { background: #fff; color: #5b6b80; border: 1.5px dashed #8a99ad; }
+.barber-app .q-wait-card[data-away="true"] { opacity: .78; }

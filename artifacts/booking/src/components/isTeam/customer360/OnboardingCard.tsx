@@ -33,6 +33,14 @@ function SignupStatus({ signup }: { signup: AccountOnboarding["signup"] }) {
       </div>
     );
   }
+  if (signup.proApp) {
+    return (
+      <div className="px-3 py-2 rounded-lg bg-indigo-50">
+        <div className="text-xs font-semibold text-indigo-700">Signed up in the Certxa Pro app</div>
+        <div className="text-[11px] text-slate-500 mt-0.5">The app's own sign-up; the website setup checklist doesn't apply.</div>
+      </div>
+    );
+  }
   if (!signup.tracked) {
     return (
       <div className="px-3 py-2 rounded-lg bg-slate-50">
@@ -70,7 +78,7 @@ export default function OnboardingCard({ accountId }: { accountId: number }) {
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">Signup &amp; Setup</h3>
-        {data && <span className="text-xs text-slate-500">{done} of {data.flows.length} setup tasks</span>}
+        {data && data.flows.length > 0 && <span className="text-xs text-slate-500">{done} of {data.flows.length} setup tasks</span>}
       </div>
       <div className="p-4">
         {isLoading && <p className="text-xs text-slate-400">Loading…</p>}
@@ -86,7 +94,7 @@ export default function OnboardingCard({ accountId }: { accountId: number }) {
               <Essential label="Business hours" ok={data.essentials.hoursSet} value={data.essentials.hoursSet ? `${data.essentials.openDays} open days` : "Not set"} />
               <Essential label="Services" ok={data.essentials.services > 0} value={data.essentials.services > 0 ? `${data.essentials.services} active` : "None"} />
               <Essential label="Staff" ok={data.essentials.staff > 0} value={data.essentials.staff > 0 ? `${data.essentials.staff} active` : "None"} />
-              <Essential label="Website" ok={data.essentials.websitePublished} value={data.essentials.websitePublished ? "Published" : "Not published"} />
+              <Essential label={data.signup.proApp ? "Booking website" : "Website"} ok={data.essentials.websitePublished} value={data.essentials.websitePublished ? "Published" : "Not published"} />
             </div>
 
             <div className="space-y-1">

@@ -53,7 +53,7 @@ export function StationPickerSheet({ onChoose, onClose }: {
   // salon hub that keeps the tablets working together with no internet; the hub is updated straight away.
   const makeThisMain = async () => {
     if (!mine || mainBusy) return;
-    if (!window.confirm(`Make ${mine.name} the main station? This tablet will run the salon hub that keeps the tablets working together when the internet is down.`)) return;
+    if (!window.confirm(`Make ${mine.name} the main station? This tablet will run the shop hub that keeps the tablets working together when the internet is down.`)) return;
     setMainBusy(true);
     setError(null);
     setDone(null);
@@ -64,7 +64,7 @@ export function StationPickerSheet({ onChoose, onClose }: {
       queryClient.invalidateQueries({ queryKey: ["/api/registers"], predicate: (q) => String(q.queryKey[0]).startsWith("/api/registers") });
       await localHub.refresh().catch(() => null);
       await refetch();
-      setDone("This tablet is now the main station and runs the salon hub.");
+      setDone("This tablet is now the main station and runs the shop hub.");
     } catch (err) {
       setError((err as Error)?.message || "Could not make this the main station.");
     } finally {
@@ -91,7 +91,7 @@ export function StationPickerSheet({ onChoose, onClose }: {
         <div className="assign-create-header">
           <div>
             <h2>This tablet's station</h2>
-            <p>This tablet uses the station's cash drawer and customer screen. The main station runs the salon hub.</p>
+            <p>This tablet uses the station's cash drawer and customer screen. The main station runs the shop hub.</p>
           </div>
           <button type="button" className="assign-create-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
@@ -103,7 +103,7 @@ export function StationPickerSheet({ onChoose, onClose }: {
                 <div className="assign-create-name">{`This tablet: ${mine?.name ?? "None"}`}</div>
                 <div className="assign-create-name">{`Main station: ${main?.name ?? "None"}`}</div>
                 <div className="assign-create-name" data-testid="barber-station-hub">
-                  {hubStation ? `Salon hub: ${data.hub?.address ? `${hubStation.name} · ${data.hub.address}` : hubStation.name}` : "Salon hub: not running yet"}
+                  {hubStation ? `Shop hub: ${data.hub?.address ? `${hubStation.name} · ${data.hub.address}` : hubStation.name}` : "Shop hub: not running yet"}
                 </div>
               </div>
               {mine && !mine.isMain && (

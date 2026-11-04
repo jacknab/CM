@@ -53,9 +53,18 @@ function describeDevice(ua: string | null | undefined): string {
   return parts.join(" · ") || ua.slice(0, 60);
 }
 
-export default function PosTab({ accountId }: { accountId: number }) {
+export default function PosTab({ accountId, proApp = false }: { accountId: number; proApp?: boolean }) {
   const [showOlder, setShowOlder] = useState(false);
-  const { data, isLoading, error } = useQuery<PosOverview>({
+  // Show / hide the salon's lock-screen keypad; the salon's tablets refresh at once.
+  const [keypadBusy, setKeypadBusy] = useState(false);
+  const setKeypad = async (visible: boolean) => {
+    if (visible === false && !window.confirm("Hide the keypad? Staff will then need their printed ID badge to sign in.")) return;
+    setKeypadBusy(true);
+    try { await supportApi.accounts.setKeypad(accountId, visible); await refetchPos(); }
+    catch (e: any) { window.alert(e?.message || "Could not change the keypad."); }
+    finally { setKeypadBusy(false); }
+  };
+  const { data, isLoading, error, refetch: refetchPos } = useQuery<PosOverview>({
     queryKey: ["support-pos", accountId],
     queryFn: () => supportApi.accounts.pos(accountId),
     refetchInterval: 30_000,
@@ -107,6 +116,23 @@ export default function PosTab({ accountId }: { accountId: number }) {
     data.drawers.some((d) => d.openShift && Date.now() - new Date(d.openShift.openedAt).getTime() > 2 * DAY_MS) && "A cash drawer shift has been open for more than 2 days (Day Close not run).",
   ].filter(Boolean) as string[];
 
+  // A Certxa Pro app account has no front desk, tablets, drawers, kiosks or printers: just the phones with the app.
+  // The app doesn't ping every minute, so it shows when each phone last opened it rather than online/offline.
+  if (proApp) return (
+    <div className="p-6 space-y-5" data-testid="support-pos-tab">
+      <p className="text-xs text-slate-500">This account uses the Certxa Pro app. Times are the salon's local time ({tz}).</p>
+      <Section title={`Phones with the Certxa Pro app (${data.ownerApp.length})`}>
+        <Table head={["Last opened", "Platform", "First seen"]}
+          empty="No phone has signed in to the app with notifications on."
+          rows={data.ownerApp.map((d, i) => [
+            <span key={`l${i}`} className="text-xs text-slate-700">{d.lastSeenAt ? `${at(d.lastSeenAt)} · ${ago(d.lastSeenAt)}` : "—"}</span>,
+            <span key="p" className="text-xs text-slate-700">{d.platform === "ios" ? "iPhone" : d.platform}</span>,
+            <span key="f" className="text-xs text-slate-700">{at(d.firstSeenAt)}</span>,
+          ])} />
+      </Section>
+    </div>
+  );
+
   return (
     <div className="p-6 space-y-5" data-testid="support-pos-tab">
       <p className="text-xs text-slate-500">
@@ -129,7 +155,16 @@ export default function PosTab({ accountId }: { accountId: number }) {
           <Setting label="Sales tax" value={s.salesTaxRate ? `${(s.salesTaxRate * 100).toFixed(2).replace(/\.?0+$/, "")}%` : "None"}
             sub={s.salesTaxRate ? ["services", "addons", "products", "giftCards"].filter((k) => (s.taxable as any)[k]).map((k) => ({ services: "services", addons: "add-ons", products: "products", giftCards: "gift cards" } as any)[k]).join(", ") || "nothing taxed" : undefined} />
           <Setting label="Cash discount" value={s.cashDiscountPercent ? `${s.cashDiscountPercent}%` : "None"} />
-          <Setting label="Lock screen" value={s.lockScreen ? "On (Tech ID to use the POS)" : "Off"} sub={s.lockScreen ? (s.keypadVisible ? "Keypad shown" : "Scanner only") : undefined} />
+          <Setting label="Lock screen" value={s.lockScreen ? "On (Tech ID to use the POS)" : "Off"} />
+          {/* The keypad on the lock screen: support can show it again for a salon that hid it (owner, 2026-11-03). */}
+          <div data-testid="support-pos-keypad">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Keypad</p>
+            <p className={`text-sm font-medium ${s.keypadVisible ? "text-slate-800" : "text-amber-700"}`}>{s.keypadVisible ? "Shown" : "Hidden (scanner only)"}</p>
+            <button type="button" disabled={keypadBusy} onClick={() => void setKeypad(!s.keypadVisible)} data-testid="support-pos-keypad-toggle"
+              className="mt-1 rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              {keypadBusy ? "Saving…" : s.keypadVisible ? "Hide keypad" : "Show keypad"}
+            </button>
+          </div>
           <Setting label="Manager PIN" value={s.managerPinIsDefault ? "Default (2026)" : "Changed"} warn={s.managerPinIsDefault} />
           <Setting label="Turn system" value={s.turnSystem === "off" ? "Off" : s.turnSystem === "dollar" ? "Dollar-based" : s.turnSystem === "count" ? "Counted turns" : s.turnSystem === "classic" ? "Classic rotation" : "On"} />
           <Setting label="Time clock" value={s.timeclock ? "On" : "Off"} />

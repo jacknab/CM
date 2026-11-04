@@ -223,6 +223,12 @@ router.post(
           // A hardware order paid on certxa.com/cart is its own flow.
           const { markShopIntentPaid } = await import("../lib/shop");
           if (await markShopIntentPaid(pi)) break;
+          // A gift card or package from the Solo website: delivered even if the page closed after paying.
+          if (pi.metadata?.type === "site_order") {
+            const { fulfilSiteOrder } = await import("./siteShop");
+            await fulfilSiteOrder(pi.id);
+            break;
+          }
           await handlePaymentIntentSucceeded(pi);
           break;
         }
@@ -461,13 +467,10 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const credits  = Number(meta.credits ?? 0);
     if (!storeId || !credits) return;
 
-    await pool.query(
-      `UPDATE locations
-       SET sms_credits = sms_credits + $1,
-           sms_credits_total_purchased = sms_credits_total_purchased + $1
-       WHERE id = $2`,
-      [credits, storeId]
-    );
+    // Through the credit ledger, once per Checkout session: a retried webhook can't add the credits twice.
+    const { addSoloCredits } = await import("../lib/soloSmsCredits");
+    const balance = await addSoloCredits(storeId, credits, "purchase", { reference: session.id, note: `${credits} credits bought` });
+    if (balance === null) { console.log(`[webhook/checkout] SMS top-up ${session.id} already added`); return; }
     logBillingEvent(storeId, "sms_credits_purchased",
       `SMS credits purchased — ${credits} credits`, { credits });
     console.log(`[webhook/checkout] SMS top-up: ${credits} credits → storeId=${storeId}`);
@@ -708,6 +711,12 @@ async function handlePaymentIntentSucceeded(pi: Stripe.PaymentIntent) {
 
   if (pi.metadata?.type === "deal_purchase") {
     await handleDealPurchaseCompleted(pi.id, pi.metadata);
+    return;
+  }
+  // Certxa Pro text credits bought on certxa.com/pro-credits: added here too, once, if the page closed first.
+  if (pi.metadata?.type === "solo_credits") {
+    const { creditPaidPack } = await import("./soloCredits");
+    await creditPaidPack(pi as any);
     return;
   }
 

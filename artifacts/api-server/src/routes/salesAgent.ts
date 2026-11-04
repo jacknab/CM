@@ -13,7 +13,7 @@
  *
  * What Tom does: answers questions about Certxa from the sales fact sheet (knowledge-base-sales/) and the live
  * plans and prices; saves interested callers as leads (sales_leads, isTeam → Sales Leads); texts the free-trial
- * sign-up link; ends the call. He never transfers calls or promises a call back.
+ * sign-up link; and can automatically hand account-support requests to the Account Services triage line.
  *
  * Cost limits: 10 minutes per call, hangs up after 60 s of silence, 3 calls at once, 300 minutes a day
  * (SALES_AGENT_MAX_CONCURRENT / SALES_AGENT_DAILY_MINUTES).
@@ -30,13 +30,37 @@ import { pool } from "../db";
 import { sendTwilioSms } from "../sms";
 import { issueStreamPass, redeemStreamPass, passFromPath } from "../lib/streamPass";
 import { requireSupportAuth } from "../lib/supportAuth";
+import { includedCallsForPlan } from "../lib/autumnCallBilling";
+import { TrialService } from "../services/trial-service";
+import { toE164US } from "../lib/phoneUtils";
+import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgentGreeting, type SalesAgentProfile } from "../lib/salesAgentProfiles";
+import { isExistingCustomerAccountSupportRequest, mayTransferToAccountServices, SHAVEZ_ACCOUNT_SUPPORT_GREETING, shavezHandoffTwiML, TOM_ACCOUNT_SUPPORT_HANDOFF } from "../lib/salesAgentTransfer";
+import {
+  finalizeAfterInsert,
+  canonicalizeSpokenBrandForText,
+  hasCallerEvidence,
+  hasTranscriptEvidence,
+  identityNeedsMoreInformation,
+  identityMatches,
+  callerAffirmsIdentity,
+  callerExplicitlyDeclined,
+  mergeProfileData,
+  normalizeIdentity,
+  profileNeedsIdentityCheck,
+  safeSummaryForCallerMemory,
+  safeStructuredSummary,
+  stageHistoryUpdate,
+  stringsOnly,
+  summarizeMemoryContext,
+  shouldAssociateCallWithProfile,
+  verifiedProfilePatch,
+  type SalesMemoryObject,
+} from "../lib/salesAgentMemory";
 
 const LOG = "[Sales Agent]";
-const AGENT_NAME = "Tom";
-const VOICE = process.env.SALES_AGENT_VOICE || "cedar"; // male
+const CERTXA_SPOKEN_ALIAS = "Cert-ex-ah";
 const LIVE_URL = "wss://api.openai.com/v1/live/sessions";
 const BACKEND_MODEL = process.env.SALES_AGENT_BACKEND_MODEL || process.env.AI_RECEPTIONIST_BACKEND_MODEL || "gpt-5.6-luna";
-const STREAM_BASE = "/support-agent-stream-sales";
 const MAX_CALL_MS = 10 * 60_000;
 const SILENCE_HANGUP_MS = 60_000;
 const MAX_CONCURRENT = Number(process.env.SALES_AGENT_MAX_CONCURRENT || 3);
@@ -76,6 +100,7 @@ function validTwilio(req: Request, appUrl: string): boolean {
 
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const tenDigit = (raw: string) => { const d = raw.replace(/\D/g, ""); return d.length === 11 && d.startsWith("1") ? d.slice(1) : d.length === 10 ? d : null; };
+const canonicalCallerE164 = (raw: string | null | undefined): string | null => toE164US(raw);
 
 function muLawToLinear(u: number): number {
   u = ~u & 0xff;
@@ -94,31 +119,62 @@ function callerSpeaking(base64: string): boolean {
 
 const PORT = () => process.env.PORT || "9200";
 
-/**
- * The salon plans, from the same admin plan list the pricing page uses. Only what the software enforces is given:
- * price, staff limit, locations, Autumn calls (the pricing page's comparison table lists differences that are not
- * enforced — owner audit 2026-10-31). The free Solo plan (Certxa Pro) is left out: Tom never brings it up.
- */
+/** Current public plan/pricing data. Missing entitlements must remain unknown, never become unlimited/default limits. */
 async function livePlans(): Promise<string> {
   try {
     const res = await fetch(`http://127.0.0.1:${PORT()}/api/public/pricing-plans`, { signal: AbortSignal.timeout(3000) });
-    const plans = (await res.json()) as any[];
-    return plans
-      .filter((p) => Number(p.priceMonthly) > 0 && String(p.code) !== "solo")
+    if (!res.ok) throw new Error(`pricing endpoint returned ${res.status}`);
+    const plans = (await res.json()) as any;
+    if (!Array.isArray(plans)) throw new Error("pricing endpoint returned an invalid plan list");
+    const publicPaidPlans = plans.filter((p) => Number(p.priceMonthly) > 0 && String(p.code) !== "solo");
+    if (!publicPaidPlans.length) {
+      return "No public paid plans were returned by the live endpoint. Do not quote prices or plan limits; say you cannot confirm them right now and direct the caller to certxa.com/pricing or support.";
+    }
+    return publicPaidPlans
       .map((p) => {
-        const limit = (id: string) => (p.features ?? []).find((f: any) => f.featureId === id);
+        const features = Array.isArray(p.features) ? p.features : [];
+        const limit = (id: string) => features.find((f: any) => f.featureId === id);
         const staff = limit("staff");
         const locations = limit("locations");
         const calls = limit("ai_receptionist");
-        const staffText = staff?.limitValue != null ? `up to ${staff.limitValue} staff` : "unlimited staff";
-        const locText = locations?.limitValue != null ? `${locations.limitValue} location${Number(locations.limitValue) === 1 ? "" : "s"}` : "1 location";
-        const callText = calls?.limitValue != null ? `${calls.limitValue} Autumn calls a month included` : "";
-        return `- ${p.name}: $${Number(p.priceMonthly) / 100} a month, or $${Number(p.priceYearly) / 100} a year. ${staffText}, ${locText}${callText ? `, ${callText}` : ""}.`;
+        const limitText = (row: any, label: string) => {
+          if (!row) return `${label} limit not listed; do not infer`;
+          if (row.limitValue == null) return `${label} unlimited (explicit null limit)`;
+          const value = Number(row.limitValue);
+          return Number.isFinite(value) && value >= 0 ? `${label} up to ${value}` : `${label} limit unavailable`;
+        };
+        const monthlyCents = Number(p.priceMonthly);
+        const yearlyCents = Number(p.priceYearly);
+        const monthlyText = Number.isFinite(monthlyCents) && monthlyCents > 0
+          ? `$${(monthlyCents / 100).toFixed(2).replace(/\.00$/, "")}/month`
+          : "monthly price unavailable";
+        const yearlyText = Number.isFinite(yearlyCents) && yearlyCents > 0
+          ? `$${(yearlyCents / 100).toFixed(2).replace(/\.00$/, "")}/year billed annually`
+          : "annual price not listed";
+        const knownBillingCodes = new Set(["professional", "elite", "enterprise", "solo"]);
+        let autumnText = "Autumn allowance not listed; do not quote";
+        if (calls) {
+          const configured = calls.limitValue == null ? NaN : Number(calls.limitValue);
+          const billing = includedCallsForPlan(String(p.code ?? ""));
+          const billingKnown = knownBillingCodes.has(String(p.code ?? "").toLowerCase());
+          autumnText = billingKnown && Number.isInteger(configured) && configured === billing
+            ? `${billing} included Autumn calls/month (plan data matches billing)`
+            : "Autumn allowance conflicts with or is missing from billing data; do not quote; ask support to confirm";
+        }
+        const excludedCoreLimits = new Set(["staff", "locations", "ai_receptionist"]);
+        const confirmedFeatures = features
+          .filter((f: any) => f && !excludedCoreLimits.has(String(f.featureId)))
+          .map((f: any) => String(f.featureName || f.featureId || "").trim())
+          .filter(Boolean);
+        const featureText = confirmedFeatures.length
+          ? `enabled features listed: ${confirmedFeatures.join(", ")}`
+          : "no feature entitlements listed; do not infer availability";
+        return `- ${p.name} (${p.code}): ${monthlyText}; ${yearlyText}; ${limitText(staff, "staff")}; ${limitText(locations, "location")}; ${autumnText}; ${featureText}.`;
       })
       .join("\n");
   } catch (err) {
     console.warn(`${LOG} live plans unavailable:`, (err as Error).message);
-    return "Plan details could not be loaded right now: say the prices are on certxa.com/pricing.";
+    return "LIVE PLAN DATA UNAVAILABLE. Do not quote a price, plan limit, feature entitlement, or Autumn call allowance from memory; say you cannot confirm it right now and direct the caller to certxa.com/pricing or the support contact in FACTS.";
   }
 }
 
@@ -126,48 +182,201 @@ async function livePlans(): Promise<string> {
 async function liveHardware(): Promise<string> {
   try {
     const res = await fetch(`http://127.0.0.1:${PORT()}/api/shop/status`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) throw new Error(`shop endpoint returned ${res.status}`);
     const shop = (await res.json()) as { open: boolean; products: { name: string; priceCents: number }[] };
+    if (!shop || typeof shop.open !== "boolean" || !Array.isArray(shop.products)) throw new Error("shop endpoint returned invalid catalog/status data");
     const list = shop.products.map((p) => `- ${p.name}: $${p.priceCents / 100}`).join("\n");
-    return `${list}\nWhen a caller asks what hardware they need, ask how they want to run their front desk and check-in, and describe what each item does — never say what most or many salons buy.\n${shop.open ? "Hardware can be ordered at certxa.com/products." : "Online hardware ordering is not open yet: give prices if asked, but do not say it can be ordered now, and never say when it will open."}`;
+    return `${list || "No products listed in the live catalog."}\nThese are current catalog prices, not a guarantee of stock. Describe only products in this list. Ask how the caller wants to run the front desk/check-in before recommending equipment.\n${shop.open ? "The hardware shop currently accepts online orders at certxa.com/products." : "The live shop is not accepting online orders. Do not promise availability, a delivery date, or when ordering will open."}`;
   } catch {
-    return "Hardware prices could not be loaded right now: say they are on certxa.com/products.";
+    return "LIVE HARDWARE DATA UNAVAILABLE. Do not quote a price or claim an item is available/orderable; say you cannot confirm hardware details right now and direct the caller to certxa.com/products or the support contact in FACTS.";
   }
 }
 
+interface LiveSalesFacts {
+  plans: string;
+  hardware: string;
+  trialDays: number | null;
+  loadedAt: number;
+}
+
+const LIVE_SALES_FACTS_TTL_MS = 30_000;
+let liveSalesFactsCache: LiveSalesFacts | null = null;
+let liveSalesFactsRefresh: Promise<void> | null = null;
+
+async function refreshLiveSalesFacts(): Promise<void> {
+  if (liveSalesFactsRefresh) return liveSalesFactsRefresh;
+  liveSalesFactsRefresh = (async () => {
+    const [plans, hardware, trialDays] = await Promise.all([
+      livePlans(),
+      liveHardware(),
+      TrialService.getFreeTrialDays().catch(() => null),
+    ]);
+    const usable = !plans.startsWith("LIVE PLAN DATA UNAVAILABLE") && !hardware.startsWith("LIVE HARDWARE DATA UNAVAILABLE");
+    liveSalesFactsCache = usable ? { plans, hardware, trialDays, loadedAt: Date.now() } : null;
+    console.log(`${LOG} live sales facts refresh ${usable ? "complete" : "incomplete; will retry"}`);
+  })().finally(() => { liveSalesFactsRefresh = null; });
+  return liveSalesFactsRefresh;
+}
+
+function currentLiveSalesFacts(): LiveSalesFacts {
+  const cache = liveSalesFactsCache;
+  if (!cache || Date.now() - cache.loadedAt > LIVE_SALES_FACTS_TTL_MS) {
+    void refreshLiveSalesFacts().catch((error) => console.warn(`${LOG} live sales facts refresh failed:`, error.message));
+  }
+  return cache ?? {
+    plans: "LIVE PLAN DATA IS STILL LOADING. Do not quote prices, limits, or entitlements until verified live data is available; direct the caller to certxa.com/pricing.",
+    hardware: "LIVE HARDWARE DATA IS STILL LOADING. Do not quote hardware prices or availability until verified live data is available.",
+    trialDays: null,
+    loadedAt: 0,
+  };
+}
+
 /** Tom's instructions, used by real calls and by the test simulations (one source). */
-export async function buildTomInstructions(callerPhone: string | null): Promise<{ voice: string; backend: string }> {
-  const [plans, hardware] = await Promise.all([livePlans(), liveHardware()]);
+export async function buildTomInstructions(
+  callerPhone: string | null,
+  memoryCandidate = false,
+): Promise<{ voice: string; backend: string }> {
+  return buildAgentInstructions(TOM_SALES_AGENT, callerPhone, memoryCandidate);
+}
+
+export async function buildShavezInstructions(
+  callerPhone: string | null,
+  memoryCandidate = false,
+  accountSupportHandoff = false,
+): Promise<{ voice: string; backend: string }> {
+  return buildAgentInstructions(SHAVEZ_SALES_AGENT, callerPhone, memoryCandidate, accountSupportHandoff);
+}
+
+async function buildAgentInstructions(
+  agent: SalesAgentProfile,
+  callerPhone: string | null,
+  memoryCandidate: boolean,
+  accountSupportHandoff = false,
+): Promise<{ voice: string; backend: string }> {
+  // These live facts are warmed/cached off the call path; never make a caller wait on HTTP/DB reads before the greeting.
+  const { plans, hardware, trialDays } = currentLiveSalesFacts();
+  const trialInfo = accountSupportHandoff
+    ? "Not relevant to this Account Services call. Do not bring up trials or sales enrollment."
+    : trialDays == null
+      ? `The current trial duration could not be verified. Do not quote a duration; explain that the signup page shows the current terms. New-account eligibility for a caller with prior account/trial history is not verified by ${agent.spokenName}.`
+      : `The account-registration code starts a configured ${trialDays}-day trial for a newly registered owner account without requesting a payment card during registration. Trial eligibility is not returned by the public plan API, and ${agent.spokenName} cannot verify eligibility for someone with a prior account/trial history; do not promise eligibility in that case.`;
   const today = formatInTimeZone(new Date(), "America/Phoenix", "EEEE, MMMM d, yyyy");
-  const voice = `You are ${AGENT_NAME}, a sales specialist at Certxa, answering Certxa's sales line. You are an AI built by Certxa — if anyone asks, say so plainly.
-
-HOW YOU TALK: warm, confident, genuinely helpful, never pushy. One or two short sentences at a time, then let them talk. Plain words, no jargon, no hype words. Use the caller's name once you know it. Ask one question at a time and listen more than you talk. English by default; if the caller speaks Vietnamese, Spanish or another language, or asks to, switch and stay in it.
-
-HONESTY — THE MOST IMPORTANT RULE: everything you say about Certxa must come from the FACTS, PLANS or HARDWARE below. Never invent or guess a feature, price, number, statistic, integration, customer story, timeline or policy, and never stretch a fact to sound better. If the answer isn't below, say plainly that you don't want to guess, and that they can find it on certxa.com or ask Certxa support. Saying "I'm not sure" is always better than a wrong answer. Never say what other salons do ("many salons", "most salons", "salons usually"); talk only about this caller. Never explain what a price or fee "covers" or "includes" beyond the facts. Never guess what Certxa support or anyone else can do beyond the facts. Never promise a result or benefit ("faster", "fewer no-shows", "more clients", "more revenue", "built for busy salons") — say what the feature does, and let the caller draw the conclusion.
-
-${playbook}
-
-SALON PLANS (live — the only prices you quote):
-${plans}
-
-HARDWARE (live):
-${hardware}
-
-FACTS:
-${factSheet}
-
-Today is ${today}.
-
-YOUR BACKEND does three things, and you must hand them to it:
-- Every time the caller tells you their name, salon name, salon type, team size, city, e-mail, what software they use, or which plan interests them, hand those details to the backend to save as a lead — right away, in the same turn, while you keep talking.
+  const agentName = agent.spokenName;
+  const agentPlaybook = accountSupportHandoff ? "" : agentKnowledgeForPrompt(playbook, agent);
+  const agentFacts = accountSupportHandoff
+    ? "Verified Account Services routes: live chat at certxa.com and inside Certxa, or support@certxa.com. No support phone number is confirmed. This assistant cannot look up account balances, invoices, charges, subscriptions, or modify account settings. Never invent or imply account-specific information."
+    : agentKnowledgeForPrompt(factSheet, agent);
+  const plansForPrompt = accountSupportHandoff
+    ? "Not applicable to this support call. Never list sales plans or public plan prices in response to a specific bill, charge, or account question."
+    : plans;
+  const hardwareForPrompt = accountSupportHandoff
+    ? "Not applicable to this support call. Do not list or pitch hardware."
+    : hardware;
+  const personality = accountSupportHandoff && agent.id === "shavez"
+    ? "Be a warm, attentive Account Services representative. Listen carefully, respond directly to the issue, and avoid repeated acknowledgements, sales language, and unnecessary questions."
+    : agent.id === "tom"
+    ? "Be friendly, approachable, curious and confidently helpful. Sound genuinely interested in the caller's business and enthusiastic about helping them find a good fit. Keep that warmth natural: no exaggerated excitement, canned compliments, pressure or sales clichés. Use plain language and explain unfamiliar terms patiently. Use the caller's name naturally, not repeatedly. English by default; if the caller speaks Vietnamese, Spanish or another language, or asks to, switch and stay in it."
+    : `${agent.personality} English by default; if the caller speaks Vietnamese, Spanish or another language, or asks you to, switch and stay in it.`;
+  const accountSupportGuidance = accountSupportHandoff && agent.id === "shavez"
+    ? `ACCOUNT SERVICES CALL — OVERRIDES ALL SALES GUIDANCE: Tom transferred this caller because they requested account support. This is an existing-customer support call, not a new sales lead. Open warmly as Maril from Certxa Account Services and acknowledge the request once. Listen to the exact issue and respond directly. Do not start sales discovery, pitch or list plans/prices, mention trials or hardware, use sales CRM tools, or ask them to repeat why they called. Never repeat their name or acknowledgements in consecutive sentences. You cannot view private invoices, balances, charges, subscriptions, or change accounts: never invent or claim account access. If asked for their bill, do not substitute public plan prices; briefly explain you cannot see that account-specific amount and give live chat or support@certxa.com. If they ask for Tom, do not say "I'll see what I can do"; explain briefly you cannot bridge back to Tom, then offer to continue helping with the account issue or provide the verified support route. Never tell the caller you cannot help; give verified general information without sounding scripted.`
+    : "";
+  const accountSupportFacts = accountSupportHandoff && agent.id === "shavez"
+    ? "Account-support scope only: provide verified general explanations, not private account data. Support routes: live chat at certxa.com or inside Certxa, and support@certxa.com. No support phone number or response time is confirmed."
+    : "";
+  const discoveryGuidance = `STRUCTURED, NEEDS-FIRST DISCOVERY — REQUIRED FOR TOM AND SHAVEZ; this overrides generic wording that suggests waiting passively for discovery or that there is no useful sequence.
+The goal is to understand the caller's business and what they need so you can assist them—not to pitch a preset feature list. In a new sales conversation, guide the caller through these topics naturally, one question at a time, listening to and responding to each answer:
+1. Confirm their intent: "Are you looking at Certxa for your salon or business?" If they already explained why they called, acknowledge that and do not ask again.
+2. Learn what name they go by. If they have already given their name, accept it and move on. For a returning-profile identity check, follow the required full-name verification instructions below before using any stored information.
+3. Identify the type of beauty business before using industry-specific terms. If it is not clear, ask: "What kind of salon or beauty business are you running?" A business name alone is not proof of business type. Until the type is clear, say "your business" and "team members" rather than assuming a nail salon or calling everyone a technician. If they are planning to open, ask what kind of business they plan to open.
+4. Ask how they serve clients: "Are you mostly walk-ins, appointments, or a mix of both?" Adapt the wording for their business and skip it if already answered.
+5. Understand their current workflow: "How are you handling scheduling and checkout these days?" Let them explain; ask a brief follow-up only if it will clarify a stated need.
+6. Find the priority: "What's the biggest headache for you at the front desk right now?" If they do not have a front desk, ask what takes the most effort in running the business.
+Do not recite these questions mechanically, combine multiple questions into one turn, repeat answered questions, or force the sequence when the caller has a more urgent question. Answer direct questions first—especially about price, plans, features, or getting started—then return to the next useful discovery topic only if the caller is open to continuing. If the caller is not interested in evaluating Certxa, respect that and focus on the help they requested.
+Use business-specific language only after learning the business type: nail salons—nail technicians, walk-ins/appointments, turn rotation and commissions; hair salons—stylists, schedules and commissions; barbershops—barbers, walk-in turns and appointments; spas—service providers (use "therapist" only if the caller does), services and booking; lash/brow or general beauty studios—beauty professionals, specialties, appointments and payments; solo professionals—how they manage appointments/payments and whether they plan to add people. For other business types, mirror the caller's own terms. Explore team size, locations, scheduling, checkout, commissions/payroll, client management or marketing only when relevant to what they tell you. Connect their actual needs to verified Certxa capabilities; never promise results.`;
+  const transferGuidance = agent.id === "tom"
+    ? `ACCOUNT-SUPPORT ROUTING: When a caller says they have account, billing, payment, subscription, or login trouble, or directly asks to speak with Account Services, briefly explain that you cannot view or change individual records. Vary the wording naturally. Then say, "I'll connect you with Account Services now," and call transfer_to_account_services immediately. Do not ask permission, ask whether they want a hold, or wait for another confirmation. Do not transfer ordinary product/pricing questions. If the caller explicitly says not to connect them, respect that and offer live chat or support@certxa.com.`
+    : "";
+  const directAccountServicesGuidance = "";
+  const namePronunciation = agent.id === "shavez"
+    ? `\n\nCALLER-FACING NAME: Introduce yourself and answer what name the caller should use as "Maril". Never say "Shavez" aloud to callers; that is only the internal call-attribution key. Do not spell your name aloud.`
+    : `\n\nCALLER-FACING NAME: When introducing yourself or answering what name the caller should use, say "${agent.spokenName}". Do not spell your name aloud.`;
+  const naturalConversationGuidance = `NATURAL PHONE DELIVERY: Sound like a helpful person having one continuous conversation, not a form or script. Acknowledge a caller's name once, then do not use it again until a natural closing unless needed for clarity. Do not begin consecutive turns with "Sure", "Okay", or "Thanks, [name]"; vary or omit acknowledgements and answer the point directly. Never narrate background work with phrases like "I'll check quickly" or "let me look"—continue naturally and state only the result. If the caller says they called before, do not restart the discovery sequence or repeat questions they already answered; complete any required identity check silently first. If identity verification returns no usable history, acknowledge that once without blaming the caller or repeating a name, then ask what they need help with now instead of restarting the entire intake.`;
+  const roleIntroduction = accountSupportHandoff && agent.id === "shavez"
+    ? "You are Maril, Certxa's Account Services triage representative, handling a caller transferred by Tom."
+    : `You are ${agentName}, a sales specialist at Certxa, answering Certxa's sales line.`;
+  const backendVoiceGuidance = accountSupportHandoff
+    ? `ACCOUNT SERVICES MODE: This caller has already requested account support and has been transferred. Do not ask for their name again, restart discovery, repeat acknowledgements, pitch plans, quote sales-plan prices, list hardware, offer a trial, or claim to inspect/update their account. Address the specific issue they raised. For a specific balance/invoice/charge lookup, briefly explain you cannot see that account's billing data and give the live chat or support@certxa.com route. The only available tool is end_call, and only after the caller is finished.`
+    : `YOUR BACKEND does three things, and you must hand them to it:
+- If a stored-profile candidate exists, do not reveal or hint at the stored name, salon, needs, or call history. Ask neutrally, "May I ask who I'm speaking with?" If they give only a first name, ask for their full name without mentioning a stored record. Then call verify_caller_identity with the name the caller volunteered. Do not use the stored memory unless that tool confirms the name. A mismatch or no answer means continue without prior context and do not write caller facts to that profile.
+- If a stored-profile candidate exists, do not reveal or hint at the stored name, salon, needs, or call history. Ask neutrally for the caller's full name and, if needed, the salon/business name or account email. Never reveal stored values as a challenge. Call verify_caller_identity with only details the caller volunteered. Do not use stored memory unless that tool confirms identity. A mismatch or refusal means continue without prior context and do not write caller facts to that profile.
+- When identity is verified, use returned history naturally and do not make the caller repeat known information. For a new caller, save their name and details as they volunteer them. Never say you remembered them unless the backend confirms the identity.
+- Every time a verified caller tells you their name, salon name, salon type, team size, locations, city, e-mail, operating process, problem, what software they use, or plan interest, hand supported details to the backend to save while you continue helping.
 - When the caller agrees to have the free-trial sign-up link texted to them, hand that to the backend to send.
 - After you say goodbye and the caller is done, hand off ending the call.
 Backend work is silent: never say "let me check", "I'll save that" or narrate tools. When a result arrives, carry on naturally.`;
-  const backend = `You handle the actions for ${AGENT_NAME}, Certxa's sales phone agent.
-- save_lead: as soon as the caller gives a name or business name, save the lead, and save again when you learn more (business type, team size, city, e-mail, current software, plan interest, short notes about needs and objections). Pass only what the caller said. Confirm e-mail spelling before saving it.
+  const voice = `${roleIntroduction} You are an AI built by Certxa — if anyone asks, say so plainly.
+
+CERTXA PRONUNCIATION: This voice engine mispronounces the spelling "Certxa" when it is fed as speech text. In spoken response text, say the pronunciation-only alias "${CERTXA_SPOKEN_ALIAS}" (three clear beats: Sir / Text / uh) instead of the brand spelling, and say "${CERTXA_SPOKEN_ALIAS} dot com" for the domain. Do not say "Sir Tex-tuh" or compress it to "Sir-tza". When spelling aloud, say C-E-R-T-X-A. The application converts this narrowly scoped alias back to Certxa/Certxa.com in saved transcripts. Never use the alias in SMS, URLs, saved profile data, or written answers.
+${namePronunciation}
+${naturalConversationGuidance}
+
+YOUR PERSONALITY: ${personality}
+
+MEMORY PRIVACY ALWAYS APPLIES: Never say or imply you remember a caller, and never disclose previous-call details, unless verify_caller_identity succeeds during this call. If the profile lookup has not completed or is unavailable, proceed as a fresh conversation and do not claim that no profile exists.
+SHARED AGENT HISTORY: Caller memory and call history are shared across the Certxa sales team. Each recent call identifies the representative who handled it. Never claim that you personally had a conversation another agent handled. If relevant, identify that representative by name (for example, "Tom spoke with you previously") and describe the returned notes as team history, not your own memory. If the history lists you as the representative, you may refer to it as a previous conversation you handled.
+When using verified returned memory, treat provenance marked caller_statement as what the caller previously reported, not independently verified account data. Treat legacySummaryForContextOnly as an old AI-generated hint and confirm whether it is still accurate before relying on it. Any internalSuggestedNextStep is an AI-generated suggestion, not a promise. An SMS event means only that a text was sent; it does not prove signup or trial activation.
+SAVE CLAIMS: A successful save_lead result confirms the record write. If the backend reports a failure or uncertainty, do not tell the caller that their details were saved; continue helping and be honest about the failure.
+
+CONVERSATION: Respond to the caller's actual question first. Be concise but useful: usually a few sentences, with enough detail to explain the answer; take more time when they ask for an explanation. Ask at most one relevant question at a time, and only when its answer will help you understand their situation or guide them. Use details they have already given; never ask for them again unless clarification is genuinely needed. Do not run through a checklist or list features. Let the caller finish, avoid filler and repeated acknowledgements, and adapt your wording to the conversation. NAME ETIQUETTE: Acknowledge a caller's name once when first given. Do not repeat their name in back-to-back turns or start every reply with it; use it sparingly, at most once more when closing.
+
+DISCOVERY AND VALUE: Follow the structured discovery guidance below on new sales inquiries, while adapting to the caller's pace and skipping anything already answered or irrelevant. When a need is clear, connect it to the relevant verified Certxa capability below and explain concretely how that capability works in their situation. For example, Certxa can assign walk-ins using the salon's chosen turn rules and show the rotation on a turn board. Do not promise that a feature will produce a particular business outcome or guarantee fairness, revenue, time savings or other results.
+
+DO NOT RUSH THE CALL: The goal is to help the caller understand whether Certxa fits and what they want to do next — not to finish a checklist or end the call. A price answer, a signup link, or an SMS does not mean the conversation is over. Do not ask "Anything else?" or start a goodbye while the caller is still exploring, interested, confused, or asking questions. A pause is not consent to end the call; allow space for the caller to continue. After sending a link, stay engaged and answer whatever they ask. Respect a caller who clearly says they need to leave or are finished, and then close warmly without trying to hold them on the phone.
+
+BUYING SIGNALS AND NEXT STEPS: Treat questions about starting, signing up, the trial, devices, or a signup link as a request for practical help. Answer directly and explain the verified next step; do not respond to a clear buying signal with another discovery question. Offer to text the link when it is relevant, and send it only after the caller explicitly agrees. Never say that a caller signed up or started a trial just because a link was sent. If they are interested but not ready, continue helping without pressure; do not force an SMS or end the call.
+
+CONFUSION AND OBJECTIONS: If the caller sounds confused or hesitant, slow down, acknowledge the concern without judgment, and explain it another way in simple words. Address the concern they raised before asking anything else. Do not immediately redirect them to the website or ask a quick check-in question as a cue to end the conversation. Never argue or pressure them.
+
+HONESTY — THE MOST IMPORTANT RULE: everything you say about Certxa must come from the FACTS, PLANS or HARDWARE below. Never invent or guess a feature, price, number, statistic, integration, customer story, timeline or policy, and never stretch a fact to sound better. If the answer isn't below, say plainly that you don't want to guess, share what you can verify, and offer the published Certxa information or the support contact in the FACTS. Saying "I'm not sure" is always better than a wrong answer. Never say what other salons do ("many salons", "most salons", "salons usually"); talk about this caller and verified product facts. Never explain what a price or fee covers beyond the facts. Never guess what Certxa support or anyone else can do beyond the facts. Describe what a feature does and how it relates to the caller's stated need, but do not promise a result or benefit.
+
+${agentPlaybook}
+
+${accountSupportHandoff ? accountSupportGuidance : discoveryGuidance}
+${transferGuidance}
+${directAccountServicesGuidance}
+
+SALON PLANS (live — the only prices you quote):
+${plansForPrompt}
+
+TRIAL (runtime registration configuration):
+${trialInfo}
+
+PLAN DATA RULE: The live list above is the source for prices and configured entitlements. Only a listed staff/location limit is confirmed; a missing limit is unknown, never unlimited. A null limit is unlimited only when the corresponding entitlement is explicitly present. Only features listed for a plan are confirmed. For Autumn, quote an included-call allowance only when the live plan value matches the billing rule; if marked as conflicting, do not choose either value and tell the caller it needs confirmation.
+
+HARDWARE (live):
+${hardwareForPrompt}
+
+FACTS:
+${agentFacts}
+${accountSupportFacts}
+
+Today is ${today}.
+
+${backendVoiceGuidance}`;
+  const backend = accountSupportHandoff && agent.id === "shavez"
+    ? `You handle actions for Maril, Certxa Account Services AI triage. This caller was transferred by Tom after requesting account support. Do not use sales tools, change account records, or claim that an account was accessed or updated. Only end_call is available, and only after the caller is done.`
+    : `You handle the actions for ${agentName}, Certxa's sales phone agent.
+- verify_caller_identity: use only after the caller voluntarily says their full name and, when the tool requests it, their salon/business name or account email. Pass only what they volunteered. If verified, use the returned concise memory; if not, do not reveal or save any stored profile facts.
+- save_lead: save the first caller-supplied name and verified details, then update as the verified conversation adds or corrects facts. Pass only what the caller actually said. Confirm e-mail spelling before saving. A failed/mismatched identity check must not update the existing profile.
+- Never tell the caller information was saved unless save_lead returned success.
 - send_trial_link: when the caller wants to try Certxa, only send after they say yes to getting the link by text. It sends once per call.
+- transfer_to_account_services: for a caller with an account-support issue or a direct request for Account Services, immediately; no additional hold/transfer consent question is required.
 - end_call: only after a goodbye, when the caller is done.
 The caller's number is ${callerPhone ?? "unknown"}.`;
-  return { voice, backend };
+  const memoryBlock = memoryCandidate
+    ? "A stored profile may match this number. It is private until verify_caller_identity confirms the caller's volunteered identity details. Do not state or imply the stored person's name or business before verification."
+    : "No prior caller memory has been loaded into this prompt. The phone lookup may still be pending or unavailable; do not claim no profile exists, and do not use previous-call details unless verify_caller_identity confirms them.";
+  return { voice: `${voice}\n\nCALLER MEMORY PRIVACY:\n${memoryBlock}`, backend };
 }
 
 // ─── Limits (shared across pm2 workers through the call log) ──────────────────
@@ -190,6 +399,20 @@ async function overLimits(): Promise<string | null> {
 const TOOLS = [
   {
     type: "function",
+    name: "verify_caller_identity",
+    description: "Verify a returning caller using only identity details they just volunteered. Never pass details inferred from the profile or reveal stored details before verification.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "The caller's full name, spoken in this call." },
+        businessName: { type: "string", description: "Their salon/business name only if they volunteered it." },
+        email: { type: "string", description: "Their account email only if they volunteered it." },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    type: "function",
     name: "save_lead",
     description: "Save or update this caller as a sales lead. Call it as soon as you know the caller's name or business, and again whenever you learn more. Only pass what the caller actually said.",
     parameters: {
@@ -204,6 +427,17 @@ const TOOLS = [
         phone: { type: "string", description: "Best phone number if different from the number they are calling from." },
         currentSoftware: { type: "string", description: "What they use today, if anything." },
         interestedPlan: { type: "string", description: "Plan they are interested in, if any." },
+        locationCount: { type: "string", description: "Number of business locations, only if the caller stated it." },
+        serviceModel: { type: "string", description: "Appointments, walk-ins, or both, only as described by the caller." },
+        bookingProcess: { type: "string", description: "How they currently manage bookings, if stated." },
+        clientManagementProcess: { type: "string", description: "How they currently manage client records, if stated." },
+        checkoutProcess: { type: "string", description: "How they currently handle checkout/payments, if stated." },
+        turnRotationProcess: { type: "string", description: "How they currently assign technician turns, if stated." },
+        commissionProcess: { type: "string", description: "How they currently manage commissions, if stated." },
+        featuresOfInterest: { type: "array", items: { type: "string" }, description: "Features the caller explicitly asked about or expressed interest in." },
+        questions: { type: "array", items: { type: "string" }, description: "Questions explicitly asked by the caller." },
+        objections: { type: "array", items: { type: "string" }, description: "Concerns or objections explicitly expressed by the caller." },
+        notInterested: { type: "boolean", description: "True only if the caller explicitly says they are not interested." },
         notes: { type: "string", description: "Short notes: what they care about, questions, objections, timing." },
       },
       required: [],
@@ -221,6 +455,12 @@ const TOOLS = [
   },
   {
     type: "function",
+    name: "transfer_to_account_services",
+    description: "When a caller asks for Account Services or describes an account-support issue, immediately transfer the call to the Account Services AI triage webhook. Do not ask an additional permission or hold question.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+  {
+    type: "function",
     name: "end_call",
     description: "Hang up, after you have said goodbye and the caller has nothing else.",
     parameters: { type: "object", properties: {}, required: [] },
@@ -229,17 +469,55 @@ const TOOLS = [
 
 // ─── One call ─────────────────────────────────────────────────────────────────
 
-function runSalesCall(twilioWs: WebSocket): void {
+async function applySalesStageGlobally(leadIdValue: number, stage: string, source: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const r = await client.query(`SELECT profile_data FROM sales_leads WHERE id = $1 FOR UPDATE`, [leadIdValue]);
+    if (!r.rows[0]) throw new Error("Sales profile no longer exists");
+    const oldData = (r.rows[0].profile_data && typeof r.rows[0].profile_data === "object" ? r.rows[0].profile_data : {}) as SalesMemoryObject;
+    const oldSales = (oldData.sales && typeof oldData.sales === "object" ? oldData.sales : {}) as SalesMemoryObject;
+    const nextSales = stageHistoryUpdate(oldSales, stage, source);
+    const provenance = (oldData.provenance && typeof oldData.provenance === "object" ? oldData.provenance : {}) as SalesMemoryObject;
+    if (nextSales.currentStage !== oldSales.currentStage) provenance["sales.currentStage"] = { source, checkedAt: new Date().toISOString() };
+    await client.query(
+      `UPDATE sales_leads SET status = $3, profile_data = $2::jsonb, updated_at = now() WHERE id = $1`,
+      [leadIdValue, JSON.stringify({ ...oldData, sales: nextSales, provenance }), nextSales.currentStage],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally { client.release(); }
+}
+
+function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM_SALES_AGENT): void {
   let streamSid: string | null = null;
   let callSid: string | null = null;
   let callerPhone: string | null = null;
+  let callerPhoneE164: string | null = null;
   let callLogId: number | null = null;
+  let callLogPromise: Promise<number | null> = Promise.resolve(null);
+  let callPreparationPromise: Promise<void> = Promise.resolve();
   let leadId: number | null = null;
+  let profile: SalesMemoryObject | null = null;
+  let profileCandidate = false;
+  let profileLookupCompleted = false;
+  let profileLookupFailed = false;
+  let identityVerified = false;
+  let identityConfirmedAgainstExistingProfile = false;
+  let profileNameEstablishedThisCall = false;
+  let identityBlocked = false;
   let trialSent = false;
+  let accountSupportHandoff = false;
+  let accountSupportTransferScheduled = false;
+  let accountSupportTransferTimer: ReturnType<typeof setTimeout> | null = null;
   let openAi: WebSocket | null = null;
   let started = false;
   let closed = false;
   const startedAt = Date.now();
+  let twilioStartAt = 0;
+  let firstAssistantAudioAt = 0;
   let lastCallerVoice = Date.now();
   let aiSpeaking = false;
   let aiIdleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -247,14 +525,22 @@ function runSalesCall(twilioWs: WebSocket): void {
   const outQueue: string[] = [];
   let pacer: ReturnType<typeof setInterval> | null = null;
   const transcript: { role: "caller" | "tom"; text: string; at: string }[] = [];
+  const smsEvents: { at: string; to: string; body: string; sid: string | null; status: string }[] = [];
+  const pendingActions = new Set<Promise<unknown>>();
   let callerText = "";
   let tomText = "";
 
   const flush = (who: "caller" | "tom") => {
-    const text = (who === "caller" ? callerText : tomText).trim();
+    const rawText = (who === "caller" ? callerText : tomText).trim();
+    const text = who === "tom" ? canonicalizeSpokenBrandForText(rawText) : rawText;
     if (text) transcript.push({ role: who, text, at: new Date().toISOString() });
     if (who === "caller") callerText = ""; else tomText = "";
   };
+
+  async function persistSmsEvents(): Promise<void> {
+    const id = await callLogPromise;
+    if (id) await pool.query(`UPDATE sales_call_logs SET sms_events = $2::jsonb WHERE id = $1`, [id, JSON.stringify(smsEvents)]);
+  }
 
   const startPacer = () => {
     if (pacer) return;
@@ -272,74 +558,445 @@ function runSalesCall(twilioWs: WebSocket): void {
     if (Date.now() - lastCallerVoice > SILENCE_HANGUP_MS) finish("silence");
   }, 5_000);
 
+  function scheduleAccountSupportTransfer(): void {
+    if (accountSupportTransferScheduled || closed) return;
+    accountSupportTransferScheduled = true;
+    console.log(`${LOG} account-support request confirmed; scheduling direct Shavez webhook handoff for call=${callSid ?? "unknown"}`);
+    // The route is authorized by the caller's explicit Account Services/account-support request.
+    accountSupportTransferTimer = setTimeout(() => finish("transferred_to_shavez"), 3_500);
+  }
+
   function finish(outcome: string): void {
     if (closed) return;
     closed = true;
     clearTimeout(maxTimer);
     clearInterval(silenceTimer);
+    if (accountSupportTransferTimer) clearTimeout(accountSupportTransferTimer);
     if (pacer) clearInterval(pacer);
     flush("caller"); flush("tom");
     try { openAi?.close(); } catch { /* ignore */ }
-    try { twilioWs.close(); } catch { /* ignore */ }
+      if (agentProfile.id !== "tom") {
+      try { twilioWs.close(); } catch { /* preserve Shavez's existing stream-close behavior */ }
+    }
     const seconds = Math.round((Date.now() - startedAt) / 1000);
-    const finalOutcome = leadId ? (trialSent ? "trial_link_sent" : "lead_saved") : outcome;
-    console.log(`${LOG} call ended (${outcome}) after ${seconds}s, lead=${leadId ?? "none"}, trial link ${trialSent ? "sent" : "not sent"}`);
-    if (callLogId) {
-      pool.query(
-        `UPDATE sales_call_logs SET ended_at = now(), duration_seconds = $2, outcome = $3, transcript = $4::jsonb, lead_id = $5 WHERE id = $1`,
-        [callLogId, seconds, finalOutcome, JSON.stringify(transcript), leadId],
-      ).then(() => summarize(callLogId!, transcript)).then(() => factCheckCall(callLogId!, transcript))
-        .catch((e) => console.error(`${LOG} call log update failed:`, e.message));
+    console.log(`${LOG} agent=${agentProfile.id} call ended (${outcome}) after ${seconds}s, lead=${leadId ?? "none"}, trial link ${trialSent ? "sent" : "not sent"}`);
+    void (async () => {
+      const insertedId = await callLogPromise;
+      if (agentProfile.id === "tom" && insertedId) {
+        await pool.query(`UPDATE sales_call_logs SET outcome = $2 WHERE id = $1 AND ended_at IS NULL`, [insertedId, outcome])
+          .catch((e) => console.warn(`${LOG} could not persist ending outcome before stream close:`, e.message));
+      }
+      // Twilio sends a stop event when the caller has already ended their side; let it close that stream itself.
+      if (agentProfile.id === "tom" && outcome !== "caller_hung_up" && twilioWs.readyState === WebSocket.OPEN) {
+        try { twilioWs.close(1000, outcome.slice(0, 120)); } catch { /* ignore */ }
+      }
+      const id = await finalizeAfterInsert(Promise.resolve(insertedId), [...pendingActions, callPreparationPromise], async (persistedId) => {
+        const associatedLeadId = shouldAssociateCallWithProfile({ identityVerified, profileLookupCompleted, profileCandidate, identityBlocked })
+          ? leadId
+          : null;
+        await pool.query(
+          `UPDATE sales_call_logs SET ended_at = now(),
+             duration_seconds = CASE WHEN $8 THEN COALESCE(duration_seconds, 0) + $2 ELSE $2 END,
+             outcome = $3,
+             transcript = CASE WHEN $8 THEN COALESCE(transcript, '[]'::jsonb) || $4::jsonb ELSE $4::jsonb END,
+             lead_id = CASE WHEN $8 THEN COALESCE(lead_id, $5) ELSE $5 END,
+             sms_events = CASE WHEN $8 THEN COALESCE(sms_events, '[]'::jsonb) || $6::jsonb ELSE $6::jsonb END,
+             identity_verified = CASE WHEN $8 THEN (identity_verified OR $7) ELSE $7 END
+           WHERE id = $1`,
+          [persistedId, seconds, accountSupportHandoff ? `account_services_${outcome}` : outcome, JSON.stringify(transcript), associatedLeadId,
+           JSON.stringify(smsEvents), identityVerified, accountSupportHandoff],
+        );
+        leadId = associatedLeadId;
+      });
+      if (!id) {
+        console.error(`${LOG} cannot finalize call: call log insert did not succeed`);
+        return;
+      }
+      if (outcome === "transferred_to_shavez") return;
+      await Promise.allSettled([
+        summarize(id, transcript, smsEvents, identityVerified ? leadId : null, outcome, agentProfile),
+        factCheckCall(id, transcript, agentProfile),
+      ]);
+    })().catch((e) => console.error(`${LOG} call finalization failed:`, e.message));
+  }
+
+  async function prepareCall(): Promise<void> {
+    if (accountSupportHandoff) {
+      await callLogPromise;
+      return;
+    }
+    if (callerPhoneE164) {
+      try {
+      const result = await pool.query(
+          `INSERT INTO sales_leads (phone, phone_e164, status, source)
+           VALUES ($1, $2, 'new', 'phone')
+           ON CONFLICT (phone_e164) WHERE phone_e164 IS NOT NULL
+           DO UPDATE SET phone_e164 = EXCLUDED.phone_e164 RETURNING *`,
+          [callerPhoneE164.slice(2), callerPhoneE164],
+          );
+          profile = result.rows[0] ?? null;
+          leadId = profile ? Number(profile.id) : null;
+          const previous = await pool.query(
+            `SELECT EXISTS (SELECT 1 FROM sales_call_logs WHERE lead_id = $1 AND identity_verified = true) AS returning`,
+            [leadId],
+          );
+          profileCandidate = profileNeedsIdentityCheck(profile ?? {}, previous.rows[0]?.returning === true);
+          profileLookupCompleted = true;
+      } catch (error) {
+        console.error(`${LOG} profile lookup failed; continuing call without memory:`, (error as Error).message);
+        profile = null;
+        leadId = null;
+        profileCandidate = false;
+        profileLookupCompleted = false;
+        profileLookupFailed = true;
+      }
+    }
+    await callLogPromise;
+  }
+
+  async function applySalesStage(leadIdValue: number, stage: string, source: string, facts: SalesMemoryObject = {}): Promise<void> {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const r = await client.query(`SELECT profile_data FROM sales_leads WHERE id = $1 FOR UPDATE`, [leadIdValue]);
+      if (!r.rows[0]) throw new Error("Sales profile no longer exists");
+      const oldData = (r.rows[0].profile_data && typeof r.rows[0].profile_data === "object" ? r.rows[0].profile_data : {}) as SalesMemoryObject;
+      const oldSales = (oldData.sales && typeof oldData.sales === "object" ? oldData.sales : {}) as SalesMemoryObject;
+      const nextSales = stageHistoryUpdate({ ...oldSales, ...facts }, stage, source);
+      const provenance = (oldData.provenance && typeof oldData.provenance === "object" ? oldData.provenance : {}) as SalesMemoryObject;
+      if (nextSales.currentStage !== oldSales.currentStage) {
+        provenance["sales.currentStage"] = { source, checkedAt: new Date().toISOString() };
+      }
+      await client.query(
+        `UPDATE sales_leads SET status = $3, profile_data = $2::jsonb, updated_at = now() WHERE id = $1`,
+        [leadIdValue, JSON.stringify({ ...oldData, sales: nextSales, provenance }), nextSales.currentStage],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally { client.release(); }
+  }
+
+  /** Check account/trial only after identity is confirmed; ambiguous user matches remain unverified. */
+  async function refreshVerifiedAccountStage(leadIdValue: number): Promise<void> {
+    try {
+      const profileResult = await pool.query(`SELECT email, phone_e164 FROM sales_leads WHERE id = $1`, [leadIdValue]);
+      const customer = profileResult.rows[0];
+      if (!customer) return;
+      const matches = await pool.query(
+        `SELECT u.id, u.subscription_status, u.trial_ends_at,
+                bool_or(ss.status = 'trialing' AND (ss.current_period_end IS NULL OR ss.current_period_end > now())) AS store_trial_active,
+                bool_or(ss.status = 'active' AND COALESCE(sp.price_monthly_cents, 0) > 0) AS paid_subscription,
+                max(sp.code) FILTER (WHERE ss.status IN ('active','trialing')) AS plan_code,
+                max(sp.name) FILTER (WHERE ss.status IN ('active','trialing')) AS plan_name
+           FROM users u
+           LEFT JOIN locations l ON l.user_id = u.id
+           LEFT JOIN store_subscriptions ss ON ss.store_id = l.id
+           LEFT JOIN subscription_plans sp ON sp.id = ss.plan_id
+          WHERE u.role IN ('owner','admin')
+            AND (($1::text IS NOT NULL AND lower(u.email) = lower($1))
+              OR ($2::text IS NOT NULL AND u.phone IS NOT NULL AND
+                  (CASE WHEN length(regexp_replace(u.phone,'[^0-9]','','g'))=10 THEN '+1'||regexp_replace(u.phone,'[^0-9]','','g')
+                        WHEN length(regexp_replace(u.phone,'[^0-9]','','g'))=11 AND left(regexp_replace(u.phone,'[^0-9]','','g'),1)='1' THEN '+'||regexp_replace(u.phone,'[^0-9]','','g')
+                        ELSE NULL END) = $2))
+          GROUP BY u.id, u.subscription_status, u.trial_ends_at`,
+        [customer.email ?? null, customer.phone_e164 ?? null],
+      );
+      if (matches.rows.length !== 1) return;
+      const account = matches.rows[0];
+      const activeUserTrial = account.subscription_status === "trial" && account.trial_ends_at && new Date(account.trial_ends_at) > new Date();
+      const stage = account.paid_subscription ? "paying_customer" : (account.store_trial_active || activeUserTrial) ? "trial_active" : null;
+      if (!stage) return;
+      await applySalesStage(leadIdValue, stage, "verified_application", {
+        verifiedAccount: {
+          status: stage,
+          planCode: account.plan_code ?? null,
+          planName: account.plan_name ?? null,
+          checkedAt: new Date().toISOString(),
+        },
+      });
+    } catch (error) {
+      console.warn(`${LOG} account-stage verification failed:`, (error as Error).message);
     }
   }
 
   // ── Tools ──
   async function runTool(name: string, args: any): Promise<Record<string, unknown>> {
+    if (!accountSupportHandoff) await callPreparationPromise;
+    if (name === "verify_caller_identity") {
+      if (!leadId || !profile || !callerPhoneE164 || identityBlocked) {
+        return { success: false, verified: false, message: "No returning profile can be verified on this call." };
+      }
+      const statedName = typeof args.name === "string" ? args.name.trim() : "";
+      if (!statedName || !hasCallerEvidence([...transcript, { role: "caller", text: callerText }], statedName)) {
+        return { success: false, verified: false, message: "Ask the caller to say their name before using past-call information." };
+      }
+      const callerWords = [...transcript, { role: "caller", text: callerText }];
+      const suppliedBusiness = typeof args.businessName === "string" && hasCallerEvidence(callerWords, args.businessName)
+        ? args.businessName.trim()
+        : "";
+      const suppliedEmail = typeof args.email === "string" && hasCallerEvidence(callerWords, args.email)
+        ? args.email.trim()
+        : "";
+      if (!profileCandidate) {
+        identityVerified = true;
+        if (callLogId) await pool.query(`UPDATE sales_call_logs SET identity_verified = true, lead_id = $2 WHERE id = $1`, [callLogId, leadId]);
+        return { success: true, verified: true, memory: null, message: "New caller identified; no previous call history is available." };
+      }
+      const latest = await pool.query(`SELECT * FROM sales_leads WHERE id = $1`, [leadId]);
+      profile = latest.rows[0] ?? null;
+      const identityCandidate = {
+        name: String(profile?.name ?? ""),
+        businessName: String(profile?.business_name ?? ""),
+        email: String(profile?.email ?? ""),
+      };
+      const suppliedIdentity = { name: statedName, businessName: suppliedBusiness, email: suppliedEmail };
+      if (!profile || !normalizeIdentity(identityCandidate.name) || normalizeIdentity(identityCandidate.name) !== normalizeIdentity(statedName)) {
+        identityBlocked = true;
+        leadId = null;
+        profile = null;
+        return { success: false, verified: false, message: "Identity not confirmed. Continue without sharing or updating the previous caller's information." };
+      }
+      if (identityNeedsMoreInformation(identityCandidate, suppliedIdentity)) {
+        return { success: false, verified: false, needsMoreInformation: true, message: "Ask for the caller's salon/business name or account email without revealing the value stored in the profile." };
+      }
+      if (!identityMatches(identityCandidate, suppliedIdentity)) {
+        identityBlocked = true;
+        leadId = null;
+        profile = null;
+        return { success: false, verified: false, message: "Identity not confirmed. Continue without sharing or updating the previous caller's information." };
+      }
+      if (callLogId) {
+        await pool.query(`UPDATE sales_call_logs SET identity_verified = true, lead_id = $2 WHERE id = $1`, [callLogId, leadId]);
+      }
+      identityVerified = true;
+      identityConfirmedAgainstExistingProfile = true;
+      await refreshVerifiedAccountStage(leadId);
+      const refreshed = await pool.query(`SELECT * FROM sales_leads WHERE id = $1`, [leadId]);
+      profile = refreshed.rows[0] ?? profile;
+      const history = await pool.query(
+          `SELECT id, started_at, summary, structured_summary, sms_events, outcome, identity_verified, transcript, sales_agent_id
+         FROM sales_call_logs WHERE lead_id = $1 AND ended_at IS NOT NULL AND id <> $2
+         ORDER BY started_at DESC LIMIT 20`,
+        [leadId, callLogId ?? -1],
+      );
+      const legacyIdentityMatched = (call: any) => {
+        if (call.identity_verified === true) return true;
+        const turns = Array.isArray(call.transcript) ? call.transcript : [];
+        if (!callerAffirmsIdentity(turns, profile!.name)) return false;
+        const requiresBusinessOrEmail = Boolean(profile!.business_name || profile!.email);
+        if (!requiresBusinessOrEmail) return true;
+        return callerAffirmsIdentity(turns, profile!.business_name) || callerAffirmsIdentity(turns, profile!.email);
+      };
+      return {
+        success: true,
+        verified: true,
+        memory: summarizeMemoryContext(profile ?? {}, history.rows.filter(legacyIdentityMatched)),
+      };
+    }
     if (name === "save_lead") {
+      if (identityBlocked) {
+        return { success: false, message: "The caller did not match the existing profile. Do not create or update a profile for this call." };
+      }
+      if (profileLookupFailed && callerPhoneE164) {
+        return { success: false, message: "The caller profile could not be checked safely. Continue helping; call history will still be retained if logging is available." };
+      }
+      if (profileCandidate && !identityVerified) {
+        return { success: false, message: "Verify the caller's volunteered name with verify_caller_identity before saving or discussing past-call details." };
+      }
+      if (!identityBlocked && callerPhoneE164 && !profile) {
+        const existing = await pool.query(
+          `INSERT INTO sales_leads (phone, phone_e164, status, source)
+           VALUES ($1, $2, 'new', 'phone')
+           ON CONFLICT (phone_e164) WHERE phone_e164 IS NOT NULL
+           DO UPDATE SET phone_e164 = EXCLUDED.phone_e164 RETURNING *`,
+          [callerPhoneE164.slice(2), callerPhoneE164],
+        );
+        profile = existing.rows[0] ?? null;
+        leadId = profile ? Number(profile.id) : null;
+      }
+      const callerWords = [...transcript, { role: "caller", text: callerText }];
+      const suppliedName = typeof args.name === "string" ? args.name.trim() : "";
+      if (profile && !identityVerified && (!suppliedName || !hasCallerEvidence(callerWords, suppliedName))) {
+        return { success: false, message: "Ask the caller for their name before saving details to a phone-number profile." };
+      }
+      if (profile && !identityVerified && profile.name) {
+        if (!identityMatches({ name: String(profile.name) }, { name: suppliedName })) {
+          identityBlocked = true;
+          profile = null;
+          leadId = null;
+          return { success: false, message: "Different caller. Do not save these details to the previous caller's profile." };
+        }
+        identityVerified = true;
+      }
+      if (identityBlocked) {
+        return { success: false, message: "The phone is shared or the caller's identity could not be verified. Do not update the prior profile." };
+      }
+      if (suppliedName && hasCallerEvidence(callerWords, suppliedName)) identityVerified = true;
+      const verifiedText = (value: unknown): string | null =>
+        typeof value === "string" && value.trim() && hasCallerEvidence(callerWords, value)
+          ? value.trim().slice(0, 500)
+          : null;
+      const email = verifiedText(args.email);
       const fields: Record<string, string | null> = {
-        name: args.name, business_name: args.businessName, business_type: args.businessType, team_size: args.teamSize,
-        city: args.city, email: args.email, phone: args.phone ? (tenDigit(args.phone) ?? args.phone) : null,
-        current_software: args.currentSoftware, interested_plan: args.interestedPlan, notes: args.notes,
+        name: verifiedText(args.name), business_name: verifiedText(args.businessName), business_type: verifiedText(args.businessType),
+        team_size: verifiedText(args.teamSize), city: verifiedText(args.city),
+        email: email && hasTranscriptEvidence([...transcript, { role: "tom", text: tomText }], "tom", email) ? email : null,
+        phone: callerPhoneE164 ? null : (args.phone ? canonicalCallerE164(args.phone) : null),
+        current_software: verifiedText(args.currentSoftware), interested_plan: verifiedText(args.interestedPlan), notes: verifiedText(args.notes),
       };
       const clean = Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, typeof v === "string" && v.trim() ? v.trim().slice(0, 500) : null]));
-      if (!leadId) {
-        const r = await pool.query(
-          `INSERT INTO sales_leads (name, business_name, phone, email, business_type, team_size, city, current_software, interested_plan, notes, call_log_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-          [clean.name, clean.business_name, clean.phone ?? callerPhone, clean.email, clean.business_type, clean.team_size, clean.city,
-           clean.current_software, clean.interested_plan, clean.notes, callLogId],
-        );
-        leadId = r.rows[0].id;
-      } else {
-        await pool.query(
-          `UPDATE sales_leads SET name = COALESCE($2, name), business_name = COALESCE($3, business_name), phone = COALESCE($4, phone),
-              email = COALESCE($5, email), business_type = COALESCE($6, business_type), team_size = COALESCE($7, team_size),
-              city = COALESCE($8, city), current_software = COALESCE($9, current_software), interested_plan = COALESCE($10, interested_plan),
-              notes = CASE WHEN $11::text IS NULL THEN notes WHEN notes IS NULL THEN $11 ELSE notes || ' | ' || $11 END, updated_at = now()
-            WHERE id = $1`,
-          [leadId, clean.name, clean.business_name, clean.phone, clean.email, clean.business_type, clean.team_size, clean.city,
-           clean.current_software, clean.interested_plan, clean.notes],
-        );
+      const business: SalesMemoryObject = {};
+      for (const [key, value] of Object.entries({
+        locationCount: args.locationCount, serviceModel: args.serviceModel, bookingProcess: args.bookingProcess,
+        clientManagementProcess: args.clientManagementProcess, checkoutProcess: args.checkoutProcess,
+        turnRotationProcess: args.turnRotationProcess, commissionProcess: args.commissionProcess,
+      })) {
+        const supported = verifiedText(value);
+        if (supported) business[key] = supported;
       }
+      const sales: SalesMemoryObject = {};
+      const features = stringsOnly(args.featuresOfInterest, 20, 200).filter((value) => hasCallerEvidence(callerWords, value));
+      const questions = stringsOnly(args.questions, 20, 300).filter((value) => hasCallerEvidence(callerWords, value));
+      const objections = stringsOnly(args.objections, 20, 300).filter((value) => hasCallerEvidence(callerWords, value));
+      if (features.length) sales.featuresOfInterest = features;
+      if (features.length) sales.currentStage = "interested";
+      if (questions.length) sales.questionsAsked = questions;
+      if (objections.length) sales.objections = objections;
+      const newData: SalesMemoryObject = {};
+      const suppliedPhoneE164 = typeof args.phone === "string" ? canonicalCallerE164(args.phone) : null;
+      const alternatePhone = callerPhoneE164 && suppliedPhoneE164 && suppliedPhoneE164 !== callerPhoneE164 ? suppliedPhoneE164 : null;
+      if (alternatePhone && hasCallerEvidence(callerWords, args.phone)) newData.contact = { alternatePhone };
+      const profilePhoneE164 = callerPhoneE164;
+      if (Object.keys(business).length) newData.business = business;
+      if (Object.keys(sales).length) newData.sales = sales;
+      const provenance: SalesMemoryObject = {};
+      for (const [field, value] of Object.entries(clean)) {
+        if (typeof value === "string" && value.trim()) provenance[field] = { source: "caller_statement", callLogId: callLogId ?? null };
+      }
+      for (const field of Object.keys(business)) provenance[`business.${field}`] = { source: "caller_statement", callLogId: callLogId ?? null };
+      for (const field of [...features.map(() => "featuresOfInterest"), ...questions.map(() => "questionsAsked"), ...objections.map(() => "objections")]) {
+        provenance[`sales.${field}`] = { source: "caller_statement", callLogId: callLogId ?? null };
+      }
+      if (alternatePhone) provenance["contact.alternatePhone"] = { source: "caller_statement", callLogId: callLogId ?? null };
+      if (Object.keys(provenance).length) newData.provenance = provenance;
+      const id = callLogId;
+      if (!leadId) {
+        const leadValues = [clean.name, clean.business_name, clean.phone ?? (callerPhoneE164 ? callerPhone : null), clean.email,
+          clean.business_type, clean.team_size, clean.city, clean.current_software, clean.interested_plan,
+          clean.notes, id, JSON.stringify(newData), profilePhoneE164];
+        const r = profilePhoneE164
+          ? await pool.query(
+              `INSERT INTO sales_leads (name, business_name, phone, email, business_type, team_size, city, current_software,
+                 interested_plan, notes, call_log_id, profile_data, phone_e164)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13)
+               ON CONFLICT (phone_e164) WHERE phone_e164 IS NOT NULL DO UPDATE SET
+                 name=COALESCE(sales_leads.name,EXCLUDED.name), business_name=COALESCE(sales_leads.business_name,EXCLUDED.business_name),
+                 email=COALESCE(sales_leads.email,EXCLUDED.email), business_type=COALESCE(sales_leads.business_type,EXCLUDED.business_type),
+                 team_size=COALESCE(sales_leads.team_size,EXCLUDED.team_size), city=COALESCE(sales_leads.city,EXCLUDED.city),
+                 updated_at=now() RETURNING id`, leadValues)
+          : await pool.query(
+              `INSERT INTO sales_leads (name, business_name, phone, email, business_type, team_size, city, current_software,
+                 interested_plan, notes, call_log_id, profile_data)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb) RETURNING id`, leadValues.slice(0, 12));
+        leadId = Number(r.rows[0].id);
+        if (clean.name) profileNameEstablishedThisCall = true;
+      } else {
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+          const existing = await client.query(`SELECT name, profile_data FROM sales_leads WHERE id = $1 FOR UPDATE`, [leadId]);
+          if (!existing.rows[0]) throw new Error("Sales profile no longer exists");
+          const storedName = typeof existing.rows[0].name === "string" ? existing.rows[0].name : "";
+          const incomingName = typeof clean.name === "string" ? clean.name : "";
+          if (storedName && incomingName && normalizeIdentity(storedName) !== normalizeIdentity(incomingName) &&
+              !identityConfirmedAgainstExistingProfile && !profileNameEstablishedThisCall) {
+            await client.query("ROLLBACK");
+            identityBlocked = true;
+            leadId = null;
+            profile = null;
+            return { success: false, message: "This number already has a different profile name. Do not merge or replace that profile." };
+          }
+          const merged = mergeProfileData(existing.rows[0].profile_data, newData);
+          await client.query(
+            `UPDATE sales_leads SET name = COALESCE($2, name), business_name = COALESCE($3, business_name),
+               phone = COALESCE($4, phone), email = COALESCE($5, email), business_type = COALESCE($6, business_type),
+               team_size = COALESCE($7, team_size), city = COALESCE($8, city),
+               current_software = COALESCE($9, current_software), interested_plan = COALESCE($10, interested_plan),
+               notes = CASE WHEN $11::text IS NULL THEN notes WHEN notes IS NULL THEN $11 ELSE notes || ' | ' || $11 END,
+               profile_data = $12::jsonb, updated_at = now() WHERE id = $1`,
+            [leadId, clean.name, clean.business_name, clean.phone, clean.email, clean.business_type, clean.team_size,
+             clean.city, clean.current_software, clean.interested_plan, clean.notes, JSON.stringify(merged)],
+          );
+          await client.query("COMMIT");
+          if (!storedName && incomingName) profileNameEstablishedThisCall = true;
+        } catch (error) {
+          await client.query("ROLLBACK").catch(() => {});
+          throw error;
+        } finally { client.release(); }
+      }
+      if (id && leadId) await pool.query(`UPDATE sales_call_logs SET lead_id = $2, identity_verified = $3 WHERE id = $1`, [id, leadId, identityVerified]);
+      if (leadId && profile) profile = { ...profile, ...Object.fromEntries(Object.entries(clean).filter(([, value]) => value != null)) };
+      if (leadId && identityVerified) await refreshVerifiedAccountStage(leadId);
       return { success: true, message: "Saved." };
     }
     if (name === "send_trial_link") {
       if (trialSent) return { success: true, message: "Already texted on this call." };
       const to = args.phone ? (tenDigit(args.phone) ?? args.phone) : callerPhone;
       if (!to) return { success: false, message: "No phone number to text. Ask for one." };
-      const sms = await sendTwilioSms(to, `Thanks for calling Certxa! Start your free trial here (no credit card needed): ${SIGNUP_URL}`);
-      if (!sms.success) return { success: false, message: "The text could not be sent. Tell them they can sign up at certxa.com." };
-      trialSent = true;
-      if (!leadId) {
-        const r = await pool.query(`INSERT INTO sales_leads (phone, trial_link_sent_at, call_log_id) VALUES ($1, now(), $2) RETURNING id`, [to, callLogId]);
-        leadId = r.rows[0].id;
-      } else {
-        await pool.query(`UPDATE sales_leads SET trial_link_sent_at = now(), updated_at = now() WHERE id = $1`, [leadId]);
+      if (leadId && (identityVerified || (!profileCandidate && !identityBlocked))) {
+        await applySalesStage(leadId, "signup_link_requested", "caller_request", { signupLinkRequested: true })
+          .catch((error) => console.error(`${LOG} could not record signup-link request:`, error.message));
       }
-      return { success: true, message: "Texted." };
+      const body = `Thanks for calling Certxa! Start your free trial here (no credit card needed): ${SIGNUP_URL}`;
+      const event = { at: new Date().toISOString(), to: toE164US(to) ?? to, body, sid: null as string | null, status: "sending" };
+      smsEvents.push(event);
+      void persistSmsEvents().catch((error) => console.error(`${LOG} could not save SMS event before send:`, error.message));
+      const sms = await sendTwilioSms(to, body);
+      if (!sms.success) {
+        event.status = "failed";
+        void persistSmsEvents().catch((error) => console.error(`${LOG} could not save failed SMS event:`, error.message));
+        return { success: false, message: "The text could not be sent. Tell them they can sign up at certxa.com." };
+      }
+      trialSent = true;
+      event.sid = sms.sid ?? null;
+      event.status = "sent";
+      try {
+        void persistSmsEvents().catch((error) => console.error(`${LOG} could not persist sent SMS event:`, error.message));
+        if (leadId && (identityVerified || (!profileCandidate && !identityBlocked))) {
+          await applySalesStage(leadId, "signup_link_sent", "sms_sent", {
+            signupLinkSent: true,
+            lastSmsAt: event.at,
+            lastSmsSid: sms.sid ?? null,
+          });
+          await pool.query(`UPDATE sales_leads SET trial_link_sent_at = now(), updated_at = now() WHERE id = $1`, [leadId]);
+          await pool.query(
+            `UPDATE sales_leads SET profile_data = COALESCE(profile_data, '{}'::jsonb) || jsonb_build_object(
+               'provenance', COALESCE(profile_data->'provenance', '{}'::jsonb) || jsonb_build_object(
+                 'sales.signupLinkSent', jsonb_build_object('source', 'system_event', 'callLogId', $2, 'smsSid', $3)))
+             WHERE id = $1`,
+            [leadId, callLogId, sms.sid ?? null],
+          );
+        }
+      } catch (error) {
+        console.error(`${LOG} SMS was sent but history update failed:`, (error as Error).message);
+        return { success: true, message: "Text sent; the sales record could not be updated." };
+      }
+      return { success: true, message: "Text sent." };
+    }
+    if (name === "transfer_to_account_services") {
+      const transferTurns = callerText.trim()
+        ? [...transcript, { role: "caller", text: callerText }]
+        : transcript;
+      if (agentProfile.id !== "tom" || !mayTransferToAccountServices(transferTurns)) {
+        return { success: false, message: "Transfer not authorized. Continue helping unless the caller has asked for account support or Account Services." };
+      }
+      scheduleAccountSupportTransfer();
+      return { success: true, message: "Transfer accepted. Tell the caller you are connecting them to Account Services now; do not ask for another confirmation." };
     }
     if (name === "end_call") {
-      setTimeout(() => finish("ended_by_tom"), 3_500); // let the goodbye finish playing
+      setTimeout(() => finish(`ended_by_${agentProfile.id}`), 3_500); // let the goodbye finish playing
       return { success: true, message: "Hanging up." };
     }
     return { success: false, message: `Unknown tool ${name}` };
@@ -349,20 +1006,40 @@ function runSalesCall(twilioWs: WebSocket): void {
   async function openLive(): Promise<void> {
     const key = process.env.OPENAI_API_KEY;
     if (!key) { console.error(`${LOG} OPENAI_API_KEY is missing`); finish("no_ai_key"); return; }
-    const { voice: voiceInstructions, backend: backendInstructions } = await buildTomInstructions(callerPhone);
-
+    if (closed) return;
     openAi = new WebSocket(LIVE_URL, { headers: { Authorization: `Bearer ${key}` } });
+    const instructionsPromise = buildAgentInstructions(agentProfile, callerPhone, false, accountSupportHandoff);
     openAi.on("open", () => {
-      openAi!.send(JSON.stringify({
+      const socketOpenedAt = Date.now();
+      void instructionsPromise.then(({ voice: voiceInstructions, backend: backendInstructions }) => {
+        if (closed || !openAi || openAi.readyState !== WebSocket.OPEN) return;
+        console.log(`${LOG} startup call=${callSid ?? "unknown"} ws_open_ms=${socketOpenedAt - twilioStartAt} prompt_ready_ms=${Date.now() - twilioStartAt}`);
+        openAi.send(JSON.stringify({
         type: "session.start",
         session: {
           model: "gpt-live-1",
           instructions: voiceInstructions,
-          audio: { format: { type: "audio/pcmu", rate: 8000 }, output: { voice: VOICE } },
-          delegation: { type: "responses", responses: { model: BACKEND_MODEL, instructions: backendInstructions, tools: TOOLS, tool_choice: "auto" } },
+          audio: { format: { type: "audio/pcmu", rate: 8000 }, output: { voice: agentProfile.voice } },
+          delegation: {
+            type: "responses",
+            responses: {
+              model: BACKEND_MODEL,
+              instructions: backendInstructions,
+              tools: accountSupportHandoff
+                ? TOOLS.filter((tool) => tool.name === "end_call")
+                : agentProfile.id === "tom"
+                  ? TOOLS
+                  : TOOLS.filter((tool) => tool.name !== "transfer_to_account_services"),
+              tool_choice: "auto",
+            },
+          },
         },
-      }));
-      setTimeout(() => { if (!started) { console.error(`${LOG} session.started timed out`); finish("ai_timeout"); } }, 8_000);
+        }));
+        setTimeout(() => { if (!started) { console.error(`${LOG} session.started timed out`); finish("ai_timeout"); } }, 8_000);
+      }).catch((error) => {
+        console.error(`${LOG} could not prepare AI instructions:`, error.message);
+        finish("ai_error");
+      });
     });
 
     openAi.on("message", (raw: Buffer | string) => {
@@ -372,10 +1049,15 @@ function runSalesCall(twilioWs: WebSocket): void {
 
       if (type === "session.started") {
         started = true;
+        console.log(`${LOG} realtime session ready agent=${agentProfile.id} voice=${agentProfile.voice} accountSupportHandoff=${accountSupportHandoff} ready_ms=${Date.now() - twilioStartAt}`);
         openAi!.send(JSON.stringify({
           type: "session.instructions.append",
           delegation_id: null,
-          content: `Speak first, right now. Say exactly: "Thanks for calling Certxa, this is ${AGENT_NAME}. Are you looking at Certxa for your salon?" Then stop and listen.`,
+          content: accountSupportHandoff
+            ? `Speak first now: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Then listen carefully and help with verified information. Do not pitch sales or ask why they called again.`
+            : agentProfile.id === "tom"
+            ? `Speak first now. Welcome the caller naturally, introduce yourself as ${agentProfile.name} at ${CERTXA_SPOKEN_ALIAS}, and ask who you are speaking with. Do not ask what brought them to the call yet. Once you know their name, follow the required business-type-first discovery rule unless they already clearly stated their business type or they first asked a direct question that you must answer.`
+        : `Speak first now. Say exactly: "${pickAgentGreeting(agentProfile)}" Use the pronunciation guidance in your instructions. The caller has already selected sales in the phone menu; don't ask what they are calling about again. If they immediately ask a question, answer it naturally instead of insisting on a name. Then listen.`,
         }));
         return;
       }
@@ -385,11 +1067,24 @@ function runSalesCall(twilioWs: WebSocket): void {
         return;
       }
       if (type === "session.output_transcript.delta") {
-        if (callerText) flush("caller");
+        if (callerText) {
+          flush("caller");
+          if (agentProfile.id === "tom") {
+            const accountRequest = isExistingCustomerAccountSupportRequest(transcript);
+            if (accountRequest) {
+              console.log(`${LOG} account-support request detected call=${callSid ?? "unknown"}; direct transfer will proceed`);
+              scheduleAccountSupportTransfer();
+            }
+          }
+        }
         tomText += msg.delta ?? "";
         return;
       }
       if (type === "session.output_audio.delta") {
+        if (!firstAssistantAudioAt) {
+          firstAssistantAudioAt = Date.now();
+          console.log(`${LOG} first assistant audio call=${callSid ?? "unknown"} first_audio_ms=${firstAssistantAudioAt - twilioStartAt}`);
+        }
         aiSpeaking = true;
         if (aiIdleTimer) clearTimeout(aiIdleTimer);
         aiIdleTimer = setTimeout(() => { aiSpeaking = false; }, AI_SPEAKING_IDLE_MS);
@@ -407,18 +1102,23 @@ function runSalesCall(twilioWs: WebSocket): void {
         let args: any = {};
         try { args = JSON.parse(argText || "{}"); } catch { /* empty */ }
         console.log(`${LOG} tool ${name}`);
-        runTool(name, args)
+        const action = runTool(name, args)
           .catch((e) => { console.error(`${LOG} tool ${name} failed:`, e.message); return { success: false, message: "Something went wrong." }; })
           .then((result) => {
             if (!openAi || openAi.readyState !== WebSocket.OPEN) return;
             openAi.send(JSON.stringify({ type: "response.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) } }));
             openAi.send(JSON.stringify({ type: "response.create" }));
           });
+        pendingActions.add(action);
+        void action.then(() => pendingActions.delete(action), () => pendingActions.delete(action));
         return;
       }
       if (type === "error") console.error(`${LOG} OpenAI error:`, msg.error?.message ?? JSON.stringify(msg));
     });
-    openAi.on("close", () => finish("ai_closed"));
+    openAi.on("close", (code, reason) => {
+      if (agentProfile.id === "tom") console.warn(`${LOG} agent=tom OpenAI Live socket closed code=${code} reason=${reason.toString().slice(0, 160)}`);
+      finish("ai_closed");
+    });
     openAi.on("error", (e) => console.error(`${LOG} OpenAI socket error:`, e.message));
   }
 
@@ -427,15 +1127,45 @@ function runSalesCall(twilioWs: WebSocket): void {
     let msg: any;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
     if (msg.event === "start") {
+      twilioStartAt = Date.now();
       streamSid = msg.start?.streamSid ?? null;
       callSid = msg.start?.callSid ?? null;
       const from = String(msg.start?.customParameters?.from ?? "");
+      accountSupportHandoff = agentProfile.id === "shavez" && String(msg.start?.customParameters?.handoff ?? "") === TOM_ACCOUNT_SUPPORT_HANDOFF;
       callerPhone = tenDigit(from) ?? (from || null);
-      pool.query(`INSERT INTO sales_call_logs (call_sid, caller_phone) VALUES ($1, $2) RETURNING id`, [callSid, callerPhone])
-        .then((r) => { callLogId = r.rows[0].id; })
-        .catch((e) => console.error(`${LOG} call log insert failed:`, e.message));
-      console.log(`${LOG} call started from ${callerPhone ?? "unknown"}`);
-      openLive().catch((e) => { console.error(`${LOG} could not start the AI:`, e.message); finish("ai_error"); });
+      callerPhoneE164 = canonicalCallerE164(from);
+      const callLogQuery = accountSupportHandoff
+        ? pool.query(
+          `INSERT INTO sales_call_logs (call_sid, caller_phone, caller_phone_e164, sales_agent_id)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (call_sid) WHERE call_sid IS NOT NULL DO UPDATE
+             SET ended_at = NULL, outcome = 'in_progress'
+           RETURNING id`,
+          [callSid, callerPhone, callerPhoneE164, agentProfile.id],
+        )
+        : pool.query(
+        `INSERT INTO sales_call_logs (call_sid, caller_phone, caller_phone_e164, sales_agent_id)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (call_sid) WHERE call_sid IS NOT NULL DO UPDATE
+           SET caller_phone = COALESCE(sales_call_logs.caller_phone, EXCLUDED.caller_phone),
+               caller_phone_e164 = COALESCE(sales_call_logs.caller_phone_e164, EXCLUDED.caller_phone_e164)
+         RETURNING id`,
+        [callSid, callerPhone, callerPhoneE164, agentProfile.id],
+      );
+      callLogPromise = callLogQuery.then((r) => { callLogId = Number(r.rows[0].id); return callLogId; })
+        .catch((e) => { console.error(`${LOG} call log insert failed:`, e.message); return null; });
+      console.log(`${LOG} agent=${agentProfile.id} call started from ${callerPhone ?? "unknown"}`);
+      const preparation = prepareCall().catch((e) => {
+        console.error(`${LOG} could not prepare caller memory:`, e.message);
+        profile = null;
+        leadId = null;
+        profileCandidate = false;
+        profileLookupCompleted = false;
+        profileLookupFailed = true;
+        identityBlocked = true;
+      });
+      callPreparationPromise = preparation;
+      if (!closed) openLive().catch((e) => { console.error(`${LOG} could not start the AI:`, e.message); finish("ai_error"); });
       return;
     }
     if (msg.event === "media") {
@@ -458,33 +1188,152 @@ function runSalesCall(twilioWs: WebSocket): void {
     }
     if (msg.event === "stop") finish("caller_hung_up");
   });
-  twilioWs.on("close", () => finish("caller_hung_up"));
+  twilioWs.on("close", (code, reason) => {
+    if (agentProfile.id === "tom") console.log(`${LOG} agent=tom Twilio media socket closed code=${code} reason=${reason.toString().slice(0, 160)}`);
+    finish("caller_hung_up");
+  });
   twilioWs.on("error", (e) => console.error(`${LOG} Twilio socket error:`, e.message));
 }
 
-/** A one-line summary of the call for the back office (cheap model, after the call). */
-async function summarize(callLogId: number, transcript: { role: string; text: string }[]): Promise<void> {
-  if (transcript.length < 2 || !process.env.OPENAI_API_KEY) return;
+/** Structured memory is produced after the raw transcript is safely stored. */
+async function summarize(
+  callLogId: number,
+  transcript: { role: string; text: string }[],
+  smsEvents: { at: string; to: string; body: string; sid: string | null; status: string }[],
+  verifiedProfileId: number | null,
+  outcome: string,
+  agentProfile: SalesAgentProfile = TOM_SALES_AGENT,
+): Promise<void> {
+  const fallback = {
+    summary: transcript.length ? "Call completed; structured AI summary unavailable." : "Call completed without a transcript.",
+    callerIntent: null, businessDetails: {}, problems: [], featuresDiscussed: [], plansAndPricing: [],
+    questions: [], objections: [], outstandingQuestions: [], commitments: [], expressedInterest: null,
+    outcome, nextAction: null, profileFacts: [], smsEvents,
+  };
+  const writeFallback = async () => {
+    await pool.query(`UPDATE sales_call_logs SET summary = COALESCE(summary, $2), structured_summary = COALESCE(structured_summary, $3::jsonb) WHERE id = $1`,
+      [callLogId, fallback.summary, JSON.stringify(fallback)]);
+  };
+  if (!transcript.length || !process.env.OPENAI_API_KEY) {
+    await writeFallback().catch((error) => console.error(`${LOG} fallback call summary failed:`, error.message));
+    return;
+  }
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        max_tokens: 120,
+        temperature: 0,
+        response_format: { type: "json_object" },
+        max_tokens: 1800,
         messages: [
-          { role: "system", content: "Summarize this sales call to Certxa (salon software) in one or two plain sentences: who called, their salon, what they wanted, and how it ended." },
-          { role: "user", content: transcript.map((t) => `${t.role === "tom" ? "Tom" : "Caller"}: ${t.text}`).join("\n").slice(0, 12_000) },
+          { role: "system", content: `Summarize a Certxa sales call handled by ${agentProfile.name} as JSON. Only record what is supported by the provided transcript and system-recorded SMS events. Do not assume a signup or trial is active after a link is sent. Separate caller statements from ${agentProfile.name}'s statements and from system SMS events. In the internal evidenceRole field, use "tom" for the sales-agent speaker regardless of the agent's name. Reply with:
+{"summary": "one or two plain sentences", "callerIntent": string|null, "businessDetails": {}, "problems": string[], "featuresDiscussed": string[], "plansAndPricing": string[], "questions": string[], "objections": string[], "outstandingQuestions": string[], "commitments": string[], "expressedInterest": string|null, "outcome": string|null, "nextAction": string|null, "profileFacts": [{"field": string, "value": string, "evidenceRole": "caller"|"tom", "evidence": string}]}.
+Only put explicit new or corrected business/contact/sales facts in profileFacts. Evidence must be an exact short quote copied from the stated role's transcript; no paraphrased evidence. Permitted fields: name, businessName, businessType, teamSize, city, email, currentSoftware, interestedPlan, locationCount, serviceModel, bookingProcess, clientManagementProcess, checkoutProcess, turnRotationProcess, commissionProcess, problem, featureOfInterest, planDiscussed, pricingDiscussed, question, objection, trialRequested, notInterested, outstandingQuestion, commitment. Use trialRequested="yes" only when the caller explicitly requests a trial/signup link, and notInterested="yes" only when the caller explicitly declines; otherwise omit them. For contact/business facts, evidenceRole must be caller. A plan/price discussed by Tom may use evidenceRole tom. If not supported, omit the fact. Keep any unmentioned value unknown. If transcript has no clear caller details, return empty arrays/objects instead of guessing.` },
+          { role: "user", content: JSON.stringify({
+            transcript: transcript.map((t) => ({ role: t.role === "caller" ? "caller" : agentProfile.name, text: t.text })).slice(0, 200),
+            smsEvents,
+          }).slice(0, 24_000) },
         ],
       }),
       signal: AbortSignal.timeout(20_000),
     });
+    if (!res.ok) throw new Error(`OpenAI summary request returned ${res.status}`);
     const data: any = await res.json();
-    const summary = data?.choices?.[0]?.message?.content?.trim();
-    if (summary) await pool.query(`UPDATE sales_call_logs SET summary = $2 WHERE id = $1`, [callLogId, summary.slice(0, 1000)]);
+    const parsed = JSON.parse(data?.choices?.[0]?.message?.content ?? "null");
+    const structured = safeStructuredSummary(parsed);
+    if (!structured) throw new Error("OpenAI summary was not a valid JSON object");
+    structured.smsEvents = smsEvents; // only actual provider-successful sends, never model inference
+    structured.memoryNotes = safeSummaryForCallerMemory(structured, transcript);
+      await pool.query(`UPDATE sales_call_logs SET summary = COALESCE($2, summary), structured_summary = $3::jsonb WHERE id = $1`,
+      [callLogId, structured.summary, JSON.stringify(structured)]);
+    if (verifiedProfileId) {
+      try {
+        await updateProfileFromCall(verifiedProfileId, structured, transcript, smsEvents, callLogId, outcome);
+      } catch (error) {
+        console.error(`${LOG} post-call profile update failed (call ${callLogId}):`, (error as Error).message);
+      }
+    }
   } catch (e) {
     console.warn(`${LOG} summary failed:`, (e as Error).message);
+    await writeFallback().catch((error) => console.error(`${LOG} fallback call summary failed:`, error.message));
   }
+}
+
+async function updateProfileFromCall(
+  leadId: number,
+  structured: SalesMemoryObject,
+  transcript: { role: string; text: string }[],
+  smsEvents: { at: string; to: string; body: string; sid: string | null; status: string }[],
+  callLogId: number,
+  outcome: string,
+): Promise<void> {
+  const { columns, profileData } = verifiedProfilePatch(structured, transcript);
+  const salesPatch = (profileData.sales as SalesMemoryObject | undefined) ?? {};
+  const memoryNotes = (structured.memoryNotes && typeof structured.memoryNotes === "object" ? structured.memoryNotes : {}) as SalesMemoryObject;
+  if (typeof memoryNotes.nextAction === "string" && memoryNotes.nextAction.trim()) {
+    salesPatch.nextAction = memoryNotes.nextAction.trim();
+  }
+  const notInterested = (Array.isArray(salesPatch.notInterested) && salesPatch.notInterested.includes("yes")) ||
+    callerExplicitlyDeclined(transcript);
+  const trialRequested = Array.isArray(salesPatch.trialRequested) && salesPatch.trialRequested.includes("yes");
+  const signupLinkRequested = Array.isArray(salesPatch.signupLinkRequested) && salesPatch.signupLinkRequested.includes("yes");
+  const hasInterests = Array.isArray(salesPatch.featuresOfInterest) && salesPatch.featuresOfInterest.length > 0;
+  const hasFollowup = (Array.isArray(salesPatch.outstandingQuestions) && salesPatch.outstandingQuestions.length > 0) ||
+    (Array.isArray(salesPatch.commitments) && salesPatch.commitments.length > 0);
+  const requestedStage = notInterested ? "not_interested"
+    : signupLinkRequested || trialRequested ? "signup_link_requested"
+      : hasInterests ? "interested"
+        : hasFollowup ? "follow_up_required"
+          : null;
+  const callStarted = await pool.query(`SELECT started_at FROM sales_call_logs WHERE id = $1`, [callLogId]);
+  salesPatch.lastContactAt = callStarted.rows[0]?.started_at ?? new Date().toISOString();
+  salesPatch.lastContactOutcome = outcome;
+  salesPatch.lastCallLogId = callLogId;
+  profileData.provenance = {
+    ...((profileData.provenance as SalesMemoryObject | undefined) ?? {}),
+    "sales.lastContactAt": { source: "system_event", callLogId },
+    "sales.lastContactOutcome": { source: "system_event", callLogId },
+  };
+  if (smsEvents.length) {
+    const lastSms = smsEvents[smsEvents.length - 1];
+    salesPatch.signupLinkSent = true;
+    salesPatch.lastSmsAt = lastSms.at;
+    salesPatch.lastSmsSid = lastSms.sid;
+  }
+  if (Object.keys(salesPatch).length) profileData.sales = salesPatch;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const r = await client.query(`SELECT profile_data FROM sales_leads WHERE id = $1 FOR UPDATE`, [leadId]);
+    if (!r.rows[0]) throw new Error("Sales profile no longer exists");
+    const oldProfile = (r.rows[0].profile_data && typeof r.rows[0].profile_data === "object" ? r.rows[0].profile_data : {}) as SalesMemoryObject;
+    const oldSales = (oldProfile.sales && typeof oldProfile.sales === "object" ? oldProfile.sales : {}) as SalesMemoryObject;
+    const mergedSales = mergeProfileData(oldSales, salesPatch);
+    const eventStage = smsEvents.length ? "signup_link_sent" : requestedStage;
+    const stageAwareSales = eventStage
+      ? stageHistoryUpdate(mergedSales, eventStage, smsEvents.length ? "sms_sent" : "call_evidence", new Date().toISOString())
+      : mergedSales;
+    profileData.sales = stageAwareSales;
+    const merged = mergeProfileData(oldProfile, profileData);
+    const profileSales = (merged.sales && typeof merged.sales === "object" ? merged.sales : {}) as SalesMemoryObject;
+    await client.query(
+      `UPDATE sales_leads SET name = COALESCE($2, name), business_name = COALESCE($3, business_name),
+         business_type = COALESCE($4, business_type), team_size = COALESCE($5, team_size),
+         city = COALESCE($6, city), email = COALESCE($7, email),
+         current_software = COALESCE($8, current_software), interested_plan = COALESCE($9, interested_plan),
+         status = COALESCE($11, status), profile_data = $10::jsonb, updated_at = now() WHERE id = $1`,
+      [leadId, columns.name ?? null, columns.business_name ?? null, columns.business_type ?? null,
+       columns.team_size ?? null, columns.city ?? null, columns.email ?? null,
+       columns.current_software ?? null, columns.interested_plan ?? null, JSON.stringify(merged),
+       typeof profileSales.currentStage === "string" ? profileSales.currentStage : null],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally { client.release(); }
 }
 
 /**
@@ -492,10 +1341,13 @@ async function summarize(callLogId: number, transcript: { role: string; text: st
  * compares everything Tom said with the fact sheet and live lists, and flags any claim that isn't supported.
  * Shown in isTeam → Sales Leads, so a wrong answer is caught and the fact sheet or playbook fixed.
  */
-export async function factCheckTranscript(transcript: { role: string; text: string }[]): Promise<{ ok: boolean; issues: string[] } | null> {
+export async function factCheckTranscript(
+  transcript: { role: string; text: string }[],
+  agentProfile: SalesAgentProfile = TOM_SALES_AGENT,
+): Promise<{ ok: boolean; issues: string[] } | null> {
   const tomLines = transcript.filter((t) => t.role === "tom").map((t) => t.text).join("\n");
   if (!tomLines.trim() || !process.env.OPENAI_API_KEY) return null;
-  const { voice } = await buildTomInstructions(null);
+  const { voice } = await buildAgentInstructions(agentProfile, null, false);
   const reference = voice.slice(voice.indexOf("SALON PLANS"), voice.indexOf("YOUR BACKEND"));
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -505,8 +1357,8 @@ export async function factCheckTranscript(transcript: { role: string; text: stri
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: `You audit a sales agent for honesty. Below is the ONLY approved information about Certxa. Be strict. List every statement the agent made about Certxa that is NOT directly supported by the approved information, or that contradicts it: features, prices, totals, plans, limits, policies, numbers, where or how to get an app or a product, timelines ("soon", "coming"), promises (callbacks, demos, e-mails, discounts), and generalizations presented as fact ("most salons…", "I hear that a lot", "salons love…"). Simple arithmetic on approved prices is fine. Greetings, empathy ("I hear you", "I understand"), questions to the caller, pointing to certxa.com for sign-up, and repeating what the caller said about their own salon are fine. A caller asking for "something free" counts as asking about a free plan. Recommending the plan whose staff limit fits the caller's team is approved, and "yearly is like two months free" is approved (ten months for twelve). This transcript may come from a text simulation where actions run silently, so "I've sent the link" is fine. Also flag if the agent mentioned Certxa Pro, the Solo plan or a free plan before the caller did. Reply as JSON {"issues": [string]} — an empty list when everything is supported.\n\nAPPROVED INFORMATION:\n${reference}` },
-        { role: "user", content: transcript.map((t) => `${t.role === "tom" ? "AGENT" : "CALLER"}: ${t.text}`).join("\n").slice(0, 20_000) },
+        { role: "system", content: `You audit ${agentProfile.name}, a Certxa sales agent, for honesty. Below is the ONLY approved information about Certxa. Be strict. List every statement the agent made about Certxa that is NOT directly supported by the approved information, or that contradicts it: features, prices, totals, plans, limits, policies, numbers, where or how to get an app or a product, timelines ("soon", "coming"), promises (callbacks, demos, e-mails, discounts), and generalizations presented as fact ("most salons…", "I hear that a lot", "salons love…"). Simple arithmetic on approved prices is fine. Greetings, empathy ("I hear you", "I understand"), questions to the caller, pointing to certxa.com for sign-up, and repeating what the caller said about their own salon are fine. A caller asking for "something free" counts as asking about a free plan. Recommending the plan whose staff limit fits the caller's team is approved, and "yearly is like two months free" is approved (ten months for twelve). This transcript may come from a text simulation where actions run silently, so "I've sent the link" is fine. Also flag if the agent mentioned Certxa Pro, the Solo plan or a free plan before the caller did. Reply as JSON {"issues": [string]} — an empty list when everything is supported.\n\nAPPROVED INFORMATION:\n${reference}` },
+        { role: "user", content: transcript.map((t) => `${t.role === "tom" ? agentProfile.name.toUpperCase() : "CALLER"}: ${t.text}`).join("\n").slice(0, 20_000) },
       ],
     }),
     signal: AbortSignal.timeout(60_000),
@@ -517,9 +1369,13 @@ export async function factCheckTranscript(transcript: { role: string; text: stri
   return { ok: issues.length === 0, issues };
 }
 
-async function factCheckCall(callLogId: number, transcript: { role: string; text: string }[]): Promise<void> {
+async function factCheckCall(
+  callLogId: number,
+  transcript: { role: string; text: string }[],
+  agentProfile: SalesAgentProfile = TOM_SALES_AGENT,
+): Promise<void> {
   try {
-    const result = await factCheckTranscript(transcript);
+    const result = await factCheckTranscript(transcript, agentProfile);
     if (!result) return;
     await pool.query(`UPDATE sales_call_logs SET fact_check_ok = $2, fact_check_issues = $3::jsonb WHERE id = $1`,
       [callLogId, result.ok, JSON.stringify(result.issues)]);
@@ -532,60 +1388,158 @@ async function factCheckCall(callLogId: number, transcript: { role: string; text
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): void {
-  app.post("/api/webhook/twilio/sales", async (req: Request, res: Response) => {
-    const appUrl = publicAppUrl();
-    const sayAndHangUp = (text: string) =>
-      res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Matthew">${xml(text)}</Say><Hangup/></Response>`);
-    if (!appUrl) return sayAndHangUp("Thanks for calling Certxa. Please visit certxa dot com to start your free trial.");
-    if (!validTwilio(req, appUrl)) {
-      console.warn(`${LOG} rejected a webhook with an invalid Twilio signature`);
-      return res.status(403).type("text/plain").send("Forbidden");
-    }
-    const limit = await overLimits();
-    if (limit) {
-      console.warn(`${LOG} call turned away: ${limit}`);
-      return sayAndHangUp("Thanks for calling Certxa. All of our lines are busy right now. You can start your free trial any time at certxa dot com. Goodbye.");
-    }
-    const from = tenDigit(String(req.body?.From ?? "")) ?? String(req.body?.From ?? "");
-    const streamUrl = `${appUrl.replace(/^http/i, "ws")}${STREAM_BASE}/${issueStreamPass("sales", 0)}`;
-    console.log(`${LOG} incoming call from ${from || "unknown"}`);
-    return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+  const warmFacts = () => { void refreshLiveSalesFacts(); };
+  if (httpServer.listening) warmFacts(); else httpServer.once("listening", warmFacts);
+  const factsRefreshTimer = setInterval(() => { void refreshLiveSalesFacts(); }, LIVE_SALES_FACTS_TTL_MS);
+  factsRefreshTimer.unref();
+
+  const registerAgent = (agent: SalesAgentProfile): void => {
+    app.post(agent.webhookPath, async (req: Request, res: Response) => {
+      const appUrl = publicAppUrl();
+      const sayAndHangUp = (text: string) =>
+        res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Matthew">${xml(text)}</Say><Hangup/></Response>`);
+      if (!appUrl) return sayAndHangUp("Thanks for calling Certxa. Please visit certxa dot com to start your free trial.");
+      if (!validTwilio(req, appUrl)) {
+        console.warn(`${LOG} agent=${agent.id} rejected a webhook with an invalid Twilio signature`);
+        return res.status(403).type("text/plain").send("Forbidden");
+      }
+      const limit = await overLimits();
+      if (limit) {
+        console.warn(`${LOG} agent=${agent.id} call turned away: ${limit}`);
+        return sayAndHangUp("Thanks for calling Certxa. All of our lines are busy right now. You can start your free trial any time at certxa dot com. Goodbye.");
+      }
+      const from = tenDigit(String(req.body?.From ?? "")) ?? String(req.body?.From ?? "");
+      const streamUrl = `${appUrl.replace(/^http/i, "ws")}${agent.streamBase}/${issueStreamPass(agent.streamKind, agent.streamPassStoreId)}`;
+      const isTom = agent.id === "tom";
+      const accountSupportHandoff = agent.id === "shavez" && String(req.query?.handoff ?? "") === TOM_ACCOUNT_SUPPORT_HANDOFF;
+      const handoffParameter = accountSupportHandoff
+        ? `<Parameter name="handoff" value="${TOM_ACCOUNT_SUPPORT_HANDOFF}" />`
+        : "";
+      const connectAttributes = isTom
+        ? ` action="${xml(`${appUrl}/api/webhook/twilio/sales/after-stream`)}" method="POST"`
+        : "";
+      const streamStatusAttributes = isTom
+        ? ` statusCallback="${xml(`${appUrl}/api/webhook/twilio/sales/stream-status`)}" statusCallbackMethod="POST"`
+        : "";
+      console.log(`${LOG} agent=${agent.id} incoming call from ${from || "unknown"}`);
+      return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Connect>
-    <Stream url="${streamUrl}">
+  <Connect${connectAttributes}>
+    <Stream url="${streamUrl}"${streamStatusAttributes}>
       <Parameter name="from" value="${xml(from)}" />
+      ${handoffParameter}
     </Stream>
   </Connect>
 </Response>`);
+    });
+
+    const wss = new WebSocketServer({ noServer: true });
+    wss.on("connection", (ws: WebSocket) => runSalesCall(ws, agent));
+    httpServer.on("upgrade", (req, socket, head) => {
+      const pathname = req.url?.split("?")[0] ?? "";
+      if (pathname !== agent.streamBase && !pathname.startsWith(agent.streamBase + "/")) return;
+      if (redeemStreamPass(agent.streamKind, passFromPath(pathname, agent.streamBase)) !== agent.streamPassStoreId) {
+        console.warn(`${LOG} agent=${agent.id} stream refused — no valid one-time pass (${req.socket.remoteAddress ?? "?"})`);
+        try { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); } catch { /* ignore */ }
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req as any, socket as any, head, (ws) => wss.emit("connection", ws, req));
+    });
+  };
+
+  registerAgent(TOM_SALES_AGENT);
+  registerAgent(SHAVEZ_SALES_AGENT);
+
+  app.get("/api/webhook/twilio/sales/hold-music.wav", (_req: Request, res: Response) => {
+    try {
+      const audio = readFileSync(join(apiRoot(), "public", "account-services-hold.wav"));
+      return res.type("audio/wav").set("Cache-Control", "public, max-age=3600").send(audio);
+    } catch (error) {
+      console.error(`${LOG} hold-music asset unavailable:`, (error as Error).message);
+      return res.sendStatus(404);
+    }
   });
 
-  const wss = new WebSocketServer({ noServer: true });
-  wss.on("connection", (ws: WebSocket) => runSalesCall(ws));
-  httpServer.on("upgrade", (req, socket, head) => {
-    const pathname = req.url?.split("?")[0] ?? "";
-    if (pathname !== STREAM_BASE && !pathname.startsWith(STREAM_BASE + "/")) return;
-    if (redeemStreamPass("sales", passFromPath(pathname, STREAM_BASE)) == null) {
-      console.warn(`${LOG} stream refused — no valid one-time pass (${req.socket.remoteAddress ?? "?"})`);
-      try { socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"); } catch { /* ignore */ }
-      socket.destroy();
-      return;
+  // If Tom's media WebSocket drops unexpectedly, Twilio continues this Connect action rather than silently ending
+  // the call when the stream closes. Known intentional endings remain clean hangups; failures get a short fallback.
+  app.post("/api/webhook/twilio/sales/after-stream", async (req: Request, res: Response) => {
+    const appUrl = publicAppUrl();
+    const sayAndHangUp = (text: string) =>
+      res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Polly.Matthew">${xml(text)}</Say><Hangup/></Response>`);
+    if (!appUrl) return sayAndHangUp("I'm sorry, we lost the connection. Please call back or visit Certxa dot com. Goodbye.");
+    if (!validTwilio(req, appUrl)) {
+      console.warn(`${LOG} rejected an invalid Twilio Connect action signature`);
+      return res.status(403).type("text/plain").send("Forbidden");
     }
-    wss.handleUpgrade(req as any, socket as any, head, (ws) => wss.emit("connection", ws, req));
+    const callSid = String(req.body?.CallSid ?? "").trim();
+    const result = callSid
+      ? await pool.query(`SELECT outcome FROM sales_call_logs WHERE call_sid = $1 ORDER BY started_at DESC LIMIT 1`, [callSid]).catch(() => ({ rows: [] as any[] }))
+      : { rows: [] as any[] };
+    const outcome = String(result.rows[0]?.outcome ?? "");
+    console.log(`${LOG} Tom Connect action call=${callSid || "unknown"} outcome=${outcome || "unknown"}`);
+    if (outcome === "transferred_to_shavez") {
+      return res.type("text/xml").send(shavezHandoffTwiML(
+        `${appUrl}${SHAVEZ_SALES_AGENT.webhookPath}`,
+        `${appUrl}/api/webhook/twilio/sales/hold-music.wav`,
+      ));
+    }
+    if (["ended_by_tom", "caller_hung_up"].includes(outcome)) {
+      return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
+    }
+    return sayAndHangUp("I'm sorry, we lost the connection before I could finish helping. Please call back or visit Certxa dot com. Goodbye.");
+  });
+
+  app.post("/api/webhook/twilio/sales/stream-status", async (req: Request, res: Response) => {
+    const appUrl = publicAppUrl();
+    if (!appUrl || !validTwilio(req, appUrl)) {
+      console.warn(`${LOG} rejected an invalid Tom stream-status signature`);
+      return res.status(403).type("text/plain").send("Forbidden");
+    }
+    const event = String(req.body?.StreamEvent ?? "unknown").slice(0, 80);
+    const error = String(req.body?.StreamError ?? "").slice(0, 500);
+    const callSid = String(req.body?.CallSid ?? "unknown").slice(0, 40);
+    if (event === "stream-error" || error) console.error(`${LOG} Twilio stream status call=${callSid} event=${event} error=${error || "unspecified"}`);
+    else console.log(`${LOG} Twilio stream status call=${callSid} event=${event}`);
+    if (callSid !== "unknown" && (event === "stream-stopped" || event === "stream-error")) {
+      await pool.query(
+        `UPDATE sales_call_logs
+            SET ended_at = COALESCE(ended_at, now()),
+                duration_seconds = COALESCE(duration_seconds, GREATEST(0, floor(extract(epoch FROM (now() - started_at)))::int)),
+                outcome = CASE WHEN outcome = 'in_progress' AND $2 = 'stream-error' THEN 'twilio_stream_error'
+                               WHEN outcome = 'in_progress' THEN 'stream_stopped'
+                               ELSE outcome END
+          WHERE call_sid = $1`,
+        [callSid, event],
+      ).catch((e) => console.warn(`${LOG} could not persist Twilio stream status:`, e.message));
+    }
+    return res.sendStatus(204);
   });
 
   // ── Back office (isTeam → Sales Leads) ──
   app.get("/api/support/sales-leads", requireSupportAuth, async (_req: Request, res: Response) => {
     try {
       const leads = await pool.query(
-        `SELECT l.*, c.summary, c.duration_seconds, c.started_at AS call_started_at
-           FROM sales_leads l LEFT JOIN sales_call_logs c ON c.id = l.call_log_id
+        `SELECT l.*, c.summary, c.duration_seconds, c.started_at AS last_call_at,
+                c.outcome AS last_call_outcome, c.sales_agent_id AS last_call_agent_id
+           FROM sales_leads l LEFT JOIN LATERAL (
+             SELECT summary, duration_seconds, started_at, outcome, sales_agent_id FROM sales_call_logs
+             WHERE lead_id = l.id AND identity_verified = true AND ended_at IS NOT NULL
+             ORDER BY started_at DESC LIMIT 1
+           ) c ON true
           ORDER BY l.created_at DESC LIMIT 300`,
       );
       const calls = await pool.query(
-        `SELECT id, caller_phone, outcome, duration_seconds, summary, lead_id, started_at, ended_at, fact_check_ok, fact_check_issues
+        `SELECT id, caller_phone, sales_agent_id, outcome, duration_seconds, summary, lead_id, started_at, ended_at,
+                fact_check_ok, fact_check_issues, identity_verified
            FROM sales_call_logs ORDER BY started_at DESC LIMIT 100`,
       );
-      res.json({ leads: leads.rows, calls: calls.rows, phoneNumber: "(888) 814-7623" });
+      res.json({
+        leads: leads.rows,
+        calls: calls.rows,
+        phoneNumber: "(888) 814-7623",
+        agentPhoneNumbers: { tom: TOM_SALES_AGENT.phoneNumber, shavez: SHAVEZ_SALES_AGENT.phoneNumber },
+      });
     } catch (err: any) {
       console.error(`${LOG} leads list failed:`, err.message);
       res.status(500).json({ message: "Could not load sales leads" });
@@ -598,10 +1552,11 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
   });
   app.patch("/api/support/sales-leads/:id", requireSupportAuth, async (req: Request, res: Response) => {
     const status = String(req.body?.status ?? "");
-    if (!["new", "contacted", "signed_up", "not_interested"].includes(status)) return res.status(400).json({ message: "Unknown status" });
-    await pool.query(`UPDATE sales_leads SET status = $2, updated_at = now() WHERE id = $1`, [Number(req.params.id), status]);
+    const allowed = ["new_prospect", "interested", "signup_link_requested", "not_interested", "follow_up_required"];
+    if (!allowed.includes(status)) return res.status(400).json({ message: "Unknown or unverified sales stage" });
+    await applySalesStageGlobally(Number(req.params.id), status, "admin_stage_update");
     res.json({ ok: true });
   });
 
-  console.log(`${LOG} ready — POST /api/webhook/twilio/sales, WSS ${STREAM_BASE}`);
+  console.log(`${LOG} ready — Tom POST ${TOM_SALES_AGENT.webhookPath} WSS ${TOM_SALES_AGENT.streamBase}; Shavez POST ${SHAVEZ_SALES_AGENT.webhookPath} WSS ${SHAVEZ_SALES_AGENT.streamBase}`);
 }

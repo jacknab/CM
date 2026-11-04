@@ -1,0 +1,29 @@
+/* The Manager screen (ManagerScreen.tsx): full screen over the staff screen, under Front Desk Setup (300) and the Key Grid
+   editor (280), which open over it and come back to it. A wrapper can set the colours (--mgr-*). */
+.mgr-screen {
+  position: fixed; inset: 0; z-index: 260; display: flex; flex-direction: column;
+  background: var(--mgr-bg, #20242c); color: var(--mgr-text, #eef3fb);
+}
+.mgr-header { flex-shrink: 0; display: grid; grid-template-columns: 200px 1fr 200px; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--mgr-line, #3b424c); background: var(--mgr-head, #1a1e25); }
+.mgr-header h2 { margin: 0; text-align: center; font-size: 30px; font-weight: 800; letter-spacing: .01em; }
+.mgr-head-btn { justify-self: start; display: flex; align-items: center; gap: 10px; min-height: 64px; padding: 0 22px; border-radius: 14px; border: 1.5px solid var(--mgr-line, #3b424c); background: var(--mgr-tile, #2a2e36); color: inherit; font-size: 22px; font-weight: 800; }
+.mgr-head-btn:active { transform: scale(.98); }
+.mgr-head-spacer { display: block; }
+
+.mgr-grid { flex: 1; min-height: 0; display: grid; grid-auto-rows: minmax(0, 1fr); gap: 16px; padding: 20px 22px 24px; overflow-y: auto; }
+.mgr-tile { min-height: 130px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px 10px; border-radius: 16px; border: 1px solid var(--mgr-line, #3b424c); background: var(--mgr-tile, #2a2e36); color: var(--mgr-text, #eef3fb); font: inherit; text-align: center; }
+.mgr-tile span { font-size: 22px; font-weight: 800; line-height: 1.15; }
+.mgr-tile small { font-size: 15px; font-weight: 600; opacity: .7; line-height: 1.2; }
+.mgr-tile:active { transform: scale(.98); }
+
+/* A page inside the Manager screen: the popup's own box becomes the page (no backdrop, no close button, larger). */
+.mgr-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 22px 32px; }
+.mgr-screen .mgr-panel .assign-create-overlay { display: none !important; }
+.mgr-screen .mgr-panel .assign-create-modal {
+  position: static; transform: none; width: 100%; max-width: 860px; margin: 0 auto; max-height: none !important; overflow: visible !important;
+  box-shadow: none; animation: none; zoom: 1.2;
+}
+.mgr-screen .mgr-panel .assign-create-close { display: none !important; }
+.mgr-screen .mgr-panel .assign-create-header h2 { display: none; }
+/* A popup header that was only its title (now in the Manager header) is left out entirely. */
+.mgr-screen .mgr-panel .assign-create-header:not(:has(p)) { display: none; }

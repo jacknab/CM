@@ -102,7 +102,7 @@ export function useAuth() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (data: { email: string; password: string; firstName?: string; lastName?: string; phone?: string; keepSignedIn?: boolean; source?: "rentals" }) => {
+    mutationFn: async (data: { email: string; password: string; firstName?: string; lastName?: string; phone?: string; phoneToken?: string; keepSignedIn?: boolean; source?: "rentals" }) => {
       const res = await apiRequest("POST", "/api/auth/register", data);
       return res.json();
     },

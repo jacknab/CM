@@ -179,3 +179,34 @@ export function CancelledAfterServiceReport() {
     </ReportFrame>
   );
 }
+
+/** Online check-in (barbershops, haircut studios): the line from phones, and how good the wait estimate was. */
+export function OnlineCheckinReport() {
+  const range = useReportRange();
+  const q = useReport<any>("operations", "online-checkin", range.from, range.to, range.compare);
+  const d = q.data; const t = d?.totals; const p = d?.previous;
+  const mins = (v: number | null) => (v == null ? "—" : `${v} min`);
+  return (
+    <ReportFrame title="Online check-in" description="Clients who joined your walk-in line from their phone: how many were served, left, or missed their turn — and the wait they were shown against the real wait." range={range}
+      loading={q.isLoading} error={err(q)}
+      onCsv={d ? () => downloadCsv(`online-checkin-${range.from}-to-${range.to}`, ["Day", "Online", "In shop", "Left or missed", "Wait shown (avg min)", "Real wait (avg min)"],
+        d.byDay.map((x: any) => [x.day, x.online, x.in_shop, x.lost, x.promised ?? "", x.actual ?? ""])) : undefined}>
+      {t && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Kpi label="Checked in online" value={String(t.online)} change={pctChange(t.online, p?.online)} sub={t.onlineShare != null ? `${t.onlineShare}% of all check-ins` : undefined} />
+            <Kpi label="Served" value={String(t.served)} change={pctChange(t.served, p?.served)} />
+            <Kpi label="Left or missed their turn" value={String(t.left + t.late)} invert sub={`${t.left} left · ${t.late} missed · ${t.movedBack} moved back`} />
+            <Kpi label="Wait estimate within 10 min" value={t.within10 == null ? "—" : `${t.within10}%`} sub={`Shown ${mins(t.promised)} · real ${mins(t.actual)}`} />
+          </div>
+          <Card><CardContent className="pt-5">
+            {d.byDay.length ? <Table testId="online-checkin-table" head={["Day", "Online", "In shop", "Left or missed", "Wait shown", "Real wait"]}
+              rows={d.byDay.map((x: any) => [format(new Date(`${x.day}T12:00:00`), "EEE, MMM d"), x.online, x.in_shop, x.lost, mins(x.promised), mins(x.actual)])} />
+              : <p className="text-sm text-muted-foreground">No check-ins in this period.</p>}
+            <p className="text-xs text-muted-foreground mt-3">Real wait: from checking in online to a barber taking them.</p>
+          </CardContent></Card>
+        </>
+      )}
+    </ReportFrame>
+  );
+}

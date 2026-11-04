@@ -7,13 +7,20 @@ export async function paymentsBilling(accountId: number, pool: Pool): Promise<Se
   const checks = [];
 
   const [subRes, paymentRes, storeRes] = await Promise.all([
+    // The plan as billing runs it today (store_subscriptions, services/saas-billing.ts) and the owner's trial; the old
+    // subscriptions table is no longer written, so every account looked like it had no plan (found 2026-11-04).
     pool.query(
-      `SELECT s.status, s.current_period_end,
-              bp.name AS plan_name, bp.price_cents
-       FROM subscriptions s
-       LEFT JOIN billing_plans bp ON bp.code = s.plan_code
-       WHERE s.store_number = $1
-       ORDER BY s.created_at DESC LIMIT 1`,
+      `SELECT ss.status, sp.code AS plan_code,
+              CASE WHEN u.account_type = 'certxa_pro' THEN CASE WHEN sp.code = 'solo_plus' THEN 'Certxa Pro+' ELSE 'Certxa Pro' END ELSE sp.name END AS plan_name,
+              u.subscription_status, u.trial_ends_at
+         FROM locations l
+         LEFT JOIN users u ON u.id = l.user_id
+         LEFT JOIN LATERAL (
+           SELECT ss.status, ss.plan_id FROM store_subscriptions ss
+            WHERE ss.store_id = l.id AND ss.status IN ('active', 'trialing', 'past_due') ORDER BY ss.id DESC LIMIT 1
+         ) ss ON true
+         LEFT JOIN subscription_plans sp ON sp.id = ss.plan_id
+        WHERE l.id = $1`,
       [accountId],
     ),
     pool.query(
@@ -29,25 +36,24 @@ export async function paymentsBilling(accountId: number, pool: Pool): Promise<Se
   const store = storeRes.rows[0] ?? {};
 
   // 7a. Subscription & trial
-  if (!sub) {
-    checks.push(warn("subscription", "Subscription or trial active", "No subscription record found — the account may not have a plan assigned.", "Admin → Subscriptions → Assign Plan"));
-  } else {
-    const status = sub.status ?? "unknown";
-    // current_period_end is a text column (ISO string or Stripe timestamp)
-    const periodEnd = sub.current_period_end ? new Date(sub.current_period_end) : null;
-    const daysLeft = periodEnd && !isNaN(periodEnd.getTime()) ? differenceInDays(periodEnd, new Date()) : null;
-
-    if (status === "canceled" || status === "cancelled" || status === "lapsed") {
-      checks.push(fail("subscription", "Subscription or trial active", `Subscription is ${status} — the account has no active plan.`, "Admin → Subscriptions → Renew"));
-    } else if (status === "trialing" || status === "trial") {
-      if (daysLeft !== null && daysLeft < 7) {
-        checks.push(warn("subscription", "Subscription or trial active", `Trial expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} (${sub.plan_name ?? "plan"}).`, "Admin → Accounts → Extend Trial"));
-      } else {
-        checks.push(pass("subscription", "Subscription or trial active", `On trial — ${daysLeft !== null ? `${daysLeft} days remaining` : "end date unknown"} (${sub.plan_name ?? "plan"})`));
-      }
+  const trialEnd = sub?.trial_ends_at ? new Date(sub.trial_ends_at) : null;
+  const daysLeft = trialEnd && !isNaN(trialEnd.getTime()) ? differenceInDays(trialEnd, new Date()) : null;
+  if (sub?.subscription_status === "trial") {
+    if (daysLeft !== null && daysLeft < 7) {
+      checks.push(warn("subscription", "Subscription or trial active", `Trial expires in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}.`, "Accounts → Extend Trial"));
     } else {
-      checks.push(pass("subscription", "Subscription or trial active", `${sub.plan_name ?? "Plan"} — ${status}`));
+      checks.push(pass("subscription", "Subscription or trial active", `On trial — ${daysLeft !== null ? `${daysLeft} days remaining` : "end date unknown"}`));
     }
+  } else if (sub?.status && sub.plan_code !== "free_trial") {
+    if (sub.status === "past_due") {
+      checks.push(warn("subscription", "Subscription or trial active", `${sub.plan_name ?? "Plan"} — the last payment failed.`, "Billing"));
+    } else {
+      checks.push(pass("subscription", "Subscription or trial active", `${sub.plan_name ?? "Plan"} — ${sub.status}`));
+    }
+  } else if (sub?.subscription_status === "expired") {
+    checks.push(fail("subscription", "Subscription or trial active", "The free trial has ended and no plan has been chosen.", "Accounts → Extend Trial"));
+  } else {
+    checks.push(warn("subscription", "Subscription or trial active", "No active plan or trial found for this account.", "Billing"));
   }
 
   // 7b. Stripe Connect

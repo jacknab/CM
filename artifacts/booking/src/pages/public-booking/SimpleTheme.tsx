@@ -536,11 +536,11 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
         setIntentType("setup");
         setPendingStripeCustomerId(data.stripeCustomerId);
       } else {
-        const serviceTotalCents = Math.round(totalPrice * 100);
+        const serviceTotalCents = Math.round((totalPrice - hc.travelFee) * 100);
         const res = await fetch("/api/public/booking-payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ slug, customerName: customerName.trim(), customerEmail: customerEmail.trim() || undefined, customerPhone: customerPhone.trim(), serviceTotalCents }),
+          body: JSON.stringify({ slug, customerName: customerName.trim(), customerEmail: customerEmail.trim() || undefined, customerPhone: customerPhone.trim(), serviceTotalCents, travelFeeCents: Math.round(hc.travelFee * 100) }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Failed to initialize payment");

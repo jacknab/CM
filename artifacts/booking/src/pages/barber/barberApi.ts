@@ -81,6 +81,10 @@ export interface BoardMarker {
   /** The technician this client was handed to at the front desk, before any ticket exists (null = still waiting). */
   staffId?: number | null;
   staffName?: string | null;
+  /** When that barber took the client: their service starts then (the chair timer counts from here). */
+  assignedAt?: string | null;
+  /** Checked in online from their phone: here yet, the late rule's step (1/3 held, 2 moved back), the barber asked for. */
+  online?: { here: boolean; lateStage: number; heldUntil: string | null; preferredStaffId: number | null };
   /** What the client said they came for at the front desk (a catalog category). */
   requestedCategory?: string | null;
   requestedCategoryId?: number | null;
@@ -292,6 +296,13 @@ export const keptOnDevice = async (url: string): Promise<boolean> => {
   const storeId = nailOfflineStore();
   return storeId != null && !!(await nailOffline.recall(storeId, url).catch(() => undefined));
 };
+
+/**
+ * Each barber's price for each service (Catalog › Pricing Levels), for the keys and the ticket. Kept on the tablet like
+ * every read, and built from the salon copy when the tablet never asked (mirrorAnswers.ts), so prices stay right offline.
+ */
+export const fetchProPricing = (slug: string) =>
+  call<{ prices: { staffId: number; serviceId: number; price: number }[] }>(`/api/public/store/${encodeURIComponent(slug)}/pro-pricing`);
 
 /** Fetches one service's nail options so they are on this device before they are needed. */
 export const keepNailConfig = async (_serviceId: number): Promise<void> => undefined;
@@ -569,6 +580,8 @@ export async function createTicket(
     if (staff) {
       const problem = await offlineAssignProblem(offline.storeId, body.serviceId, staff.id);
       if (problem) throw new ApiError(problem, 400);
+      const busy = await barberBusyOnDevice(staff, body.checkinId ?? null);
+      if (busy) throw busy;
     }
     // One technician for the whole visit when one person can take every service of it.
     let visitTech: OfflineLineTech | null = null;
@@ -1088,11 +1101,30 @@ export const identifyBarber = (barberId: number) => identifyTech(barberId);
  * client up). With no server (or for a walk-in only on this tablet) it is saved on the tablet and sent when the
  * connection is back, under one key either way (plans/barber-offline.md, step 2).
  */
+/**
+ * One client per barber (owner, 2026-11-02), on the tablet while offline: the server refuses a second client
+ * (409 BARBER_BUSY, lib/nailTickets.ts oneClientRefusal), so the tablet refuses it at once instead of saving
+ * something that fails when the connection is back. From the board as this tablet has it (the last one the server
+ * sent, plus what was done here). `exceptMarker`: the client this is about (the same one again is not a second).
+ */
+async function barberBusyOnDevice(staff: { id: number; name: string }, exceptMarker: number | null = null): Promise<ApiError | null> {
+  const board = await fetchBoard().catch(() => null);
+  if (!board) return null;
+  const marker = board.markers.find((m) => m.staffId === staff.id && m.id !== exceptMarker);
+  const ticket = board.tickets.find((t) => t.staff?.id === staff.id && !t.doneAt && (t.status === "started" || t.status === "confirmed"));
+  const current = ticket ? { n: ticket.ticketNumber ?? null, name: ticket.client.name } : marker ? { n: marker.ticketNumber ?? null, name: marker.clientName ?? null } : null;
+  if (!current) return null;
+  const who = `${(current.name ?? "").trim() || "a client"}`;
+  return new ApiError(`${staff.name.split(" ")[0]} already has a client (${current.n != null ? `#${current.n} ` : ""}${who}). A barber has one client at a time.`, 409, { code: "BARBER_BUSY" });
+}
+
 export async function assignMarker(marker: Pick<BoardMarker, "id" | "clientName">, staff: { id: number; name: string; color: string | null }): Promise<{ staffName: string; offline?: boolean }> {
   const storeId = nailOfflineStore();
   const key = newIdempotencyKey("walkin.assign");
   const onDevice = async () => {
     if (storeId == null) throw new ApiError("This tablet has no shop to save to", 0);
+    const busy = await barberBusyOnDevice(staff, marker.id);
+    if (busy) throw busy;
     await nailOffline.takeWalkin(storeId, { id: marker.id, clientName: marker.clientName?.trim() || "Guest" }, staff, key);
     return { staffName: staff.name, offline: true };
   };

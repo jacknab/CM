@@ -174,6 +174,18 @@ export interface IStorage {
   updateUser(id: string, user: Partial<UpsertUser>): Promise<User | undefined>;
 }
 
+/** A client's automatic summary uses their first name; after a rename it is written again (it said "Me" for Linda
+ * Parker, 2026-11-03). Only clients who already have one; in the background. */
+export function refreshAiSummaryAfterRename(clientId: number): void {
+  void (async () => {
+    const { rows: [row] } = await pool.query(
+      `SELECT n.store_id FROM client_notes n WHERE n.client_id = $1 AND n.note_type = 'ai_profile_summary' LIMIT 1`, [clientId]);
+    if (!row?.store_id) return;
+    const { regenerateAiProfileNote } = await import("./lib/clientVisitNotes");
+    await regenerateAiProfileNote(clientId, Number(row.store_id));
+  })().catch((err) => console.warn(`[storage] summary refresh after rename failed client=${clientId}:`, err?.message ?? err));
+}
+
 export class DatabaseStorage implements IStorage {
   // Stores
   async getStores(userId?: string): Promise<Store[]> {
@@ -863,33 +875,49 @@ export class DatabaseStorage implements IStorage {
     if (Object.keys(updates).length > 0) {
       await db.update(clients).set({ ...updates, updatedAt: new Date() }).where(eq(clients.id, id));
     }
+    if (updateData.name !== undefined) refreshAiSummaryAfterRename(id);
     if (updateData.phone) {
       const e164 = toE164US(updateData.phone);
       if (e164) {
         const display = formatDisplayPhone(e164) || updateData.phone;
-        let resolved: { phoneType: "mobile" | "voip" | "landline" | "unknown"; source: "twilio_lookup" | "heuristic"; carrierName: string | null } =
-          { phoneType: "unknown", source: "heuristic", carrierName: null };
-        try {
-          const { resolvePhoneType } = await import("./lib/phoneTypeDetector");
-          resolved = await resolvePhoneType(e164);
-        } catch (e: any) {
-          console.warn(`[storage] phone-type detection skipped: ${e?.message ?? e}`);
+        // A number the client already has is reused (made primary below) — no second row and no second paid Twilio
+        // lookup. A new one is saved with the client's store, like createCustomer: without it the (phone, store)
+        // unique index can't stop copies, and every save of the same number added another row (found 2026-11-03).
+        const { rows: [have] } = await pool.query(`SELECT 1 FROM client_phones WHERE client_id = $1 AND phone_number_e164 = $2 LIMIT 1`, [id, e164]);
+        if (!have) {
+          const { rows: [owner] } = await pool.query(`SELECT store_id FROM clients WHERE id = $1`, [id]);
+          let resolved: { phoneType: "mobile" | "voip" | "landline" | "unknown"; source: "twilio_lookup" | "heuristic"; carrierName: string | null } =
+            { phoneType: "unknown", source: "heuristic", carrierName: null };
+          try {
+            const { resolvePhoneType } = await import("./lib/phoneTypeDetector");
+            resolved = await resolvePhoneType(e164);
+          } catch (e: any) {
+            console.warn(`[storage] phone-type detection skipped: ${e?.message ?? e}`);
+          }
+          await db.insert(clientPhones).values({
+            clientId: id,
+            phoneNumberE164: e164,
+            displayPhone: display,
+            phoneType: resolved.phoneType,
+            phoneTypeSource: resolved.source,
+            phoneTypeCheckedAt: resolved.source === "twilio_lookup" ? new Date() : null,
+            carrierName: resolved.carrierName,
+            smsOptIn: true,
+            isPrimary: true,
+            storeId: owner?.store_id ?? null,
+          } as any).onConflictDoNothing();
         }
-        await db.insert(clientPhones).values({
-          clientId: id,
-          phoneNumberE164: e164,
-          displayPhone: display,
-          phoneType: resolved.phoneType,
-          phoneTypeSource: resolved.source,
-          phoneTypeCheckedAt: resolved.source === "twilio_lookup" ? new Date() : null,
-          carrierName: resolved.carrierName,
-          smsOptIn: true,
-          isPrimary: true,
-        }).onConflictDoNothing();
+        // The new number is the client's number from now on: the only primary one (a number they already had is
+        // made primary again). Two primaries showed the older number everywhere (2026-11-03).
+        await pool.query(`UPDATE client_phones SET is_primary = (phone_number_e164 = $2) WHERE client_id = $1`, [id, e164]);
       }
     }
     if (updateData.email) {
-      await db.insert(clientEmails).values({ clientId: id, emailAddress: updateData.email.toLowerCase().trim(), isPrimary: true, verified: false, marketingOptIn: true }).onConflictDoNothing();
+      const email = updateData.email.toLowerCase().trim();
+      // An address the client already has is reused, never added twice (client_emails has no unique index).
+      const { rows: [haveEmail] } = await pool.query(`SELECT 1 FROM client_emails WHERE client_id = $1 AND lower(email_address) = $2 LIMIT 1`, [id, email]);
+      if (!haveEmail) await db.insert(clientEmails).values({ clientId: id, emailAddress: email, isPrimary: true, verified: false, marketingOptIn: true }).onConflictDoNothing();
+      await pool.query(`UPDATE client_emails SET is_primary = (lower(email_address) = $2) WHERE client_id = $1`, [id, email]);
     }
     return this.getCustomer(id);
   }
@@ -1103,6 +1131,8 @@ export class DatabaseStorage implements IStorage {
     if (appointment && updateData.status === "completed") {
       // Fire-and-forget: never let accrual bookkeeping block completing a ticket.
       void recordCommissionAccrual(appointment).catch(() => {});
+      // Certxa Pro: the review text right after payment (lib/reviewAfterPayment.ts).
+      if (!wasAlreadyCompleted) void import("./lib/reviewAfterPayment").then((m) => m.reviewRightAfterPayment(appointment.id)).catch(() => {});
     }
     // NOTE: a voucher is deliberately NEVER auto-redeemed by an appointment's
     // status changing (this used to fire on status === "started" here, which

@@ -9,8 +9,12 @@ const copy: Record<string, any[]> = {
   client_phones: [{ id: 1, client_id: 1, phone_number_e164: "+15205551234", display_phone: "(520) 555-1234", is_primary: true },
     { id: 2, client_id: 2, phone_number_e164: "+15205550000", is_primary: true }],
   client_emails: [{ id: 1, client_id: 1, email_address: "ana@x.com", is_primary: true }],
-  services: [{ id: 5, name: "Gel Manicure", price: "35.00" }],
-  staff: [{ id: 9, name: "Tom" }],
+  services: [{ id: 5, name: "Gel Manicure", price: "35.00" }, { id: 6, name: "Skin Fade", price: "30.00" }, { id: 7, name: "Old", price: "9.00", is_active: false }],
+  staff: [{ id: 9, name: "Tom", pricing_level_id: 1 }, { id: 10, name: "Ann", pricing_level_id: 2 }, { id: 11, name: "Gone", status: "removed" }],
+  staff_services: [{ id: 1, staff_id: 9, service_id: 5, price_override: null }, { id: 2, staff_id: 9, service_id: 6, price_override: "44.00" },
+    { id: 3, staff_id: 10, service_id: 6, price_override: null }, { id: 4, staff_id: 9, service_id: 7 }, { id: 5, staff_id: 11, service_id: 6 }],
+  pricing_levels: [{ id: 1, name: "Master", is_active: true }, { id: 2, name: "Retired level", is_active: false }],
+  service_level_prices: [{ id: 1, pricing_level_id: 1, service_id: 5, price: "50.00" }, { id: 2, pricing_level_id: 2, service_id: 6, price: "99.00" }],
   nail_service_configs: [{ id: 1, service_id: 5, is_enabled: true, length_required: true, shape_required: false, art_required: false }],
   service_nail_sizes: [{ id: 11, service_id: 5, nail_size_id: 100, price_adjustment: "5.00", duration_adjustment: 10, is_default: true, is_enabled: true, sort_order: 1 }],
   nail_sizes: [{ id: 100, name: "Long" }],
@@ -56,5 +60,14 @@ describe("offline answers from the salon's copy", () => {
 
   it("leave other reads to what the tablet saved", async () => {
     expect(await answerFromMirror(2, "/api/barber/board")).toBeUndefined();
+  });
+
+  it("price each barber's services offline as the server does: own price, else their level's, else the standard price", async () => {
+    const r = await answerFromMirror(2, "/api/public/store/floyds/pro-pricing") as { prices: unknown[] };
+    expect(r.prices).toEqual([
+      { staffId: 9, serviceId: 5, price: 50 },   // the Master level's price
+      { staffId: 9, serviceId: 6, price: 44 },   // Tom's own price wins over the level
+      { staffId: 10, serviceId: 6, price: 30 },  // an inactive level: the standard price
+    ]);
   });
 });

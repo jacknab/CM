@@ -81,7 +81,11 @@ export async function smsCommunications(accountId: number, pool: Pool): Promise<
 
   // 6d. Email configuration
   const mailgunOk = !!(process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN);
-  const notifEmail = prefs.notificationEmail as string | undefined;
+  // Emails for the owner go to the owner's sign-in email, some also to the business email (lib/systemEmails.ts).
+  const emailRes = await pool.query(
+    `SELECT NULLIF(TRIM(u.email), '') AS owner_email, NULLIF(TRIM(l.email), '') AS business_email
+       FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1`, [accountId]);
+  const notifEmail = (emailRes.rows[0]?.owner_email ?? emailRes.rows[0]?.business_email) as string | undefined;
 
   if (!mailgunOk) {
     checks.push(warn("email_platform", "Email platform configured", "MAILGUN_API_KEY or MAILGUN_DOMAIN is not set at the platform level — transactional emails will fail.", "Platform Configuration → Email"));
@@ -90,9 +94,9 @@ export async function smsCommunications(accountId: number, pool: Pool): Promise<
   }
 
   if (!notifEmail) {
-    checks.push(warn("store_notification_email", "Store notification email set", "No notification email address is set for this store — booking confirmation emails may not reach the owner.", "Settings → Notifications → Email"));
+    checks.push(warn("store_notification_email", "Owner email on file", "Neither the owner nor the business has an email address — emails for the owner can't be delivered.", "Settings → Business details"));
   } else {
-    checks.push(pass("store_notification_email", "Store notification email set", `Notification email: ${notifEmail}`));
+    checks.push(pass("store_notification_email", "Owner email on file", `Emails for the owner go to ${notifEmail}`));
   }
 
   return {

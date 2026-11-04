@@ -19,7 +19,7 @@ import { clients } from "@shared/schema/clients";
 import { eq, and } from "drizzle-orm";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
-import { getBookingPaymentToken, markBookingPaymentTokenUsed } from "../lib/bookingPaymentLinks";
+import { depositFromRule, depositIsSet, getBookingPaymentToken, markBookingPaymentTokenUsed, splitDeposit, visitParts } from "../lib/bookingPaymentLinks";
 import { broadcastSyncEvent } from "../notifications";
 
 // ─── Platform Stripe singleton ────────────────────────────────────────────────
@@ -91,6 +91,7 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
         bookingPaymentPolicy: locations.bookingPaymentPolicy,
         depositType: locations.depositType,
         depositValue: locations.depositValue,
+        depositIncludeTravelFee: locations.depositIncludeTravelFee,
         cancellationPolicyRequired: locations.cancellationPolicyRequired,
         cancellationPolicyText: locations.cancellationPolicyText,
         bookingApproval: locations.bookingApproval,
@@ -105,13 +106,15 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
     const stripeEnabled = !!connectedAccountId && !!process.env.STRIPE_SECRET_KEY;
 
     // If Stripe isn't connected, effective policy is always 'none'
-    // A business that reviews each booking first takes requests, and requests take no payment (lib/bookingRequests.ts).
-    let effectivePolicy = stripeEnabled && store.bookingApproval !== "manual" ? (store.bookingPaymentPolicy ?? "none") : "none";
+    // A business that reviews each booking first takes requests. A request takes no payment (a deposit comes after the
+    // pro approves, lib/bookingRequests.ts), but a card to keep on file is collected with it (owner, 2026-11-04).
+    const policy = store.bookingPaymentPolicy ?? "none";
+    let effectivePolicy = stripeEnabled && (store.bookingApproval !== "manual" || policy === "card_on_file") ? policy : "none";
 
     // Deposit policy is only valid when depositValue is actually configured;
     // a misconfigured deposit (value null/0) falls back to 'none' so the booking
     // widget doesn't send the customer into a payment step that will always 400.
-    if (effectivePolicy === "deposit" && !store.depositValue) {
+    if (effectivePolicy === "deposit" && !depositIsSet({ type: store.depositType, value: store.depositValue })) {
       console.warn(`[bookingPayments/policy] store ${store.id} has deposit policy but no depositValue — falling back to none`);
       effectivePolicy = "none";
     }
@@ -120,6 +123,7 @@ publicBookingPaymentRouter.get("/booking-payment-policy/:slug", async (req, res)
       policy: effectivePolicy,
       depositType: store.depositType,
       depositValue: store.depositValue ? Number(store.depositValue) : null,
+      depositIncludeTravelFee: store.depositIncludeTravelFee,
       stripePublishableKey: stripeEnabled ? (process.env.STRIPE_PUBLISHABLE_KEY ?? null) : null,
       stripeConnectedAccountId: stripeEnabled ? connectedAccountId : null,
       cancellationPolicyRequired: !!store.cancellationPolicyRequired && !!String(store.cancellationPolicyText ?? "").trim(),
@@ -205,7 +209,7 @@ publicBookingPaymentRouter.post("/booking-setup-intent", async (req, res) => {
  */
 publicBookingPaymentRouter.post("/booking-payment-intent", async (req, res) => {
   try {
-    const { slug, customerName, customerEmail, customerPhone, serviceTotalCents } = req.body;
+    const { slug, customerName, customerEmail, customerPhone, serviceTotalCents, travelFeeCents } = req.body;
     if (!slug || !customerName || typeof serviceTotalCents !== "number") {
       console.warn("[bookingPayments/payment-intent] 400: missing required fields", { slug, customerName, serviceTotalCentsType: typeof serviceTotalCents });
       return res.status(400).json({ error: "slug, customerName, and serviceTotalCents required" });
@@ -221,6 +225,7 @@ publicBookingPaymentRouter.post("/booking-payment-intent", async (req, res) => {
         bookingPaymentPolicy: locations.bookingPaymentPolicy,
         depositType: locations.depositType,
         depositValue: locations.depositValue,
+        depositIncludeTravelFee: locations.depositIncludeTravelFee,
       })
       .from(locations)
       .where(eq(locations.bookingSlug, slug))
@@ -231,24 +236,15 @@ publicBookingPaymentRouter.post("/booking-payment-intent", async (req, res) => {
       console.warn(`[bookingPayments/payment-intent] 400: store ${store.id} policy is '${store.bookingPaymentPolicy}', not 'deposit'`);
       return res.status(400).json({ error: "This store does not require a deposit" });
     }
-    if (!store.depositValue) {
-      console.warn(`[bookingPayments/payment-intent] 400: store ${store.id} has deposit policy but depositValue is null/0`);
+    const rule = { type: store.depositType, value: store.depositValue, includeTravelFee: store.depositIncludeTravelFee };
+    if (!depositIsSet(rule)) {
+      console.warn(`[bookingPayments/payment-intent] 400: store ${store.id} has deposit policy but no amount`);
       return res.status(400).json({ error: "Store deposit not configured" });
     }
 
-    // Compute authoritative deposit amount server-side
-    let depositCents: number;
-    if (store.depositType === "percentage") {
-      depositCents = Math.round(serviceTotalCents * (Number(store.depositValue) / 100));
-    } else {
-      depositCents = Math.round(Number(store.depositValue) * 100);
-    }
-    // Clamp to Stripe minimum instead of hard-failing — a percentage deposit on a
-    // cheap service might compute to < $0.50; charge the minimum rather than erroring.
-    if (depositCents < 50) {
-      console.warn(`[bookingPayments/payment-intent] depositCents ${depositCents} below Stripe minimum for store ${store.id}, clamping to 50`);
-      depositCents = 50;
-    }
+    // Compute authoritative deposit amount server-side (at least Stripe's minimum)
+    const depositCents = depositFromRule(rule, serviceTotalCents, Number(travelFeeCents) > 0 ? Number(travelFeeCents) : 0);
+    if (depositCents <= 0) return res.status(400).json({ error: "This booking has nothing to pay" });
 
     const connectedAccountId = await getConnectedAccountId(store.id);
     if (!connectedAccountId) {
@@ -486,16 +482,9 @@ publicBookingPaymentRouter.post("/booking-payment-link/complete", async (req, re
     const usable = isTokenUsable(tokenRow);
     if (!usable.ok) return res.status(usable.status).json({ error: usable.error });
 
-    const [appt] = await db
-      .select({ serviceId: appointments.serviceId })
-      .from(appointments)
-      .where(eq(appointments.id, tokenRow.appointmentId))
-      .limit(1);
-    let serviceTotalCents = 0;
-    if (appt?.serviceId) {
-      const [svc] = await db.select({ price: services.price }).from(services).where(eq(services.id, appt.serviceId)).limit(1);
-      if (svc) serviceTotalCents = Math.round(Number(svc.price) * 100);
-    }
+    // The whole visit: add-ons, travel fee and any second service.
+    const parts = await visitParts(tokenRow.appointmentId);
+    const serviceTotalCents = parts.reduce((sum, part) => sum + part.cents, 0);
 
     const verified = await verifyStripeIntentForBooking({
       storeId: tokenRow.storeId,
@@ -533,6 +522,14 @@ publicBookingPaymentRouter.post("/booking-payment-link/complete", async (req, re
 
     if (verified.stripeCustomerId && tokenRow.customerId) {
       await pool.query(`UPDATE clients SET stripe_customer_id = $1 WHERE id = $2`, [verified.stripeCustomerId, tokenRow.customerId]);
+      if (verified.paymentStatus === "card_saved") await rememberClientCard(tokenRow.storeId, tokenRow.customerId, verified);
+    }
+
+    // A deposit larger than the first service comes off the second too: it must not be charged again at checkout.
+    if (verified.depositCollected && parts.length > 1) {
+      for (const part of splitDeposit(Math.round(verified.depositCollected * 100), parts)) {
+        await pool.query(`UPDATE appointments SET deposit_collected = $2 WHERE id = $1`, [part.id, (part.cents / 100).toFixed(2)]);
+      }
     }
 
     await markBookingPaymentTokenUsed(tokenRow.id);
@@ -616,6 +613,44 @@ export async function compensateStripePayment(storeId: number, paymentIntentId: 
  * For setup intents: verifies status === "succeeded"
  * For payment intents: verifies status === "succeeded" and amount matches metadata
  */
+/**
+ * A saved card is checked with a $1 hold, released at once, so nothing is charged (owner, 2026-11-04). A declined card
+ * stops the booking. A bank asking for the client to approve it isn't a decline: the card was already set up with them
+ * present, so it stays saved, and a Stripe problem on our side doesn't turn a good client away either.
+ */
+export async function checkCardWithHold(stripe: Pick<Stripe, "paymentIntents">, connectedAccountId: string,
+  card: { storeId: number; customerId: string; paymentMethodId: string }): Promise<void> {
+  let pi: Stripe.PaymentIntent;
+  try {
+    pi = await stripe.paymentIntents.create({
+      amount: 100, currency: "usd", customer: card.customerId, payment_method: card.paymentMethodId,
+      payment_method_types: ["card"], capture_method: "manual", confirm: true, off_session: true,
+      description: "Card check, released right away",
+      metadata: { certxa_store_id: String(card.storeId), certxa_card_check: "1" },
+    }, { stripeAccount: connectedAccountId });
+  } catch (err: any) {
+    if (err?.code === "authentication_required") return;
+    if (err?.type === "StripeCardError") throw new Error(err?.message || "That card was declined. Please try another card.");
+    console.warn("[bookingPayments/card-check] not checked:", err?.message);
+    return;
+  }
+  await stripe.paymentIntents.cancel(pi.id, {}, { stripeAccount: connectedAccountId })
+    .catch((err: any) => console.error("[bookingPayments/card-check] hold not released:", pi.id, err?.message));
+}
+
+/** Keep a saved card on the client, so it's there for their next booking and shows on their profile. */
+export async function rememberClientCard(storeId: number, clientId: number, card: { stripeCustomerId: string | null; stripePaymentMethodId: string | null }): Promise<void> {
+  if (!card.stripeCustomerId || !card.stripePaymentMethodId) return;
+  const connectedAccountId = await getConnectedAccountId(storeId);
+  const pm = connectedAccountId
+    ? await getPlatformStripe().paymentMethods.retrieve(card.stripePaymentMethodId, {}, { stripeAccount: connectedAccountId }).catch(() => null)
+    : null;
+  await pool.query(
+    `UPDATE clients SET stripe_customer_id = $1, stripe_payment_method_id = $2, card_brand = $3, card_last4 = $4, card_exp_month = $5, card_exp_year = $6
+      WHERE id = $7 AND store_id = $8`,
+    [card.stripeCustomerId, card.stripePaymentMethodId, pm?.card?.brand ?? null, pm?.card?.last4 ?? null, pm?.card?.exp_month ?? null, pm?.card?.exp_year ?? null, clientId, storeId]);
+}
+
 export async function verifyStripeIntentForBooking(params: {
   storeId: number;
   paymentPolicy: "card_on_file" | "deposit";
@@ -659,12 +694,19 @@ export async function verifyStripeIntentForBooking(params: {
     }
 
     const pmId = typeof si.payment_method === "string" ? si.payment_method : (si.payment_method?.id ?? null);
+    const customerId = typeof si.customer === "string" ? si.customer : (si.customer?.id ?? params.stripeCustomerId ?? null);
+
+    // Once for each saved card: going through this again must not place another hold.
+    if (si.metadata?.certxa_card_checked !== "1" && customerId && pmId) {
+      await checkCardWithHold(stripe, connectedAccountId, { storeId: params.storeId, customerId, paymentMethodId: pmId });
+      await stripe.setupIntents.update(si.id, { metadata: { ...si.metadata, certxa_card_checked: "1" } }, { stripeAccount: connectedAccountId });
+    }
 
     return {
       paymentStatus: "card_saved",
       stripePaymentIntentId: null,
       stripeSetupIntentId: si.id,
-      stripeCustomerId: typeof si.customer === "string" ? si.customer : (si.customer?.id ?? params.stripeCustomerId ?? null),
+      stripeCustomerId: customerId,
       stripePaymentMethodId: pmId,
       depositCollected: null,
       remainingBalance: null,

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { salonTimeZone } from "@/lib/salonClock";
+import { useQuery } from "@tanstack/react-query";
+import { getStationDeviceId } from "@/lib/stationDevice";
 import { X } from "lucide-react";
 import { nailOffline, type LocalRecord, type Op } from "@/lib/nail-offline";
 import { syncEngine } from "@/lib/sync-engine";
@@ -61,6 +63,37 @@ function HubInfo() {
   );
 }
 
+/**
+ * Which station this tablet is, the main station and the salon hub (owner, 2026-11-02: here, by the connection,
+ * instead of a Change Station page in the Manager menu). Read-only; a tablet with no station picks one from Manager ›
+ * Station. Needs the internet; with none it says so.
+ */
+function StationInfo() {
+  const deviceId = getStationDeviceId();
+  const { data, isLoading, isError } = useQuery<{ stations: { id: number; name: string; isMain: boolean; mine: boolean }[]; hub?: { registerId: number | null; address: string | null } }>({
+    queryKey: ["/api/registers/stations", deviceId],
+    queryFn: async () => {
+      const res = await fetch(`/api/registers/stations?deviceId=${encodeURIComponent(deviceId)}`, { credentials: "include", cache: "no-store" });
+      if (!res.ok) throw new Error("Could not load the stations");
+      return res.json();
+    },
+    retry: false,
+  });
+  if (isLoading) return null;
+  if (isError || !data) return <div className="assign-create-hint" data-testid="barber-station-info">Station details need the internet.</div>;
+  if (data.stations.length === 0) return null;
+  const mine = data.stations.find((s) => s.mine) ?? null;
+  const main = data.stations.find((s) => s.isMain) ?? null;
+  const hubStation = data.hub?.registerId != null ? data.stations.find((s) => s.id === data.hub!.registerId) ?? null : null;
+  return (
+    <div className="assign-create-item" style={{ cursor: "default", flexDirection: "column", alignItems: "flex-start", gap: 2 }} data-testid="barber-station-info">
+      <div className="assign-create-name">{`This tablet: ${mine?.name ?? "None"}`}</div>
+      <div className="assign-create-name">{`Main station: ${main?.name ?? "None"}`}</div>
+      <div className="assign-create-name">{hubStation ? `Shop hub: ${data.hub?.address ? `${hubStation.name} · ${data.hub.address}` : hubStation.name}` : "Shop hub: not running yet"}</div>
+    </div>
+  );
+}
+
 export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: number; offline: boolean; onClose: () => void }) {
   const [ops, setOps] = useState<Op[]>([]);
   const [recs, setRecs] = useState<LocalRecord[]>([]);
@@ -101,6 +134,7 @@ export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: numb
           <button type="button" className="assign-create-close" onClick={onClose} aria-label="Close"><X size={16} /></button>
         </div>
         <div className="assign-create-list">
+          <StationInfo />
           {hasLocalHub() && <HubInfo />}
           {nailOffline.storageProblem() && (
             <div className="gift-error" data-testid="barber-storage-problem">
@@ -108,11 +142,11 @@ export function OfflineQueueSheet({ storeId, offline, onClose }: { storeId: numb
               {" "}{"New changes will not be saved until this is fixed. Nothing already saved has been removed. Free up space on the tablet or restart it, and tell your manager."}
             </div>
           )}
-          {syncEngine.needsSignIn() && <div className="gift-error" data-testid="barber-signin-needed">This tablet has been signed out. Everything below is kept and will be sent as soon as someone signs in to the salon again.</div>}
+          {syncEngine.needsSignIn() && <div className="gift-error" data-testid="barber-signin-needed">This tablet has been signed out. Everything below is kept and will be sent as soon as someone signs in to the shop again.</div>}
           <div className="assign-create-hint" data-testid="barber-last-sync">
             {lastSync ? `Last sent to the server: ${new Date(lastSync).toLocaleString([], { timeZone: salonTimeZone(), month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Nothing has been sent from this tablet yet."}
           </div>
-          {others > 0 && <div className="assign-create-hint">{others === 1 ? "1 saved change belongs to another salon and will be sent when that salon signs in on this tablet." : `${others} saved changes belong to another salon and will be sent when that salon signs in on this tablet.`}</div>}
+          {others > 0 && <div className="assign-create-hint">{others === 1 ? "1 saved change belongs to another shop and will be sent when that shop signs in on this tablet." : `${others} saved changes belong to another shop and will be sent when that shop signs in on this tablet.`}</div>}
           {ops.length === 0 && <div className="assign-create-hint">Everything has been sent.</div>}
           {cash > 0 && <div className="assign-create-hint" data-testid="barber-queued-cash-total">{`Cash taken on this tablet and not yet confirmed by the server: $${cash.toFixed(2)}`}</div>}
           {ops.map((o) => (
