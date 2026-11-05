@@ -12,6 +12,10 @@
  *   POST /api/solo/plus/cancel        stops at the end of the paid month (then free Solo again)
  *   POST /api/solo/plus/resume        keeps it going after a cancel
  * Only Solo (Certxa Pro) accounts can take Plus.
+ *
+ * Settings › Billing in the app (owner, 2026-11-05) opens the website's billing page the same way:
+ *   POST /api/solo/billing/web-link   (app)  → { url }   a single-use, 15-minute link
+ *   GET  /billing/start?code=…        (web)  → signs the owner in, then /billing
  */
 import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
@@ -82,6 +86,52 @@ router.get("/pro-plus/start", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error("[solo-plus/start]", err?.message ?? err);
+    return fail();
+  }
+});
+
+// ── App → website billing page, signed in ───────────────────────────────────
+router.post("/api/solo/billing/web-link", isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    const userId = (req.session as any)?.userId;
+    if (!storeId || !userId) return res.status(401).json({ error: "Please sign in again" });
+    const token = crypto.randomBytes(32).toString("base64url");
+    await pool.query(`DELETE FROM app_web_links WHERE expires_at < now() - interval '1 day'`).catch(() => {});
+    await pool.query(
+      `INSERT INTO app_web_links (token_hash, user_id, store_id, purpose, expires_at) VALUES ($1, $2, $3, 'billing', now() + ($4 || ' minutes')::interval)`,
+      [hash(token), userId, storeId, String(LINK_MINUTES)],
+    );
+    return res.json({ url: `${SITE()}/billing/start?code=${token}` });
+  } catch (err: any) {
+    console.error("[solo-billing/web-link]", err?.message ?? err);
+    return res.status(500).json({ error: "Could not open the billing page" });
+  }
+});
+
+router.get("/billing/start", async (req: Request, res: Response) => {
+  const code = String(req.query.code ?? "");
+  // An old or used link: the billing page, which asks them to sign in.
+  const fail = () => res.redirect(302, "/billing");
+  if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
+  try {
+    const r = await pool.query(
+      `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'billing' AND used_at IS NULL AND expires_at > now()
+       RETURNING user_id`,
+      [hash(code)],
+    );
+    const userId = r.rows[0]?.user_id;
+    if (!userId) return fail();
+    req.session.regenerate((regenErr) => {
+      if (regenErr) { console.error("[solo-billing/start] session", regenErr); return fail(); }
+      (req.session as any).userId = userId;
+      req.session.save((saveErr) => {
+        if (saveErr) { console.error("[solo-billing/start] session save", saveErr); return fail(); }
+        res.redirect(302, "/billing");
+      });
+    });
+  } catch (err: any) {
+    console.error("[solo-billing/start]", err?.message ?? err);
     return fail();
   }
 });
