@@ -72,6 +72,89 @@ Free Solo plan · 60-day trial on team plans · Cancel anytime
 
 ---
 
+## Nail Salon Software | Booking, POS, Turns & Payroll | Certxa
+Source: https://certxa.com/nail-salon-software
+
+Nail salon software
+
+# Nail salon software for booking, walk-ins, checkout and payroll
+Certxa is nail salon software for salons in the United States. It runs online booking, walk-in tickets and the turn line, the check-in kiosk, checkout with tips per technician, commissions and payroll, and an AI phone receptionist in one system. One technician uses it free; salons with a team pay from $29 a month, with no setup fee.
+Start free See pricing
+
+## What Certxa does for a nail salon
+
+### Booking and reminders
+Clients book online around the clock from your website, a direct link, Google or Instagram, and choose their technician. Text and e-mail reminders go out before every appointment, and a waitlist fills the gaps from cancellations.
+
+### Walk-ins and turns
+Every walk-in gets a ticket number and joins the turn line. Six turn methods are built in, including dollar-based turns and counted turns with half turns, and a manager can adjust turns by hand.
+
+### Check-in kiosk
+Clients check in by phone number on a tablet at the door and pick their services. The kiosk speaks English, Spanish, Vietnamese, Chinese and Korean.
+
+### Front desk POS
+Check out the ticket, split the tip between technicians, offer a cash price, sell and redeem gift cards and take cards on the Stripe M2 reader. A customer screen shows the total and lets the client choose a tip.
+
+### Commissions and payroll
+Commission on services and products, supply-fee deductions, pay part by check and part in cash, print paychecks, and let each technician print their own pay slip.
+
+### Clients, loyalty and reviews
+One client record with visit history and notes, a points program you set, and review requests sent after each visit.
+
+### Reports and day close
+Sales, tips, technician pay, client retention and cash reports, and a day close with a cash count and printed report for each drawer.
+
+### Autumn, the AI receptionist
+Autumn answers the salon phone, books, moves and cancels appointments, and knows when each technician works. She is included on Starter, Professional and Enterprise.
+
+## How to choose nail salon software
+General salon software is built around appointments. A nail salon also needs to handle walk-ins, turns and tips shared between technicians. Six questions to ask before you choose:
+- Does it handle walk-ins, not just appointments? Most nail salons run on walk-ins. Look for tickets, a waitlist and a turn line that decides who gets the next client.
+- Does the turn system match your rules? Salons count turns differently: by client, by dollars, with half turns for small services. The software should follow your rules instead of making you change them.
+- Can technicians split tips and see their pay? Tips per technician on one ticket, commission on services, and pay slips technicians can print themselves save the owner hours every pay period.
+- Does it keep working when the internet drops? A busy Saturday should not stop at the front desk. Ask what still works during an outage.
+- Is it one system or several subscriptions? Check-in, booking, the POS and payroll from different vendors means several monthly fees and several client lists.
+- Can your staff read it? Many nail salon teams work in more than one language. Screens your technicians can read in their own language cut mistakes at checkout.
+More on this: how the nail salon turn system works · software for Vietnamese-owned nail salons · how to choose nail salon software
+
+## Pricing
+Solo Free One technician working on their own Starter $29 a month Up to 3 staff; 20 Autumn calls a month Professional $99 a month Up to 12 staff; 50 Autumn calls a month Enterprise $179 a month Larger salons or several locations; 100 Autumn calls a month
+No setup fee. Paid plans start with a 60-day free trial, no credit card needed. Autumn calls past the allowance are $0.50 each. See pricing
+Comparing options? GlossGenius · Vagaro · Fresha · Square
+
+## Questions salon owners ask
+
+### What is nail salon software?
+Nail salon software is the system a nail salon uses to run the day: booking appointments, checking in walk-ins, deciding which technician takes the next client, checking out tickets and taking payment, splitting tips, and paying technicians. Certxa puts all of these in one system for US nail salons.
+
+### What is the best software for a nail salon?
+The best fit is the one that handles walk-ins and turns the way your salon already works, not only appointments. Certxa is built around nail salons: walk-in tickets, six turn methods, tip split per technician, technician pay slips, a check-in kiosk and an AI receptionist, with a free Solo plan and team plans from $29 a month.
+
+### How much does nail salon software cost?
+Certxa is free for one technician working alone. Salons with a team use Starter at $29 a month for up to 3 staff, Professional at $99 a month for up to 12, or Enterprise at $179 a month for larger salons. There is no setup fee, and paid plans start with a 60-day free trial with no credit card needed.
+
+### Does Certxa handle walk-ins and turns?
+Yes. Every walk-in gets a ticket and joins the turn line. Certxa has six turn methods, including dollar-based turns and counted turns with half turns, and a manager can adjust turns by hand.
+
+### Can clients book nail appointments online?
+Yes. Clients book around the clock from your website, a booking link, Google or Instagram, choose their technician, and get text and e-mail reminders before the appointment.
+
+### What happens if the internet goes down?
+Tickets, check-ins and cash sales keep working on the tablet and are sent to the server when the connection comes back.
+
+### What hardware do I need?
+Certxa runs on touchscreen tablets and computers you may already have, with the Stripe M2 card reader for card payments and a receipt printer and cash drawer at the front desk.
+
+### Is Certxa available in Vietnamese?
+Yes. Each POS tablet switches between English, Vietnamese and Spanish, and the check-in kiosk offers English, Spanish, Vietnamese, Chinese and Korean.
+
+## Try Certxa in your salon
+Set up your services and technicians in an afternoon. No setup fee, and the Solo plan is free.
+Start free
+
+
+---
+
 ## Vietnamese Nail Salon Software | Certxa POS, Turns & Tech Payroll
 Source: https://certxa.com/vietnamese-nail-salon-software
 

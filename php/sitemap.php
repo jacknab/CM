@@ -61,6 +61,7 @@ $PAGES = [
     '/pricing'                   => '0.95',
     '/features'                  => '0.93',
     '/autumn'                    => '0.93',
+    '/nail-salon-software'       => '0.92',
     '/vietnamese-nail-salon-software' => '0.92',
     '/vi/phan-mem-tiem-nail'     => '0.90',
     '/nail-salon-turn-system'    => '0.90',

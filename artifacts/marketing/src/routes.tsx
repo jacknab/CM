@@ -8,6 +8,7 @@ import AboutPage from './pages/about';
 import BlogPage from './pages/blog';
 import BookingPage from './pages/booking';
 import AutumnPage from './pages/autumn';
+import NailSalonSoftwarePage from './pages/nail-salon-software';
 import VietnameseNailSalonSoftwarePage from './pages/vietnamese-nail-salon-software';
 import PhanMemTiemNailPage from './pages/vi/phan-mem-tiem-nail';
 import NailSalonTurnSystemPage from './pages/nail-salon-turn-system';
@@ -43,6 +44,10 @@ export const routes: RouteObject[] = [
   {
     path: '/features',
     element: <FeaturesPage />,
+  },
+  {
+    path: '/nail-salon-software',
+    element: <NailSalonSoftwarePage />,
   },
   {
     path: '/vietnamese-nail-salon-software',

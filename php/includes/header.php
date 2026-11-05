@@ -81,7 +81,6 @@ $_base_schema = [
     // — the two halves of the site share one @id and must describe the same
     // entity, not two different ones.
     'sameAs' => [
-      'https://x.com/certxa',
       'https://www.facebook.com/certxa',
       'https://www.instagram.com/certxa',
       'https://www.bbb.org/us/az/phoenix/profile/software-consultants/certxa-llc-1126-1000175065',
@@ -263,7 +262,6 @@ $_schema_output = json_encode(['@context' => 'https://schema.org', '@graph' => $
 
   <!-- ── Twitter Card ──────────────────────────── -->
   <meta name="twitter:card"        content="summary_large_image">
-  <meta name="twitter:site"        content="@certxa">
   <meta name="twitter:title"       content="<?= htmlspecialchars(PAGE_TITLE) ?>">
   <meta name="twitter:description" content="<?= htmlspecialchars(PAGE_DESC) ?>">
   <meta name="twitter:image"       content="<?= htmlspecialchars(PAGE_OG_IMAGE) ?>">
