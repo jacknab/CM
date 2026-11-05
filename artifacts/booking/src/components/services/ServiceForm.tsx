@@ -12,10 +12,11 @@ import { useCreateService, useUpdateService, useCreateServiceOption, useUpdateSe
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Camera, Loader2, Wand2, Image, Plus, Trash2, Star, GripVertical, ImagePlus, Sparkles } from "lucide-react";
+import { Camera, Loader2, Wand2, Image, Plus, Trash2, Star, GripVertical, ImagePlus, Sparkles, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { useSelectedStore } from "@/hooks/use-store";
 import { apiRequest } from "@/lib/queryClient";
+import { useAddonGroups, useServiceAddonGroups, useSetServiceAddonGroups } from "@/hooks/use-addon-groups";
 
 type ServiceOptionDraft = {
   id?: number;
@@ -45,6 +46,18 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
   const { mutateAsync: createOption } = useCreateServiceOption();
   const { mutateAsync: updateOption } = useUpdateServiceOption();
   const { mutateAsync: deleteOption } = useDeleteServiceOption();
+  // Add-on groups (Catalog › Add-on Groups): saved only when changed, after the service itself.
+  const { data: addonGroups = [] } = useAddonGroups();
+  const { data: savedGroupIds } = useServiceAddonGroups(initialData?.id);
+  const { mutateAsync: saveServiceGroups } = useSetServiceAddonGroups();
+  const [groupIds, setGroupIds] = useState<number[] | null>(null);
+  const shownGroupIds = groupIds ?? savedGroupIds ?? [];
+  const groupsChanged = groupIds !== null && JSON.stringify(groupIds) !== JSON.stringify(savedGroupIds ?? []);
+  const saveGroups = async (serviceId: number) => {
+    if (!groupsChanged || !serviceId) return;
+    try { await saveServiceGroups({ serviceId, groupIds: groupIds! }); }
+    catch { toast({ title: "Service saved but its add-on groups failed to save", variant: "destructive" }); }
+  };
   const { toast } = useToast();
   // Solo plan with its own place and house calls: each service says where it's done.
   const { selectedStore } = useSelectedStore();
@@ -156,6 +169,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
         })));
       }
     }
+    setGroupIds(null);
   }, [initialData, reset]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -322,6 +336,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
           } catch {
             toast({ title: "Service updated but some options failed to save", variant: "destructive" });
           }
+          await saveGroups(initialData.id);
           toast({ title: "Service updated" });
           onSuccess();
         },
@@ -329,7 +344,8 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       });
     } else {
       createService({ ...submissionData, options: options.map((o, i) => ({ ...o, displayOrder: i, imageUrl: o.imageUrl ?? null })) } as any, {
-        onSuccess: () => {
+        onSuccess: async (created: any) => {
+          await saveGroups(Number(created?.id));
           toast({ title: "Service created" });
           onSuccess();
         },
@@ -669,6 +685,50 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Add-on groups (only once the salon has made one) ─────────────────── */}
+      {(addonGroups.length > 0 || shownGroupIds.length > 0) && (
+        <div className="border rounded-lg p-4 space-y-3 bg-muted/30" data-testid="section-addon-groups">
+          <div>
+            <Label className="text-sm font-medium">Add-on Groups</Label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Every add-on in a group is offered with this service, along with any add-ons linked to it on the Add-Ons page.
+            </p>
+          </div>
+          {shownGroupIds.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {shownGroupIds.map((id) => {
+                const g = addonGroups.find((x) => x.id === id);
+                return (
+                  <Badge key={id} variant="secondary" className="gap-1 pr-1 text-sm font-normal" data-testid={`badge-addon-group-${id}`}>
+                    {g?.name ?? "Group"}{g ? ` · ${g.addonIds.length}` : ""}
+                    <button
+                      type="button"
+                      onClick={() => setGroupIds(shownGroupIds.filter((x) => x !== id))}
+                      className="rounded-full p-0.5 hover:bg-muted"
+                      aria-label={`Remove ${g?.name ?? "group"}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
+          {addonGroups.some((g) => !shownGroupIds.includes(g.id)) && (
+            <Select value="" onValueChange={(val) => setGroupIds([...shownGroupIds, Number(val)])}>
+              <SelectTrigger className="bg-background" data-testid="select-add-addon-group">
+                <SelectValue placeholder="Add a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {addonGroups.filter((g) => !shownGroupIds.includes(g.id)).map((g) => (
+                  <SelectItem key={g.id} value={String(g.id)}>{g.name} ({g.addonIds.length} add-ons)</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       )}
 

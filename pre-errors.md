@@ -4,6 +4,15 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
+## 2026-11-05 — Certxa Pro browser version: delete/remove confirmations do nothing (found testing Add-on Groups)
+
+- `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro` (every screen that confirms with `Alert.alert` before removing: `app/catalog/addons.tsx` "Remove add-on", `app/services.tsx` "Remove service", `app/catalog/addon-groups.tsx` "Delete group", and others): react-native-web's `Alert.alert` is a no-op, so on the browser build (pro.certxa.com, `scripts/build-web-preview.sh`) tapping these shows nothing and nothing is removed. The iPhone app is unaffected. Found while driving the web build in a headless browser; deletes were tested through the API instead.
+- Not fixed now: it is app-wide (every confirm in the app), and the right fix (a small cross-platform confirm sheet used everywhere) is its own change.
+
+## 2026-11-05 — Booking themes link to a privacy page that doesn't exist (found during SEO Phase 1 Batch 1)
+
+- `artifacts/booking/src/pages/public-booking/SimpleTheme.tsx:1044`, `MobileTheme1.tsx` and `ClassicTheme1.tsx` (the text-message consent box): the PRIVACY link goes to `/policy`, which returns 404 on certxa.com and every subdomain. Certxa's privacy page is `/privacy`. The consent text is reviewed for Twilio, so a dead privacy link there matters. Not fixed: outside Batch 1's scope (C1–C3).
+
 ## 2026-11-05 — Salons with a published website get none of the salon SEO files (found in GEO platform audit)
 
 - `artifacts/api-server/src/middleware/subdomain.ts:353-356`: for any salon with a published website, `handleTenantSiteBySlug` returns before the salon SEO block at line ~392, so `<slug>.certxa.com/llms.txt` (and robots.txt / sitemap.xml) serve the website HTML instead of `lib/salonSeo.ts` output. Live 11-05: `bella-nails` and `jims` return `text/html` for `/llms.txt`; `tobys` (no published site) returns the real markdown. 7 of 9 salons sampled by the audit were affected. Fix: answer those three paths from salonSeo before the published-website return, and add salonSeo's FAQ/summary/JSON-LD to the template-served pages.

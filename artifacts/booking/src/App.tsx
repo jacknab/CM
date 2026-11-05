@@ -37,6 +37,7 @@ const CatalogServices = lazy(() => import("@/pages/catalog/CatalogServices"));
 const CatalogPackages = lazy(() => import("@/pages/catalog/CatalogPackages"));
 const CatalogDeals = lazy(() => import("@/pages/catalog/CatalogDeals"));
 const CatalogAddons = lazy(() => import("@/pages/catalog/CatalogAddons"));
+const CatalogAddonGroups = lazy(() => import("@/pages/catalog/CatalogAddonGroups"));
 const CatalogProducts = lazy(() => import("@/pages/catalog/CatalogProducts"));
 const NailServices = lazy(() => import("@/pages/catalog/NailServices"));
 const PricingLevels = lazy(() => import("@/pages/catalog/PricingLevels"));
@@ -659,6 +660,7 @@ function AppRoutes() {
       <Route path="/catalog/packages"   element={<OwnerOnlyRoute><CatalogPackages /></OwnerOnlyRoute>} />
       <Route path="/catalog/deals"      element={<OwnerOnlyRoute><CatalogDeals /></OwnerOnlyRoute>} />
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
+      <Route path="/catalog/addon-groups" element={<OwnerOnlyRoute><CatalogAddonGroups /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
       <Route path="/catalog/nail-services" element={<OwnerOnlyRoute><NailServices /></OwnerOnlyRoute>} />
       <Route path="/catalog/pricing-levels" element={<OwnerOnlyRoute><PricingLevels /></OwnerOnlyRoute>} />

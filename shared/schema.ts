@@ -404,8 +404,35 @@ export const appointmentAddons = pgTable("appointment_addons", {
   lineNo: integer("line_no"),
 });
 
+  // false: linked only because one of the service's add-on groups holds the add-on (migration 0320).
+  manual: boolean("manual").notNull().default(true),
 // ── Packages ────────────────────────────────────────────────────────────────
 // A package bundles existing services + add-ons into one named item. Duration
+// ── Add-on Groups (migration 0320) ──────────────────────────────────────────
+// A reusable list of existing add-ons. Assigning a group to a service writes
+// ordinary service_addons links (manual = false), kept in step by
+// lib/addonGroups.ts, so everything that reads service_addons is unchanged.
+export const addonGroups = pgTable("addon_groups", {
+  id: serial("id").primaryKey(),
+  storeId: integer("store_id").references(() => locations.id, { onDelete: "cascade" }).notNull(),
+  name: text("name").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const addonGroupItems = pgTable("addon_group_items", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").references(() => addonGroups.id, { onDelete: "cascade" }).notNull(),
+  addonId: integer("addon_id").references(() => addons.id, { onDelete: "cascade" }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (table) => [unique("addon_group_items_group_id_addon_id_key").on(table.groupId, table.addonId)]);
+
+export const serviceAddonGroups = pgTable("service_addon_groups", {
+  id: serial("id").primaryKey(),
+  serviceId: integer("service_id").references(() => services.id, { onDelete: "cascade" }).notNull(),
+  groupId: integer("group_id").references(() => addonGroups.id, { onDelete: "cascade" }).notNull(),
+}, (table) => [unique("service_addon_groups_service_id_group_id_key").on(table.serviceId, table.groupId)]);
+
 // is always the sum of the components; price is that sum ('sum') or a fixed
 // owner-set amount ('fixed'). A booked package is a single appointment with
 // `packageId` set (see appointments.packageId) and the package's add-ons

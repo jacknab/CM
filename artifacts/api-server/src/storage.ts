@@ -36,6 +36,7 @@ import { users, type User, type UpsertUser } from "@shared/models/auth";
 import { getDealAvailability, dealDiscountPercent } from "./lib/dealAvailability";
 import { DEAL_COMMISSION_RATE } from "./lib/dealVoucherPayouts";
 import { db, pool } from "./db";
+import { setManualAddonServices } from "./lib/addonGroups";
 import { eq, and, gte, lte, inArray, desc, isNotNull, ne, isNull, sql } from "drizzle-orm";
 import { toE164US, displayPhone as formatDisplayPhone } from "./lib/phoneUtils";
 import { claimStaffColor } from "./lib/staffColorUtils";
@@ -410,14 +411,16 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(serviceAddons).where(eq(serviceAddons.addonId, addonId));
   }
   async setAddonServices(addonId: number, serviceIds: number[]): Promise<void> {
-    await db.delete(serviceAddons).where(eq(serviceAddons.addonId, addonId));
-    if (serviceIds.length > 0) {
-      await db.insert(serviceAddons).values(
-        serviceIds.map(serviceId => ({ serviceId, addonId }))
-      );
-    }
+    // Hand-made links only: links an add-on group made stay (lib/addonGroups.ts).
+    const addon = await this.getAddon(addonId);
+    await setManualAddonServices(addonId, addon?.storeId ?? null, serviceIds);
   }
   async createServiceAddon(sa: InsertServiceAddon): Promise<ServiceAddon> {
+    // Already there through an add-on group: it becomes hand-made instead of a second row.
+    const [viaGroup] = await db.update(serviceAddons).set({ manual: true })
+      .where(and(eq(serviceAddons.serviceId, sa.serviceId), eq(serviceAddons.addonId, sa.addonId), eq(serviceAddons.manual, false)))
+      .returning();
+    if (viaGroup) return viaGroup;
     const [result] = await db.insert(serviceAddons).values(sa).returning();
     return result;
   }

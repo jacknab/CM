@@ -49,7 +49,7 @@ export const MIRROR_TABLES: MirrorTable[] = [
   { table: "services", scope: "store" },
   { table: "service_options", scope: { parent: "services", fk: "service_id" } },
   { table: "addons", scope: "store" },
-  { table: "service_addons", scope: { parent: "services", fk: "service_id" } },
+  { table: "service_addons", scope: { parent: "services", fk: "service_id" }, omit: ["manual"] }, // tablets get the rows as before (0320)
   { table: "packages", scope: "store" },
   { table: "package_items", scope: { parent: "packages", fk: "package_id" } },
   { table: "products", scope: "store" },

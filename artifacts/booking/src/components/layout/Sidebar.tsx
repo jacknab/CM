@@ -159,6 +159,7 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
     { label: pick({ en: "Packages",   vi: "Gói dịch vụ",    es: "Paquetes",      fr: "Forfaits" }),     icon: Package,       to: "/catalog/packages" },
     { label: pick({ en: "Deals",      vi: "Ưu đãi",         es: "Ofertas",       fr: "Offres" }),        icon: BadgePercent,  to: "/catalog/deals" },
     { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
+    { label: pick({ en: "Add-on Groups", vi: "Nhóm dịch vụ thêm", es: "Grupos de complementos", fr: "Groupes de suppléments" }), icon: Layers, to: "/catalog/addon-groups" },
     { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
     { label: pick({ en: "Pricing Levels", vi: "Mức giá", es: "Niveles de precio", fr: "Niveaux de prix" }), icon: BadgePercent, to: "/catalog/pricing-levels" },
     { label: pick({ en: "Products",   vi: "Sản phẩm",       es: "Productos",     fr: "Produits" }),     icon: ShoppingCart,  to: "/catalog/products" },

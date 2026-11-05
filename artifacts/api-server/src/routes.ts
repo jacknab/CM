@@ -4364,6 +4364,9 @@ export async function registerRoutes(
   const { default: pricingLevelsRouter } = await import("./routes/pricingLevels.js");
   app.use(pricingLevelsRouter);
   // The /manage assistant: looks things up and changes account and front desk settings after the owner confirms.
+  // Add-on Groups: reusable lists of add-ons assigned to services (routes/addonGroups.ts, lib/addonGroups.ts).
+  const { default: addonGroupsRouter } = await import("./routes/addonGroups.js");
+  app.use(addonGroupsRouter);
   const { default: ownerAssistantRouter } = await import("./routes/ownerAssistant.js");
   app.use(ownerAssistantRouter);
   // Business AI in the Certxa Pro app (same engine, solo tools, its own conversation).
@@ -4789,7 +4792,9 @@ export async function registerRoutes(
       const allMappings = await storage.getAllServiceAddonMappings();
       const userAddons = await Promise.all(storeIds.map(sid => storage.getAddons(sid)));
       const userAddonIds = new Set(userAddons.flat().map(a => a.id));
-      const filtered = allMappings.filter(m => userAddonIds.has(m.addonId));
+      // Hand-made links only: the Add-Ons screens show and edit these; links from add-on groups are listed on
+      // the Add-on Groups page (with no groups, every link is hand-made and this is unchanged).
+      const filtered = allMappings.filter(m => userAddonIds.has(m.addonId) && m.manual !== false);
       return res.json(filtered);
     } catch (error) {
       return res.status(500).json({ message: "Failed to fetch mappings" });

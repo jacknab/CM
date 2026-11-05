@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useAddonGroups } from "@/hooks/use-addon-groups";
 import { useAddons, useCreateAddon, useUpdateAddon, useDeleteAddon, useServiceAddonMappings, useSetAddonServices } from "@/hooks/use-addons";
 import { useServices } from "@/hooks/use-services";
 import { useQueryClient } from "@tanstack/react-query";
@@ -48,6 +49,17 @@ export function AddonsList() {
   const { mutate: updateAddon } = useUpdateAddon();
   const { mutate: deleteAddon } = useDeleteAddon();
   const { toast } = useToast();
+
+  // Groups that hold an add-on and are given to at least one service: shown as a quiet note, since the
+  // services ticked here are only the ones linked by hand (Catalog › Add-on Groups).
+  const { data: addonGroups } = useAddonGroups();
+  const groupsUsingAddon = useMemo(() => {
+    const map: Record<number, string[]> = {};
+    (addonGroups || []).filter(g => g.serviceIds.length > 0).forEach(g => {
+      g.addonIds.forEach(id => { (map[id] ||= []).push(g.name); });
+    });
+    return map;
+  }, [addonGroups]);
 
   const addonServiceMap = useMemo(() => {
     const map: Record<number, number[]> = {};
@@ -194,6 +206,7 @@ export function AddonsList() {
                     onSuccess={() => setEditAddonId(null)}
                     initialData={addons?.find(a => a.id === editAddonId) as import("@shared/schema").Addon | undefined}
                     initialServiceIds={addonServiceMap[editAddonId] || []}
+                    groupNames={groupsUsingAddon[editAddonId]}
                   />
                 )}
               </div>
@@ -241,6 +254,11 @@ export function AddonsList() {
                           <span className="font-medium" data-testid={`text-addon-name-${addon.id}`}>{(addon as any).displayName || addon.name}</span>
                           {inactive && <Badge variant="outline" className="text-[10px] px-1 py-0 text-muted-foreground border-muted-foreground/40">Inactive</Badge>}
                         </div>
+                        {groupsUsingAddon[addon.id] && (
+                          <div className="text-xs text-muted-foreground mt-0.5" data-testid={`text-addon-groups-${addon.id}`}>
+                            Also used through {groupsUsingAddon[addon.id].length === 1 ? "group" : "groups"}: {groupsUsingAddon[addon.id].join(", ")}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-muted-foreground text-xs">{(addon as any).displayDescription || addon.description || "-"}</span>
@@ -335,12 +353,14 @@ function AddonForm({
   services,
   onSuccess,
   initialData,
-  initialServiceIds = []
+  initialServiceIds = [],
+  groupNames
 }: {
   services: Service[];
   onSuccess: () => void;
   initialData?: Addon;
   initialServiceIds?: number[];
+  groupNames?: string[];
 }) {
   const { mutate: createAddon, isPending: isCreating } = useCreateAddon();
   const { mutate: updateAddon, isPending: isUpdating } = useUpdateAddon();
@@ -519,6 +539,11 @@ function AddonForm({
           <Label>Parent Services</Label>
           <span className="text-xs text-muted-foreground">Select which services this add-on can be added to.</span>
         </div>
+        {groupNames && groupNames.length > 0 && (
+          <p className="text-xs text-muted-foreground" data-testid="text-addon-form-groups">
+            Also offered through Add-on {groupNames.length === 1 ? "Group" : "Groups"}: {groupNames.join(", ")}
+          </p>
+        )}
 
         <div className="max-h-60 overflow-y-auto border rounded-md p-3 space-y-4">
           {Object.entries(grouped).map(([category, categoryServices]) => (
