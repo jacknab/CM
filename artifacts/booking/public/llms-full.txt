@@ -226,6 +226,226 @@ Dùng thử miễn phí
 
 ---
 
+## Nail Salon Turn System: How Turns Work + Free Turn Calculator
+Source: https://certxa.com/nail-salon-turn-system
+
+Nail salon turn system Đọc bằng tiếng Việt
+
+# Nail salon turn system: how turns work, with a free turn calculator
+A turn system is how a nail salon decides which technician gets the next walk-in client. Every technician in the line has a count of turns for the day, and the technician with the fewest turns who can do the service is next. Salons differ in what earns a turn: some count every client, some give a full turn for a big ticket and a half turn for a small one, and some count the dollars of service. Below are the six common methods, worked examples, the rules that prevent arguments, and a calculator you can use with your own tickets.
+
+## The six ways salons count turns
+Every method answers the same question, who is next, in the same way: the technician with the lowest score goes next. The methods differ only in what the score is.
+| Method | How a turn is earned | Suits
+| Fixed order (round robin) | Technicians take walk-ins one after another in a set order. The price of the ticket never matters. | Salons where most services cost about the same.
+| Equal clients | Every finished ticket counts as one client. The technician with the fewest clients is next. | Small teams that want the simplest rule.
+| Counted turns (full and half turns) | A ticket at or over a set amount (for example $30) is one full turn. A smaller ticket is a half turn. | The classic turn list most nail salons already use.
+| Dollar-based turns | One turn for every full amount of service, plus a half turn for anything left over. With $30 a turn, a $65 ticket is 2½ turns. | Salons with a wide price range, from polish change to full set with design.
+| Dollar brackets | The salon lists price bands and what each earns, for example under $30 = ½, from $30 = 1, from $60 = 2. | Owners who want big tickets to count more, in fixed steps.
+| Proportional | Every dollar earns its share of a turn. With $30 a turn, a $45 ticket is 1½ turns and a $40 ticket is 1⅓. | Salons that want turns to match sales exactly.
+
+## Worked example: the same tickets, three methods
+With $30 as the amount for one turn, here is what each ticket earns. Only the service amount counts; tips and retail never do.
+| Ticket (services) | Counted turns | Dollar-based turns | Proportional
+| $20 | ½ | ½ | ⅔
+| $30 | 1 | 1 | 1
+| $45 | 1 | 1½ | 1½
+| $65 | 1 | 2½ | 2.17
+| $90 | 1 | 3 | 3
+
+## Free nail salon turn calculator
+Pick a method, set the amount for one turn, and type each technician’s tickets for the day (service amounts only). The calculator adds up the turns and shows who gets the next walk-in.
+Turn method Dollars for one turn Technician Tickets today ($) Turns Place in line 2 #2 2½ #3 1½ #1
+Next walk-in goes to Maria.
+When two technicians have the same number of turns, the one who has waited longest goes first. In this calculator that is the one listed first.
+
+## The rules every turn list needs
+
+### Requested technicians
+When a client asks for a technician by name, that technician takes the client but keeps their place in the line, so a regular’s loyalty never costs a coworker a walk-in.
+
+### Walk-ins or appointments
+Decide whether booked clients earn turns. Many salons count walk-ins only, because an appointment was already that technician’s client.
+
+### What amount counts
+Count the service amount only. Tips, retail products and tax should never earn turns, or the line rewards upselling polish instead of sharing clients.
+
+### Ties
+When two technicians are level, the one who has waited longest goes first. Writing this down ends most front-desk arguments.
+
+### Late arrivals
+A technician who clocks in late either starts at zero (and gets the next few clients) or starts level with the lowest in the line. Pick one and post it.
+
+### When turns start again
+Turns usually reset every business day, at closing. A salon open late can reset at its Day Close instead of midnight.
+
+### Unpaid and refunded tickets
+A ticket that was never paid should earn nothing. Decide in advance whether a refund takes its turns back.
+
+### Changing the line by hand
+Managers will sometimes need to move someone. Ask for a reason and keep a record, so the change can be explained later.
+
+## Why turn lists cause arguments, and how to stop them
+- The rules live in one person’s head. Write them down: the method, the amount for one turn, ties, requests and resets.
+- The line is on paper. A screen everyone can see, updated the moment a ticket is paid, removes the question “whose turn is it?”.
+- Big and small tickets count the same. If a $25 polish change and a $90 full set both earn one turn, technicians avoid small services. Half turns or dollar-based turns fix this.
+- Changes are invisible. When a manager skips someone, the reason should be recorded where the team can see it.
+
+## Run your turn list on Certxa
+Certxa is nail salon software with the turn list built into the POS. You choose one of the six methods above and the line updates itself every time a ticket is paid.
+Start free See pricing
+Also read: Nail salon software for Vietnamese-owned salons
+- All six methods, with your own amount for one turn and your own half-turn rule
+- Walk-ins go to the next technician who is clocked in, free and does that service
+- Requested technicians keep their place; only walk-ins earn turns
+- Only the service amount counts: tips, retail and tax never earn turns
+- Manual changes ask for a reason, and every assignment is kept in a turn history
+- Turns start again at Day Close, and the line keeps working on the POS tablets if the internet drops
+- The POS works in English, Vietnamese and Spanish
+
+## Turn system questions
+
+### What is a turn in a nail salon?
+A turn is one place in the rotation that decides which technician gets the next walk-in client. Each time a technician finishes a client, they earn a turn (or part of one), and the technician with the fewest turns who can do the service is next.
+
+### What is a half turn?
+A half turn is what a small ticket earns in a counted-turn system. If one turn is $30 of service, a $20 polish change earns half a turn, so the technician who took it stays near the front of the line.
+
+### How many dollars is one turn?
+Each salon sets its own amount, usually close to the price of its most common service. Certxa starts new salons at $30 a turn, and the owner can change it at any time.
+
+### Do tips count toward turns?
+They should not. Turns are about sharing clients fairly, so only the service amount should count. In Certxa, tips, retail products and tax never earn turns.
+
+### Do appointments count as turns?
+That is the salon’s choice. Many salons count walk-ins only, because a booked client already belongs to the technician they booked. In Certxa only walk-ins earn turns.
+
+### What happens when a client asks for a specific technician?
+The requested technician takes the client but keeps their place in the line. The next walk-in still goes to whoever is next.
+
+### When do turns reset?
+Usually once a day, at closing. In Certxa turns start again at the salon’s Day Close.
+
+### Which turn method is the fairest?
+It depends on your menu. If services cost about the same, fixed order or equal clients is fair and simple. If prices range widely, dollar-based turns or half turns stop small tickets from costing a technician a full turn.
+
+## Put your turn list on a screen everyone trusts
+Set your turn rules once and let the line run itself. Free to start; salon plans from $29 a month with no setup fee.
+Start free
+
+
+---
+
+## Chia tua tiệm nail: cách tính lượt cho thợ + máy tính lượt miễn phí
+Source: https://certxa.com/vi/chia-tua-tiem-nail
+
+Chia tua tiệm nail Read in English
+
+# Chia tua tiệm nail: cách tính lượt cho thợ, kèm máy tính tua miễn phí
+Chia tua là cách tiệm nail quyết định thợ nào nhận khách walk-in kế tiếp. Mỗi thợ trong danh sách có số tua trong ngày, và thợ có ít tua nhất mà làm được dịch vụ đó sẽ được khách kế tiếp. Mỗi tiệm tính tua một kiểu: có tiệm tính mỗi khách là một tua, có tiệm cho tua đủ với phiếu lớn và nửa tua với phiếu nhỏ, có tiệm tính theo số tiền dịch vụ. Dưới đây là sáu cách tính tua thường gặp, ví dụ cụ thể, các luật giúp tránh cãi nhau, và máy tính tua để bạn thử với phiếu của tiệm mình.
+
+## Sáu cách tính tua trong tiệm nail
+Cách nào cũng trả lời cùng một câu hỏi, ai là người kế tiếp, theo cùng một cách: thợ có điểm thấp nhất được khách kế tiếp. Các cách chỉ khác nhau ở chỗ điểm được tính thế nào.
+| Cách tính | Tua được tính thế nào | Hợp với
+| Xoay vòng theo thứ tự | Thợ nhận khách lần lượt theo thứ tự cố định. Giá phiếu không ảnh hưởng. | Tiệm có giá dịch vụ gần giống nhau.
+| Chia đều số khách | Mỗi phiếu xong là một khách. Thợ có ít khách nhất được khách kế tiếp. | Tiệm nhỏ muốn luật đơn giản nhất.
+| Tua đủ và nửa tua | Phiếu từ một số tiền nhất định trở lên (ví dụ $30) là một tua đủ. Phiếu nhỏ hơn là nửa tua. | Cách chia tua quen thuộc của đa số tiệm nail.
+| Tính tua theo tiền | Mỗi lần đủ số tiền là một tua, phần dư thêm nửa tua. Với $30 một tua, phiếu $65 là 2 tua rưỡi. | Tiệm có giá từ đổi màu sơn đến bộ bột vẽ.
+| Theo mức giá | Tiệm đặt các mức giá và số tua mỗi mức, ví dụ dưới $30 = nửa tua, từ $30 = 1, từ $60 = 2. | Chủ tiệm muốn phiếu lớn được tính nhiều hơn theo từng bậc.
+| Theo tỉ lệ | Mỗi đô la được tính một phần của tua. Với $30 một tua, phiếu $45 là 1 tua rưỡi, phiếu $40 là 1⅓ tua. | Tiệm muốn tua khớp đúng với doanh thu.
+
+## Ví dụ: cùng các phiếu, ba cách tính
+Với $30 cho một tua, đây là số tua mỗi phiếu được tính. Chỉ tính tiền dịch vụ; tiền tip và hàng bán lẻ không bao giờ được tính.
+| Phiếu (dịch vụ) | Tua đủ / nửa tua | Tính theo tiền | Theo tỉ lệ
+| $20 | ½ | ½ | ⅔
+| $30 | 1 | 1 | 1
+| $45 | 1 | 1½ | 1½
+| $65 | 1 | 2½ | 2,17
+| $90 | 1 | 3 | 3
+
+## Máy tính chia tua miễn phí
+Chọn cách tính, đặt số tiền cho một tua, rồi nhập các phiếu trong ngày của từng thợ (chỉ tiền dịch vụ). Máy tính sẽ cộng tua và cho biết ai nhận khách walk-in kế tiếp.
+Cách tính tua Số tiền cho một tua ($) Thợ Phiếu hôm nay ($) Số tua Thứ tự 2 #2 2½ #3 1½ #1
+Khách walk-in kế tiếp: Maria.
+Khi hai thợ bằng tua, người chờ lâu hơn được trước. Trong máy tính này là người đứng trên trong danh sách.
+
+## Những luật tiệm nào cũng cần
+
+### Khách gọi thợ
+Khi khách gọi tên một thợ, thợ đó nhận khách nhưng vẫn giữ chỗ trong danh sách tua, để khách quen của người này không làm người khác mất khách walk-in.
+
+### Khách walk-in hay khách hẹn
+Quyết định khách hẹn trước có tính tua hay không. Nhiều tiệm chỉ tính khách walk-in, vì khách hẹn vốn đã là khách của thợ đó.
+
+### Tính tiền nào
+Chỉ tính tiền dịch vụ. Tiền tip, hàng bán lẻ và thuế không nên được tính tua.
+
+### Bằng tua
+Khi hai thợ bằng tua, người chờ lâu hơn được trước. Ghi rõ luật này sẽ hết phần lớn chuyện cãi nhau ở quầy.
+
+### Thợ vào trễ
+Thợ vào ca trễ có thể bắt đầu từ 0 (và nhận vài khách kế tiếp) hoặc bắt đầu bằng người thấp nhất. Chọn một cách và dán lên cho mọi người thấy.
+
+### Khi nào tính lại từ đầu
+Tua thường được tính lại mỗi ngày làm việc, lúc đóng cửa. Tiệm mở khuya có thể tính lại lúc đóng sổ cuối ngày thay vì nửa đêm.
+
+### Phiếu chưa trả tiền hoặc hoàn tiền
+Phiếu chưa trả tiền không nên được tính tua. Quyết định trước: hoàn tiền thì có trừ tua lại hay không.
+
+### Đổi thứ tự bằng tay
+Đôi khi quản lý cần đổi thứ tự. Hãy yêu cầu ghi lý do và lưu lại, để sau này giải thích được.
+
+## Vì sao chia tua hay gây cãi nhau, và cách tránh
+- Luật chỉ nằm trong đầu một người. Hãy viết ra: cách tính, số tiền cho một tua, khi bằng tua, khách gọi thợ và lúc tính lại.
+- Danh sách tua viết trên giấy. Một màn hình ai cũng thấy, cập nhật ngay khi phiếu được trả tiền, sẽ hết câu hỏi “tới tua ai?”.
+- Phiếu lớn và phiếu nhỏ tính như nhau. Nếu đổi màu sơn $25 và bộ bột $90 đều là một tua, thợ sẽ né dịch vụ nhỏ. Nửa tua hoặc tính tua theo tiền giải quyết chuyện này.
+- Thay đổi không ai thấy. Khi quản lý bỏ qua một thợ, lý do nên được ghi lại cho cả tiệm xem.
+
+## Chia tua bằng Certxa
+Certxa là phần mềm tiệm nail có sẵn danh sách tua trong máy POS. Bạn chọn một trong sáu cách tính ở trên và danh sách tự cập nhật mỗi khi phiếu được trả tiền.
+Dùng thử miễn phí Xem bảng giá
+Xem thêm: Phần mềm tiệm nail cho chủ tiệm người Việt
+- Đủ sáu cách tính, với số tiền một tua và luật nửa tua của riêng tiệm
+- Khách walk-in được giao cho thợ kế tiếp đang trong ca, đang rảnh và làm được dịch vụ đó
+- Khách gọi thợ: thợ vẫn giữ chỗ; chỉ khách walk-in được tính tua
+- Chỉ tính tiền dịch vụ: tip, hàng bán lẻ và thuế không được tính tua
+- Đổi thứ tự bằng tay phải ghi lý do, và mọi lần giao khách đều được lưu lại
+- Tua được tính lại khi đóng sổ cuối ngày, và vẫn chạy trên máy POS khi mất mạng
+- Máy POS dùng được tiếng Anh, tiếng Việt và tiếng Tây Ban Nha
+
+## Câu hỏi về chia tua
+
+### Tua trong tiệm nail là gì?
+Tua là một lượt trong vòng xoay quyết định thợ nào nhận khách walk-in kế tiếp. Mỗi lần thợ làm xong một khách, thợ được tính một tua (hoặc một phần tua), và thợ có ít tua nhất mà làm được dịch vụ đó sẽ là người kế tiếp.
+
+### Nửa tua là gì?
+Nửa tua là số tua một phiếu nhỏ được tính. Nếu một tua là $30 tiền dịch vụ, phiếu đổi màu sơn $20 được nửa tua, nên thợ làm phiếu đó vẫn đứng gần đầu danh sách.
+
+### Một tua là bao nhiêu tiền?
+Mỗi tiệm tự đặt, thường gần bằng giá dịch vụ phổ biến nhất của tiệm. Certxa đặt sẵn $30 một tua cho tiệm mới, và chủ tiệm đổi được bất cứ lúc nào.
+
+### Tiền tip có được tính tua không?
+Không nên. Chia tua là để chia khách cho công bằng, nên chỉ tính tiền dịch vụ. Trong Certxa, tip, hàng bán lẻ và thuế không bao giờ được tính tua.
+
+### Khách hẹn trước có được tính tua không?
+Tùy tiệm. Nhiều tiệm chỉ tính khách walk-in, vì khách hẹn vốn là khách của thợ được hẹn. Trong Certxa chỉ khách walk-in được tính tua.
+
+### Khách gọi tên thợ thì sao?
+Thợ được gọi nhận khách nhưng vẫn giữ chỗ trong danh sách. Khách walk-in kế tiếp vẫn được giao cho người kế tiếp.
+
+### Khi nào tua được tính lại?
+Thường mỗi ngày một lần, lúc đóng cửa. Trong Certxa tua được tính lại khi tiệm đóng sổ cuối ngày.
+
+### Cách chia tua nào công bằng nhất?
+Tùy bảng giá của tiệm. Nếu giá dịch vụ gần giống nhau, xoay vòng hoặc chia đều số khách là công bằng và đơn giản. Nếu giá chênh lệch nhiều, tính tua theo tiền hoặc nửa tua giúp phiếu nhỏ không làm thợ mất trọn một tua.
+
+## Đưa danh sách tua lên màn hình ai cũng tin
+Đặt luật chia tua một lần, danh sách tự chạy. Bắt đầu miễn phí; gói cho tiệm từ $29 một tháng, không phí cài đặt.
+Dùng thử miễn phí
+
+
+---
+
 ## Salon Booking Software Features — Online Booking, POS & More | Certxa
 Source: https://certxa.com/features
 
@@ -306,7 +526,7 @@ Certxa assigns walk-ins to staff members automatically based on rules the busine
 - Automatic turn assignment for walk-ins
 - Business-set rotation rules
 - Live view of next, busy, and on-break status
-Staff, commissions and payroll
+How nail salon turn systems work, with a free turn calculator Staff, commissions and payroll
 
 ## Pay your team accurately, every time.
 Set commission rates per staff member and track tips separately. Add recurring deductions the owner sets, run pay periods, and print earnings statements and paychecks.
@@ -1457,7 +1677,7 @@ A general salon app is built around appointments. Most Vietnamese-owned nail sal
 
 ## Certxa
 Certxa is one system for check-in, booking, the POS, payroll and marketing, built around how nail salons work. Each POS tablet switches between English, Vietnamese and Spanish, so the front desk and the technicians can each read it in their own language. The owner dashboard has a Vietnamese setting, and the check-in kiosk lets clients choose English, Spanish, Vietnamese, Chinese or Korean.
-- Strengths: six turn methods, including dollar-based turns and counted turns with half turns; walk-in tickets with Tech ID sign-in; tips split per technician; cash price; payroll with supply-fee deductions and part check, part cash; technicians print their own pay slips. Tickets, check-ins and cash sales keep working when the internet drops. Autumn, the AI receptionist, is included in every plan.
+- Strengths: six turn methods, including dollar-based turns and counted turns with half turns; walk-in tickets with Tech ID sign-in; tips split per technician; cash price; payroll with supply-fee deductions and part check, part cash; technicians print their own pay slips. Tickets, check-ins and cash sales keep working when the internet drops. Autumn, the AI receptionist, is included on the Starter (20 calls a month), Professional (50) and Enterprise (100) plans.
 - Watch-outs: Certxa is a newer company with fewer salons using it than the older brands. Card payments go through Stripe at 2.7% + 5¢ in person, plus a $0.60 Certxa fee on each card payment, which adds up for a busy salon.
 - Price: free for one technician working alone; Starter $29 a month for up to 3 staff; Professional $99 a month for up to 12 staff; Enterprise $179 a month for large teams or several locations. No setup fee.
 More detail: Certxa for Vietnamese nail salons ( tiếng Việt).
@@ -1933,7 +2153,7 @@ Questions about how Certxa uses your Google data?
 - Support: support@certxa.com
 - Full Privacy Policy: certxa.com/privacy
 - Terms of Service: certxa.com/terms
-Last updated: October 24, 2026 · © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
+Last updated: November 5, 2026 · © 2026 Certxa. All rights reserved. Certxa is not affiliated with or endorsed by Google LLC.
 
 
 ---
@@ -2426,6 +2646,7 @@ Salon Turn System & Walk-In Queue Software for Nail Salons
 Managing walk-in customers can become one of the biggest challenges in a busy nail salon. When several customers arrive at once, the front desk needs to know who is waiting, what service they want, which technicians are available, and who should take the next customer.
 Certxa's Salon Turn System is built specifically to make that process easier.
 Instead of relying on a paper turn list, whiteboard, or receptionist memory, Certxa gives your salon a real-time system for managing walk-ins and assigning customers to the right technician.
+For a full guide to every way salons count turns (full and half turns, dollar-based turns, fixed order and more) with worked examples and a free calculator, see how the nail salon turn system works.
 
 ## What Is a Salon Turn System?
 A salon turn system organizes your walk-in customers and helps determine which customer should be served next.

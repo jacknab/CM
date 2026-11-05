@@ -4,6 +4,45 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
+## 2026-11-05 — Salons with a published website get none of the salon SEO files (found in GEO platform audit)
+
+- `artifacts/api-server/src/middleware/subdomain.ts:353-356`: for any salon with a published website, `handleTenantSiteBySlug` returns before the salon SEO block at line ~392, so `<slug>.certxa.com/llms.txt` (and robots.txt / sitemap.xml) serve the website HTML instead of `lib/salonSeo.ts` output. Live 11-05: `bella-nails` and `jims` return `text/html` for `/llms.txt`; `tobys` (no published site) returns the real markdown. 7 of 9 salons sampled by the audit were affected. Fix: answer those three paths from salonSeo before the published-website return, and add salonSeo's FAQ/summary/JSON-LD to the template-served pages.
+- Not fixed now: it changes how every published salon website is served, so it needs its own change + test pass rather than a same-day audit edit.
+
+## 2026-11-05 — Bloom template: found while correcting reviews, wording and privacy (not in that task's scope)
+
+- `templates-storage/nail-salon-bloom/project/package-lock.json`: every package points at `http://package-firewall.replit.local/npm/`, which doesn't resolve on this server, so `npm install` crashes ("Exit handler never called"). `lib/screenshot.ts` builds templates that way, and `startup/seedNailSalonBloomTemplate.ts` deletes `dist/` when `src/context/SiteContext.tsx` is newer than `dist/index.html`. So editing that file and restarting could take all Bloom sites down ("Template not yet built") with a failing rebuild. On 11-05 Bloom was built by hand in a temp copy with the lockfile URLs pointed at registry.npmjs.org, and `dist` swapped by rename. Not fixed: the lockfile and the delete-before-build order are outside the task.
+- `templates-storage/nail-salon-bloom/project/src/components/Hero.tsx:5` and `src/utils/contentHelpers.ts:7-11`: the hero photo and service placeholder photos are nail photos on every site, including barbers and hair salons. Left alone: replacing them changes the design and needs images chosen.
+- `templates-storage/nail-salon-bloom/project/src/components/FeaturedServices.tsx`: "Real results from real clients" shows on salons with no reviews. It claims no rating, so it was left; a product call. `src/context/SiteContext.tsx` still falls back to the demo team and uses 'Nail Technician' as a default role, but no component on the site shows the team. `src/components/About.tsx` has nail copy and isn't used anywhere.
+- `src/lib/render-salon-page.ts`: its email row is now always empty, because tenant data no longer carries the e-mail. Not live.
+
+## 2026-11-05 — Founder image 404 in schema, and two different ratings per salon (found in GEO schema audit)
+
+- FIXED 2026-11-05 (same day): founder Person `image` in `php/includes/header.php:124` and `php/about/default.php:138` pointed at a 404 R2 file; both now use `/airo-assets/images/team/thanh-lam-founder`.
+- `artifacts/api-server/src/lib/tenant-seo.ts:187` vs `artifacts/api-server/src/lib/salonSeo.ts:118,253`: one salon gets two different `aggregateRating`s under two `@id`s. Sample `jims`: `https://jims.certxa.com/` says 5.0 from 20 with `@id` `https://jims.certxa.com#business`; `https://certxa.com/book/jims` says 4.5 from 52 Google reviews with `@id` `https://jims.certxa.com/#business`, and canonicalises to the first. Google's review snippet rules also don't accept ratings aggregated from another site, so whether to publish Google ratings is a decision to make.
+
+Not fixed: the task was an audit only, with no site code changes. Details in `geo-reports/certxa.com/2026-11-05/GEO-SCHEMA-REPORT.md`.
+
+## 2026-11-05 — Found in GEO technical audit: old prices on subdomains, API CORS open, dead directory links
+
+Audit-only task, so none of these were fixed. Details in `geo-reports/certxa.com/2026-11-05/GEO-TECHNICAL-AUDIT.md`.
+
+- `artifacts/api-server/src/marketing-site.ts:331`: retired PHP pages answer on every `*.certxa.com` host because only `APEX_HOSTS` get the new site. `https://salons.certxa.com/pricing` is 200, `index, follow`, and shows "Professional From $18/mo", "Elite From $39/mo" (real prices are $29/$99/$179). The directory footer links to `/solo-professionals` and `/booth-renters` on that host.
+- `artifacts/api-server/src/index.ts:211,297`: `CORS_ALLOW_ALL` is set in `/etc/certxa.env`, so any Origin is reflected with `access-control-allow-credentials: true`, including a preflight to `/api/auth/login`. `SameSite=Lax` cookies limit the harm. Needs an owner decision on removing the flag.
+- `artifacts/marketplace/src/App.tsx:106,108,128,130,139`: on `salons.certxa.com`, `/for-business`, `/saved` and `/search` return 404, the footer spotlight salon returns 410, and `/overview` 301s back to the directory.
+- `artifacts/api-server/src/marketing-site.ts:294`: `no-store` is set for every marketing image response, so the 208 KB home hero and the logo redirect are never cached.
+
+## 2026-11-04 — /isTeam Tickets: backend with no screen, and marketing mail becoming tickets
+
+- `artifacts/api-server/src/routes/support.ts` (ticket tasks, escalations, related tickets, macros routes): these work but nothing in `/isTeam` calls them, so agents can't escalate a ticket or use saved replies. Left alone because whether to build screens for them or remove them is a product decision.
+- `artifacts/api-server/src/services/emailTicketSync.ts`: every e-mail to support becomes a ticket, including LinkedIn, Stripe and marketing mail (415 of 688 tickets were auto-closed with no reply, nearly all of this kind). Now that unanswered tickets stay open, agents will see these until they mark them Junk. A sender filter needs a decision on which senders to drop.
+
+## 2026-11-04 — /isTeam Incidents page is unreachable, and its service health is made up
+
+`artifacts/booking/src/pages/isTeam/IncidentsPage.tsx` isn't routed: `/isTeam/incidents` shows Live Visitors (`TeamApp.tsx`). The API behind it, `/api/support/service-health/:key` and `/heal` (`artifacts/api-server/src/routes/support.ts`, near SERVICE_HEAL_ACTIONS), invents its numbers and log lines with jitter and Math.random, and most Heal actions wait a random delay and report success without doing anything (only `clear_sessions` and `gc` are real). Nothing reaches it today. Not fixed: whether to delete it or build real monitoring is the owner's decision. Don't re-route the page before that.
+
+Also open: `/api/support/sales-leads` (`routes/salesAgent.ts`) has no department check, only the sidebar link is hidden, because that file is the sales-agent work. Add `requireDepartment("sales")` when it's next touched.
+
 ## 2026-11-02 — RESOLVED: local hub dropped the customer screen every 20 s; hub host election never reached the server
 
 - **Where:** `artifacts/booking/src/lib/local-hub.ts` `heal()`; `artifacts/api-server/src/routes.ts` `POST /api/nail/hub/heartbeat`.

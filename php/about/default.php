@@ -135,7 +135,7 @@ require 'includes/nav.php';
 <div class="about-wrap">
 
   <div class="founder-card">
-    <img src="https://certxa.com/api/r2/site-assets/42d8d1f8-28a0-40ee-99fd-ca3217518624.webp" alt="Thanh Lam, Founder of Certxa" width="96" height="96" loading="eager">
+    <img src="https://certxa.com/airo-assets/images/team/thanh-lam-founder" alt="Thanh Lam, Founder of Certxa" width="96" height="96" loading="eager">
     <div>
       <div class="founder-name">Thanh Lam</div>
       <div class="founder-title">Founder, Certxa</div>

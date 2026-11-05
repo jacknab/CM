@@ -121,7 +121,7 @@ $_base_schema = [
     'alternateName' => 'Tom Tham',
     'jobTitle' => 'Founder',
     'url'      => SITE_URL . '/about',
-    'image'    => 'https://certxa.com/api/r2/site-assets/42d8d1f8-28a0-40ee-99fd-ca3217518624.webp',
+    'image'    => 'https://certxa.com/airo-assets/images/team/thanh-lam-founder',
     'worksFor' => ['@id' => SITE_URL . '/#organization'],
     'knowsAbout' => ['Nail salon management', 'Salon software', 'Vietnamese-owned nail salon industry'],
   ],
