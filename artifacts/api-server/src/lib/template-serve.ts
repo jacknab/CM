@@ -772,7 +772,7 @@ function applyOps(){
 }
 var obs=new MutationObserver(function(){
   var root=document.getElementById('root');
-  if(root&&root.children.length>0){obs.disconnect();setTimeout(applyOps,400);}
+  if(root&&root.querySelector(':scope>:not([data-site-summary])')){obs.disconnect();setTimeout(applyOps,400);}
 });
 obs.observe(document.body,{childList:true,subtree:true});
 setTimeout(function(){obs.disconnect();applyOps();},8000);
@@ -831,7 +831,7 @@ function applyImageOps(){
 }
 var obs=new MutationObserver(function(){
   var root=document.getElementById('root');
-  if(root&&root.children.length>0){obs.disconnect();setTimeout(applyImageOps,400);}
+  if(root&&root.querySelector(':scope>:not([data-site-summary])')){obs.disconnect();setTimeout(applyImageOps,400);}
 });
 obs.observe(document.body,{childList:true,subtree:true});
 setTimeout(function(){obs.disconnect();applyImageOps();},8000);
@@ -1093,7 +1093,9 @@ export function serveDistFile(
   inlineScript?: string,
   seoMeta?: SeoMeta,
   analyticsSlug?: string,
-  canonicalUrl?: string
+  canonicalUrl?: string,
+  /** Readable text placed inside the template's empty #root (lib/siteSummary.ts); the template's app clears it. */
+  rootHtml?: string
 ): void {
   let urlPath = "/index.html";
   if (splat) {
@@ -1160,6 +1162,10 @@ export function serveDistFile(
       html = applySeoHeadTags(html, seoMeta);
     }
 
+    if (rootHtml) {
+      html = html.replace(/<div id="root"><\/div>/, () => `<div id="root">${rootHtml}</div>`);
+    }
+
     // Inject site data vars before </head>
     if (inlineScript) {
       html = html.replace("</head>", `${inlineScript}</head>`);
@@ -1204,6 +1210,12 @@ hide();if(document.readyState!=='complete')window.addEventListener('load',hide);
 try{new MutationObserver(function(){hide();}).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}})();</script>`;
 
 // ── Core tenant serving logic (shared by slug + custom-domain handlers) ───────
+
+/**
+ * Published websites kept out of search results by name: a test salon and two whose store was deleted. Their pages
+ * still load; they just tell search engines not to list them (meta robots + X-Robots-Tag, before any JavaScript).
+ */
+const NOINDEX_SITE_SLUGS = new Set<string>(["test-salon-evaluation-only", "luxurynail", "bwochas-nail-session"]);
 
 async function serveTenantSite(
   website: {
@@ -1261,6 +1273,7 @@ async function serveTenantSite(
   // into the served template. This ensures pre-built demo content is
   // replaced with the real store's services/categories on page load.
   let tenantDataForInjection: TenantData | null = null;
+  let rootHtml = "";
   if (storeId !== null && Number.isInteger(storeId) && storeId > 0) {
     try {
       const { buildTenantData } = await import("./tenant-data");
@@ -1271,6 +1284,8 @@ async function serveTenantSite(
       });
       tenantDataForInjection = td;
       seo = buildTenantSeo(td, canonicalUrl, savedSeo);
+      const { siteSummaryHtml } = await import("./siteSummary");
+      rootHtml = siteSummaryHtml(td, storeId);
     } catch (err) {
       logger.warn({ err, websiteId: website.id }, "Failed to build live tenant SEO; using saved metadata");
     }
@@ -1289,7 +1304,12 @@ async function serveTenantSite(
     }
   }
 
-  serveDistFile(distDir, splat, basePath, replacementScript, res, slugScript, seo, website.slug, canonicalUrl);
+  if (NOINDEX_SITE_SLUGS.has(website.slug)) {
+    seo = { ...seo, robots: "noindex, nofollow" };
+    res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  }
+
+  serveDistFile(distDir, splat, basePath, replacementScript, res, slugScript, seo, website.slug, canonicalUrl, rootHtml);
 }
 
 function underMaintenanceHtml(siteLabel: string): string {

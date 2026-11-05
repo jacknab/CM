@@ -12,7 +12,7 @@ import { siteBaseUrl } from "./template-serve";
 import { isAccountStopped } from "./accountSuspension";
 
 /** Salons that exist only for testing. The database has no test flag, so they are named here. */
-const TEST_STORE_IDS = new Set<number>([
+export const TEST_STORE_IDS = new Set<number>([
   40, // "Test Salon — Evaluation Only" (test-salon-evaluation-only)
 ]);
 
