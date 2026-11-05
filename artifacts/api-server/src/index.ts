@@ -650,6 +650,18 @@ app.use(subdomainMiddleware);
 app.get("/sitemap.xml", (_req: Request, _res: Response, next: NextFunction) => next());
 app.get("/sitemap-pages.xml", (_req: Request, _res: Response, next: NextFunction) => next());
 app.get("/blog/sitemap.xml", (_req: Request, _res: Response, next: NextFunction) => next());
+// Every live salon website, on certxa.com itself only (lib/salonSitemap.ts).
+app.get("/salon-sitemap.xml", async (req: Request, res: Response, next: NextFunction) => {
+  const host = (req.hostname || "").toLowerCase();
+  if ((req as any).store || (host !== "certxa.com" && host !== "www.certxa.com")) return next();
+  try {
+    const { salonSitemapEntries, salonSitemapXml } = await import("./lib/salonSitemap");
+    res.type("application/xml").set("Cache-Control", "public, max-age=3600").send(salonSitemapXml(await salonSitemapEntries()));
+  } catch (err) {
+    logger.error({ err }, "salon-sitemap.xml failed");
+    res.status(500).type("text/plain").send("Sitemap unavailable");
+  }
+});
 
 // --- Certxa Owner App Download ---
 app.get("/app", (req: Request, res: Response) => {

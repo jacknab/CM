@@ -15,7 +15,7 @@ import { logger } from "../lib/logger";
 import {
   ensureLoaded, getSalonMap, getSalonList, getClaimedSalonList, getIndexableHubs,
   findMatchingStore, deriveAddress, heroImage, forgetSalon,
-  formatHour12, DAY_NAMES, CERTXA_DOMAIN,
+  formatHour12, DAY_NAMES,
   getStateBySlug, getCityData, getStateIndex, toCitySlug,
   STATE_NAMES, US_STATES, haversineMiles, getSalonRedirectSlug,
   salonPath, statePath, cityPath, LICENSE_SOURCES,
@@ -24,6 +24,7 @@ import {
 import { requestIp, resolveVisitorCity } from "../lib/geoLookup";
 import rateLimit from "express-rate-limit";
 import { sendEmail } from "../mail";
+import { siteBaseUrl } from "../lib/template-serve";
 
 const router = Router();
 
@@ -257,6 +258,25 @@ router.get("/api/geo", async (req: Request, res: Response) => {
 
 // ── GET /api/salons/:slug — full profile ─────────────────────────────────────
 
+/**
+ * The salon's own public website: its published Certxa website (its custom domain once that's live), else its booking
+ * page at <slug>.certxa.com. The same address its pages give as their canonical (lib/template-serve.ts siteBaseUrl).
+ */
+async function salonWebsiteUrl(storeId: number): Promise<string | undefined> {
+  const r = await pool.query<{ booking_slug: string | null; slug: string | null; custom_domain: string | null; custom_domain_status: string | null }>(
+    `SELECT l.booking_slug, w.slug, w.custom_domain, w.custom_domain_status
+       FROM locations l
+       LEFT JOIN wb_websites w ON w.storeid = l.id::text AND w.published = true
+      WHERE l.id = $1
+      ORDER BY w.id LIMIT 1`,
+    [storeId],
+  );
+  const row = r.rows[0];
+  if (row?.slug) return `${siteBaseUrl({ slug: row.slug, customDomain: row.custom_domain, customDomainStatus: row.custom_domain_status })}/`;
+  if (row?.booking_slug) return `${siteBaseUrl({ slug: row.booking_slug, customDomain: null, customDomainStatus: null })}/`;
+  return undefined;
+}
+
 router.get("/api/salons/:slug", async (req: Request, res: Response) => {
   try {
     await ensureLoaded();
@@ -358,7 +378,8 @@ router.get("/api/salons/:slug", async (req: Request, res: Response) => {
       services,
       gallery: [],
       highlights,
-      bookingUrl: live?.bookingSlug ? `${CERTXA_DOMAIN}/${live.bookingSlug}` : undefined,
+      // The salon's own website, not certxa.com/<slug> (which isn't an address anything answers).
+      bookingUrl: live ? await salonWebsiteUrl(live.storeId) : undefined,
       city: addr.city,
       state: addr.state,
       nearby,

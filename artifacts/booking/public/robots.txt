@@ -133,3 +133,4 @@ Disallow: /listings/
 
 # Sitemap
 Sitemap: https://certxa.com/sitemap.xml
+Sitemap: https://certxa.com/salon-sitemap.xml
