@@ -1039,18 +1039,6 @@ export default function BillingPage({ salonId }: { salonId: number }) {
             {cancelStep === "retention" && (
               <>
                 <div className="space-y-3">
-                  <div className="bg-zinc-800/40 border border-zinc-700/40 rounded-xl p-4 space-y-2">
-                    <p className="text-white font-semibold text-sm">Consider switching to a lower plan</p>
-                    <p className="text-zinc-400 text-sm">
-                      The Solo plan is free — perfect for independent stylists and booth renters.
-                    </p>
-                    {currentPlan?.code !== "solo" && (
-                      <Button size="sm" variant="outline" className="border-zinc-600/50 text-zinc-300 hover:bg-zinc-800 mt-1"
-                        onClick={() => { setSwitchingTo("solo"); setShowPlanConfirm(true); setCancelStep("idle"); }}>
-                        Switch to Solo (free)
-                      </Button>
-                    )}
-                  </div>
                   <div className="bg-zinc-800/40 border border-zinc-700/40 rounded-xl p-4">
                     <p className="text-white font-semibold text-sm mb-1">Need help with something?</p>
                     <p className="text-zinc-400 text-sm">Our team can usually resolve most concerns quickly.</p>

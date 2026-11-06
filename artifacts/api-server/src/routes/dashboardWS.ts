@@ -124,6 +124,11 @@ export function setupDashboardWS(httpServer: Server): void {
       ws.close(4003, "Authentication required");
       return;
     }
+    // A billing sign-in opened from the Certxa Pro app reaches billing only (lib/appWebSession.ts).
+    if (session?.appWebLink) {
+      ws.close(4003, "Not available from this page");
+      return;
+    }
 
     // Verify the authenticated user actually owns the requested store
     try {

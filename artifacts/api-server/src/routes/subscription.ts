@@ -48,6 +48,7 @@ import { isStripeConfigured, stripe } from "../lib/stripe";
 import { TrialService } from "../services/trial-service";
 import { resolveFeature, resolveStorePlan } from "../lib/featureAccess";
 import { sendSubscriptionReactivatedEmail } from "../lib/systemEmails";
+import { planChangeRefusal } from "../lib/soloPlanRules";
 
 const router = Router();
 
@@ -245,6 +246,9 @@ router.post("/subscribe", async (req: any, res) => {
     if (!plan) {
       return res.status(404).json({ error: "Plan not found or not available" });
     }
+    // Solo/Plus only for app accounts, salon plans only for website accounts (lib/soloPlanRules.ts).
+    const refusal = await planChangeRefusal(storeId, plan.code);
+    if (refusal) return res.status(403).json({ error: refusal, code: "PLAN_NOT_FOR_ACCOUNT" });
 
     // ── Stripe Checkout for paid plans ─────────────────────────────────────
     const priceId = interval === "year"
@@ -437,6 +441,8 @@ router.post("/finalize-setup", async (req: any, res) => {
       )
       .limit(1);
     if (!plan) return res.status(404).json({ error: "Plan not found or not available" });
+    const refusal = await planChangeRefusal(storeId, plan.code);
+    if (refusal) return res.status(403).json({ error: refusal, code: "PLAN_NOT_FOR_ACCOUNT" });
 
     const interval = setupIntent.metadata?.interval === "year" ? "year" : "month";
     const priceId = interval === "year" ? plan.stripePriceIdYearly : plan.stripePriceIdMonthly;

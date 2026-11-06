@@ -15,7 +15,8 @@
  *
  * Settings › Billing in the app (owner, 2026-11-05) opens the website's billing page the same way:
  *   POST /api/solo/billing/web-link   (app)  → { url }   a single-use, 15-minute link
- *   GET  /billing/start?code=…        (web)  → signs the owner in, then /billing
+ *   GET  /billing/start?code=…        (web)  → signs the owner in, then the Solo billing page (/solo/billing)
+ * These sign-ins reach billing only and end with the browser session (lib/appWebSession.ts).
  */
 import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
@@ -26,6 +27,7 @@ import { stripe, isStripeConfigured } from "../lib/stripe";
 import { setSmsPlus, soloPlanCode } from "../lib/soloSmsCredits";
 import { startInHouseSubscription, setCancelAtPeriodEnd } from "../services/saas-billing";
 import { pushPlanChange } from "../lib/ownerPush";
+import { startAppWebSession } from "../lib/appWebSession";
 
 const router = Router();
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
@@ -71,19 +73,13 @@ router.get("/pro-plus/start", async (req: Request, res: Response) => {
     // Used once: the update only succeeds for an unused, unexpired link.
     const r = await pool.query(
       `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'plus' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id`,
+       RETURNING user_id, store_id`,
       [hash(code)],
     );
     const userId = r.rows[0]?.user_id;
     if (!userId) return fail();
-    req.session.regenerate((regenErr) => {
-      if (regenErr) { console.error("[solo-plus/start] session", regenErr); return fail(); }
-      (req.session as any).userId = userId;
-      req.session.save((saveErr) => {
-        if (saveErr) { console.error("[solo-plus/start] session save", saveErr); return fail(); }
-        res.redirect(302, "/pro-plus");
-      });
-    });
+    // Billing only, for this browser session only (lib/appWebSession.ts).
+    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null, "/pro-plus", fail);
   } catch (err: any) {
     console.error("[solo-plus/start]", err?.message ?? err);
     return fail();
@@ -111,28 +107,60 @@ router.post("/api/solo/billing/web-link", isAuthenticated, async (req: Request, 
 
 router.get("/billing/start", async (req: Request, res: Response) => {
   const code = String(req.query.code ?? "");
-  // An old or used link: the billing page, which asks them to sign in.
-  const fail = () => res.redirect(302, "/billing");
+  // An old or used link: the billing page says so.
+  const fail = () => res.redirect(302, "/solo/billing?link=expired");
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
   try {
     const r = await pool.query(
       `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'billing' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id`,
+       RETURNING user_id, store_id`,
       [hash(code)],
     );
     const userId = r.rows[0]?.user_id;
     if (!userId) return fail();
-    req.session.regenerate((regenErr) => {
-      if (regenErr) { console.error("[solo-billing/start] session", regenErr); return fail(); }
-      (req.session as any).userId = userId;
-      req.session.save((saveErr) => {
-        if (saveErr) { console.error("[solo-billing/start] session save", saveErr); return fail(); }
-        res.redirect(302, "/billing");
-      });
-    });
+    // Billing only, for this browser session only (lib/appWebSession.ts).
+    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null, "/solo/billing", fail);
   } catch (err: any) {
     console.error("[solo-billing/start]", err?.message ?? err);
     return fail();
+  }
+});
+
+// ── The Solo billing page: payments made ─────────────────────────────────────
+// Plus charges (Certxa's own monthly billing, saas_billing_charges) and text credit packs (sms_credit_ledger, the
+// amount read from the Stripe payment). Newest first, the last 24.
+router.get("/api/solo/billing/history", isAuthenticated, async (req: Request, res: Response) => {
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId || !(await soloPlanCode(storeId))) return res.status(403).json({ error: "Billing here is for Certxa Pro accounts" });
+    const plus = await pool.query(
+      `SELECT id, amount_cents, status, created_at, completed_at, failure_message FROM saas_billing_charges
+        WHERE store_id = $1 AND status IN ('succeeded', 'failed', 'refunded') ORDER BY created_at DESC LIMIT 24`,
+      [storeId],
+    );
+    const packs = await pool.query(
+      `SELECT reference, change, created_at FROM sms_credit_ledger
+        WHERE store_id = $1 AND reason = 'purchase' ORDER BY created_at DESC LIMIT 24`,
+      [storeId],
+    );
+    const packRows = await Promise.all(packs.rows.map(async (p: any) => {
+      let amountCents: number | null = null;
+      if (isStripeConfigured() && typeof p.reference === "string" && p.reference.startsWith("pi_")) {
+        try { amountCents = (await stripe.paymentIntents.retrieve(p.reference)).amount_received ?? null; } catch { /* amount unknown */ }
+      }
+      return { kind: "credits", date: p.created_at, credits: Number(p.change), amountCents, status: "succeeded" };
+    }));
+    const items = [
+      ...plus.rows.map((c: any) => ({
+        kind: "plus", date: c.completed_at ?? c.created_at, amountCents: Number(c.amount_cents),
+        status: c.status, failure: c.status === "failed" ? (c.failure_message ?? null) : null,
+      })),
+      ...packRows,
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 24);
+    return res.json({ items });
+  } catch (err: any) {
+    console.error("[solo-billing/history]", err?.message ?? err);
+    return res.status(500).json({ error: "Could not load your payments" });
   }
 });
 

@@ -1,6 +1,6 @@
 /**
- * The subscription plans as the owner set them (2026-10-21): Solo free, Starter $29, Professional $99,
- * Enterprise $179. The admin plans (`subscription_plans`, served at /api/public/pricing-plans — the same list the
+ * The subscription plans as the owner set them (2026-10-21): Starter $29, Professional $99, Enterprise $179.
+ * Solo (free) and Plus are only in the Certxa Pro app (owner, 2026-11-06), so the website never offers them. The admin plans (`subscription_plans`, served at /api/public/pricing-plans — the same list the
  * website's /pricing reads) are the source; PLAN_BASE is what shows until they load. Used by both billing pages.
  */
 import { useMemo } from "react";
@@ -12,7 +12,6 @@ export type BillingPlan = {
 };
 
 export const PLAN_BASE: BillingPlan[] = [
-  { code: "solo", name: "Solo", price: 0, tagline: "For independent stylists and booth renters. 1 calendar, 1 staff member.", highlight: "1 calendar · 1 staff", features: [], notIncluded: [] },
   { code: "professional", name: "Starter", price: 29, tagline: "Up to 3 staff, all features for small teams.", highlight: "Up to 3 staff", features: [], notIncluded: [], popular: true },
   { code: "elite", name: "Professional", price: 99, tagline: "Up to 12 staff, all features for medium-size teams.", highlight: "Up to 12 staff", features: [], notIncluded: [] },
   { code: "enterprise", name: "Enterprise", price: 179, tagline: "Built for large teams or multiple locations.", highlight: "Large teams or several locations", features: [], notIncluded: [] },

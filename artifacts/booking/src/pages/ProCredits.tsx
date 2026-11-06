@@ -13,6 +13,8 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { loadStripe } from "@stripe/stripe-js/pure";
 import type { Stripe as StripeJs, StripeElementsOptions } from "@stripe/stripe-js";
 import { CheckCircle, Loader2, Lock } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { backToApp as returnToApp, setPaying, useEndAppWebSessionOnClose } from "@/lib/appWebSession";
 
 type Pack = { id: string; credits: number; priceCents: number };
 type Summary = { credits: number; unlimited: boolean; packs: Pack[]; card: { brand: string | null; last4: string | null } | null };
@@ -44,7 +46,8 @@ function PayForm({ pack, onDone }: { pack: Pack; onDone: (balance: number) => vo
   const pay = async () => {
     if (!stripe || !elements) return;
     setBusy(true); setError("");
-    const result = await stripe.confirmPayment({ elements, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
+    setPaying(true);
+    const result = await stripe.confirmPayment({ elements, confirmParams: { return_url: window.location.href }, redirect: "if_required" }).finally(() => setPaying(false));
     if (result.error || !result.paymentIntent?.id) {
       setError(result.error?.message || "The card could not be charged. Please try again.");
       setBusy(false);
@@ -80,7 +83,8 @@ function SaveCardForm({ onDone }: { onDone: (card: Summary["card"]) => void }) {
   const save = async () => {
     if (!stripe || !elements) return;
     setBusy(true); setError("");
-    const result = await stripe.confirmSetup({ elements, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
+    setPaying(true);
+    const result = await stripe.confirmSetup({ elements, confirmParams: { return_url: window.location.href }, redirect: "if_required" }).finally(() => setPaying(false));
     if (result.error || !result.setupIntent?.id) {
       setError(result.error?.message || "The card could not be saved. Please try again.");
       setBusy(false);
@@ -109,6 +113,8 @@ function SaveCardForm({ onDone }: { onDone: (card: Summary["card"]) => void }) {
 }
 
 export default function ProCredits() {
+  useEndAppWebSessionOnClose();
+  const location = useLocation();
   const params = new URLSearchParams(window.location.search);
   const expiredLink = params.get("link") === "expired";
   const cardOnly = params.get("card") === "1";
@@ -145,12 +151,15 @@ export default function ProCredits() {
 
   const pack = summary?.packs.find((p) => p.id === packId) ?? null;
   const backToApp = (
-    <a href={cardOnly ? APP_RETURN_CARD : APP_RETURN} className="flex h-12 w-full items-center justify-center rounded-full border border-gray-200 bg-white text-[15px] font-semibold text-gray-900">Back to Certxa Pro</a>
+    <button type="button" onClick={() => returnToApp(cardOnly ? APP_RETURN_CARD : APP_RETURN)} className="flex h-12 w-full items-center justify-center rounded-full border border-gray-200 bg-white text-[15px] font-semibold text-gray-900">Back to Certxa Pro</button>
   );
 
   return (
     <div className="fixed inset-0 overflow-y-auto bg-[#F7F5FB] px-4 py-6">
       <div className="mx-auto max-w-md space-y-5">
+        {(location.state as any)?.fromBilling && (
+          <Link to="/solo/billing" className="inline-block text-sm font-medium text-gray-600">‹ Billing</Link>
+        )}
         {problem === "signin" || (expiredLink && !summary) ? (
           <div className="space-y-4 rounded-2xl bg-white p-5 text-center shadow-sm">
             <h1 className="text-lg font-semibold text-gray-900">{expiredLink ? "This link has expired" : "Open this page from the app"}</h1>

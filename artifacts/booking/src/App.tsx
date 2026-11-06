@@ -19,6 +19,8 @@ import { SyncConflictPanel } from "@/components/SyncConflictPanel";
 import { useSelectedStore } from "@/hooks/use-store";
 import { useAuth } from "@/hooks/use-auth";
 import { isProAccount, isHiddenForProAccount } from "@shared/proAccount";
+import { isSoloPlanCode } from "@shared/soloPlan";
+import { useSubscriptionFeatures } from "@/hooks/use-subscription-features";
 import { useTheme } from "@/hooks/use-theme";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { FeatureGuard } from "@/components/FeatureGuard";
@@ -151,6 +153,7 @@ const PublicReceipt = lazy(() => import("@/pages/public-booking/PublicReceipt"))
 const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBooking"));
 const ProPlus = lazy(() => import("@/pages/ProPlus"));
 const ProCredits = lazy(() => import("@/pages/ProCredits"));
+const SoloBilling = lazy(() => import("@/pages/solo/SoloBilling"));
 const PayLink = lazy(() => import("@/pages/PayLink"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
@@ -433,6 +436,15 @@ function ProAccountRedirect() {
   return null;
 }
 
+/** Billing: a Solo (Certxa Pro) account has its own page (pages/solo/SoloBilling.tsx), never the salon plans pages. */
+function SalonBillingOnly({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  const { planCode, isLoading: planLoading } = useSubscriptionFeatures();
+  if (isLoading || planLoading) return null;
+  if (isProAccount((user as any)?.accountType) || isSoloPlanCode(planCode)) return <Navigate to="/solo/billing" replace />;
+  return <>{children}</>;
+}
+
 function SoloGuard({ children }: { children: React.ReactNode }) {
   const { selectedStore } = useSelectedStore();
   const { data: subscription } = useQuery<any>({
@@ -500,7 +512,7 @@ function AppRoutes() {
       {/* Manage hub */}
       <Route path="/manage" element={<MembersHome />} />
       <Route path="/manage/dashboard" element={<ManageDashboard />} />
-      <Route path="/manage/billing" element={<ManageBillingWrapper />} />
+      <Route path="/manage/billing" element={<SalonBillingOnly><ManageBillingWrapper /></SalonBillingOnly>} />
       <Route path="/manage/ai-receptionist" element={<AiReceptionistRouter />} />
       <Route path="/manage/ai-receptionist/setup" element={<AiReceptionistEnrollment />} />
       <Route path="/manage/ai-receptionist/call-logs" element={<AiReceptionistCallLogs />} />
@@ -560,6 +572,7 @@ function AppRoutes() {
       <Route path="/pro-plus" element={<ProPlus />} />
       {/* Certxa Pro text message credits, opened from the app (routes/soloCredits.ts) */}
       <Route path="/pro-credits" element={<ProCredits />} />
+      <Route path="/solo/billing" element={<SoloBilling />} />
       {/* A booking paid from a link the business texted (routes/payLinks.ts) */}
       <Route path="/pay/:token" element={<PayLink />} />
 
@@ -779,7 +792,7 @@ function AppRoutes() {
       <Route path="/elite-details" element={<EliteDetails />} />
       <Route path="/multi-location" element={<MultiLocationDashboard />} />
       <Route path="/cash-drawer" element={<FeatureGuard feature="pos"><CashDrawer /></FeatureGuard>} />
-      <Route path="/billing" element={<DashboardBilling />} />
+      <Route path="/billing" element={<SalonBillingOnly><DashboardBilling /></SalonBillingOnly>} />
       <Route path="/account" element={<AccountOverview />} />
       <Route path="/intelligence" element={<Intelligence />} />
       <Route path="/help" element={<HelpCenter />} />

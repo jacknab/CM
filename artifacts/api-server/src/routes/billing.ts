@@ -35,6 +35,7 @@ import { users } from "@shared/models/auth";
 import { eq, and, desc, sql, inArray, sum, count } from "drizzle-orm";
 import { stripe, isStripeConfigured, getReturnBaseUrl } from "../lib/stripe";
 import { isAccountStopped } from "../lib/accountSuspension";
+import { planChangeRefusal } from "../lib/soloPlanRules";
 
 const router = Router();
 
@@ -220,7 +221,20 @@ router.get("/account-status", async (req: any, res) => {
     }
     if ((store.accountStatus ?? "active").toLowerCase() === "active") trialOver = await isAccountStopped(store.id);
 
+    // A locked salon restarts the plan it had (owner, 2026-11-06): its latest paid plan that is still on sale.
+    let previousPlan: { code: string; name: string; priceMonthly: number } | null = null;
+    if ((store.accountStatus ?? "").toLowerCase() === "locked") {
+      const r = await pool.query(
+        `SELECT p.code, p.name, p.price_monthly_cents FROM store_subscriptions ss JOIN subscription_plans p ON p.id = ss.plan_id
+          WHERE ss.store_id = $1 AND p.is_active AND p.is_public AND p.price_monthly_cents > 0 AND p.code NOT IN ('solo', 'solo_plus')
+          ORDER BY ss.updated_at DESC NULLS LAST, ss.id DESC LIMIT 1`,
+        [store.id],
+      );
+      if (r.rows[0]) previousPlan = { code: r.rows[0].code, name: r.rows[0].name, priceMonthly: Number(r.rows[0].price_monthly_cents) };
+    }
+
     return res.json({
+      previousPlan,
       accountStatus: trialOver ? "suspended" : (store.accountStatus ?? "active").toLowerCase(),
       suspendedAt:   store.suspendedAt   ?? null,
       lockedAt:      store.lockedAt      ?? null,
@@ -508,6 +522,9 @@ router.post("/subscribe/:salonId", async (req: any, res) => {
       .limit(1);
 
     if (!plan) return res.status(404).json({ error: "Plan not found" });
+    // Solo/Plus only for app accounts, salon plans only for website accounts (lib/soloPlanRules.ts).
+    const refusal = await planChangeRefusal(salonId, plan.code);
+    if (refusal) return res.status(403).json({ error: refusal, code: "PLAN_NOT_FOR_ACCOUNT" });
 
     // A free plan starts at once: no card, no checkout.
     if (isFreePlan(plan)) {
@@ -577,6 +594,9 @@ router.post("/change-plan/:salonId", async (req: any, res) => {
       .limit(1);
 
     if (!plan) return res.status(404).json({ error: "Plan not found" });
+    // Solo/Plus only for app accounts, salon plans only for website accounts (lib/soloPlanRules.ts).
+    const refusal = await planChangeRefusal(salonId, plan.code);
+    if (refusal) return res.status(403).json({ error: refusal, code: "PLAN_NOT_FOR_ACCOUNT" });
 
     // Moving to a free plan ends the paid subscription rather than re-pricing it.
     if (isFreePlan(plan)) {

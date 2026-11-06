@@ -23,21 +23,6 @@ import { useToast } from "@/hooks/use-toast";
 const FALLBACK_PLANS = [
   {
     id: null as number | null,
-    code: "solo",
-    name: "Solo",
-    priceMonthly: 900, // cents
-    description: "For independent stylists & booth renters",
-    popular: false,
-    features: [
-      "1 calendar",
-      "1 staff member",
-      "Online booking page",
-      "200 SMS/mo",
-      "Client profiles & history",
-    ],
-  },
-  {
-    id: null as number | null,
     code: "professional",
     name: "Professional",
     priceMonthly: 2200,

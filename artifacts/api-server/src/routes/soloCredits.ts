@@ -25,6 +25,7 @@ import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { stripe, isStripeConfigured } from "../lib/stripe";
 import { addSoloCredits, smsPlusOn, soloCreditPacks, soloPlanCode } from "../lib/soloSmsCredits";
+import { startAppWebSession } from "../lib/appWebSession";
 
 const packById = async (id: unknown) => (await soloCreditPacks()).find((p) => p.id === id) ?? null;
 
@@ -163,17 +164,12 @@ router.get("/pro-credits/start", async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'credits' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id`, [hash(code)]);
+       RETURNING user_id, store_id`, [hash(code)]);
     const userId = r.rows[0]?.user_id;
     if (!userId) return fail();
-    req.session.regenerate((regenErr) => {
-      if (regenErr) { console.error("[solo-credits/start] session", regenErr); return fail(); }
-      (req.session as any).userId = userId;
-      req.session.save((saveErr) => {
-        if (saveErr) { console.error("[solo-credits/start] session save", saveErr); return fail(); }
-        res.redirect(302, `/pro-credits${req.query.card === "1" ? "?card=1" : pack ? `?pack=${pack.id}` : ""}`);
-      });
-    });
+    // Billing only, for this browser session only (lib/appWebSession.ts).
+    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null,
+      `/pro-credits${req.query.card === "1" ? "?card=1" : pack ? `?pack=${pack.id}` : ""}`, fail);
   } catch (err: any) {
     console.error("[solo-credits/start]", err?.message ?? err);
     return fail();

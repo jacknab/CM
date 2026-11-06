@@ -35,6 +35,7 @@ import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { resolveFeature, resolveStorePlan } from "../lib/featureAccess";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { isSoloPlanCode } from "@shared/soloPlan";
 
 const router = Router();
 
@@ -174,7 +175,8 @@ router.get("/public-plans", async (req: any, res) => {
       .orderBy(asc(subscriptionPlans.sortOrder), asc(subscriptionPlans.id));
 
     const plansWithFeatures = await Promise.all(
-      plans.map(async (plan) => {
+      // Solo and Plus are only in the Certxa Pro app (owner, 2026-11-06): the website's plan lists never show them.
+      plans.filter((plan) => !isSoloPlanCode(plan.code)).map(async (plan) => {
         const featureRows = await db
           .select({
             featureId: planFeatures.featureId,

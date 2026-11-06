@@ -10,6 +10,8 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { loadStripe } from "@stripe/stripe-js/pure";
 import type { Stripe as StripeJs, StripeElementsOptions } from "@stripe/stripe-js";
 import { CheckCircle, Loader2, Lock } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+import { backToApp as returnToApp, setPaying, useEndAppWebSessionOnClose } from "@/lib/appWebSession";
 
 type Status = {
   businessName: string | null;
@@ -54,7 +56,8 @@ function CardForm({ priceCents, onDone }: { priceCents: number; onDone: () => vo
   const start = async () => {
     if (!stripe || !elements) return;
     setBusy(true); setError("");
-    const result = await stripe.confirmSetup({ elements, confirmParams: { return_url: window.location.href }, redirect: "if_required" });
+    setPaying(true);
+    const result = await stripe.confirmSetup({ elements, confirmParams: { return_url: window.location.href }, redirect: "if_required" }).finally(() => setPaying(false));
     if (result.error || !result.setupIntent?.id) {
       setError(result.error?.message || "The card could not be confirmed. Please try again.");
       setBusy(false);
@@ -87,6 +90,8 @@ function CardForm({ priceCents, onDone }: { priceCents: number; onDone: () => vo
 }
 
 export default function ProPlus() {
+  useEndAppWebSessionOnClose();
+  const location = useLocation();
   const expiredLink = new URLSearchParams(window.location.search).get("link") === "expired";
   const [status, setStatus] = useState<Status | null>(null);
   const [problem, setProblem] = useState<"" | "signin" | "error">("");
@@ -120,14 +125,17 @@ export default function ProPlus() {
   };
 
   const backToApp = (
-    <a href={APP_RETURN} className="flex h-12 w-full items-center justify-center rounded-full border border-gray-200 bg-white text-[15px] font-semibold text-gray-900">
+    <button type="button" onClick={() => returnToApp(APP_RETURN)} className="flex h-12 w-full items-center justify-center rounded-full border border-gray-200 bg-white text-[15px] font-semibold text-gray-900">
       Back to Certxa Pro
-    </a>
+    </button>
   );
 
   return (
     <div className="fixed inset-0 overflow-y-auto bg-[#F7F5FB] px-4 py-6">{/* fixed: the site-wide 56px mobile header padding on body does not apply here (no header on this page) */}
       <div className="mx-auto max-w-md space-y-5">
+        {(location.state as any)?.fromBilling && (
+          <Link to="/solo/billing" className="inline-block text-sm font-medium text-gray-600">‹ Billing</Link>
+        )}
         <img src="/images/pro-plus-plan.jpg" alt="Plus Plan: unlock the app with unlimited SMS notifications" className="w-full rounded-2xl" />
 
         {problem === "signin" || (expiredLink && !status) ? (

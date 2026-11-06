@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 export default function AccountLocked() {
   const navigate = useNavigate();
   const [startingCheckout, setStartingCheckout] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
 
   const { data: statusData } = useQuery<any>({
     queryKey: ["/api/billing/account-status"],
@@ -22,22 +23,28 @@ export default function AccountLocked() {
       })
     : null;
 
+  // The plan the salon had before it was locked (owner, 2026-11-06). It used to restart on the free Solo plan,
+  // which reopened the whole account without paying; Solo is only in the Certxa Pro app now.
+  const previousPlan: { code: string; name: string; priceMonthly: number } | null = statusData?.previousPlan ?? null;
+
   async function handleNewSubscription() {
+    if (!previousPlan) return;
     setStartingCheckout(true);
+    setCheckoutError("");
     try {
       const salonId = statusData?.salonId;
       if (!salonId) return;
-      // (This used to call /api/billing/checkout, which does not exist, so the button did nothing.)
       const res = await fetch(`/api/billing/subscribe/${salonId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ planCode: "solo", interval: "month" }),
+        body: JSON.stringify({ planCode: previousPlan.code, interval: "month" }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (data.url) window.location.href = data.url;
+      else setCheckoutError(data.error || "Checkout could not be started. Please try again or contact support.");
     } catch {
-      // silent
+      setCheckoutError("Checkout could not be started. Please try again or contact support.");
     } finally {
       setStartingCheckout(false);
     }
@@ -107,14 +114,24 @@ export default function AccountLocked() {
 
         {/* Actions */}
         <div className="flex flex-col gap-3">
-          <Button
-            className="w-full h-12 bg-violet-600 hover:bg-violet-500 text-white font-semibold text-base"
-            onClick={handleNewSubscription}
-            disabled={startingCheckout}
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            {startingCheckout ? "Preparing checkout…" : "Create New Subscription"}
-          </Button>
+          {previousPlan ? (
+            <Button
+              className="w-full h-12 bg-violet-600 hover:bg-violet-500 text-white font-semibold text-base"
+              onClick={handleNewSubscription}
+              disabled={startingCheckout}
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              {startingCheckout
+                ? "Preparing checkout…"
+                : `Restart ${previousPlan.name} · $${(previousPlan.priceMonthly / 100).toFixed(previousPlan.priceMonthly % 100 ? 2 : 0)}/month`}
+            </Button>
+          ) : statusData ? (
+            <a href="mailto:support@certxa.com"
+              className="flex w-full h-12 items-center justify-center rounded-md bg-violet-600 hover:bg-violet-500 text-white font-semibold text-base">
+              Contact support to restart your plan
+            </a>
+          ) : null}
+          {checkoutError && <p className="text-sm text-red-400 text-center">{checkoutError}</p>}
 
           <Button
             variant="ghost"

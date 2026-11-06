@@ -22,6 +22,7 @@ import { TrialService } from "./services/trial-service";
 import { emitPlatformEmailEvent } from "./services/platform-email-engine";
 import { clientIntelligence } from "../shared/schema/intelligence";
 import { runIntelligenceForStore } from "./intelligence/orchestrator";
+import { appWebSessionGuard, endAppWebSession, appWebLink } from "./lib/appWebSession";
 import {
   getGoogleLoginAuthUrl,
   exchangeGoogleLoginCode,
@@ -177,6 +178,9 @@ export function setupAuth(app: Express) {
   // Expose so WebSocket upgrade handlers can call it directly.
   exportedSessionMiddleware = sessionMiddlewareInstance;
   app.use(sessionMiddlewareInstance);
+  // A billing sign-in opened from the Certxa Pro app reaches billing only, and ends when idle (lib/appWebSession.ts).
+  app.use(appWebSessionGuard);
+  app.post("/api/app-web-session/end", endAppWebSession);
 
   // 10 years — practically "never expires", used for front-desk / kiosk devices
   const KIOSK_MAX_AGE = 1000 * 60 * 60 * 24 * 365 * 10;
@@ -970,7 +974,8 @@ export function setupAuth(app: Express) {
         const role = normalizeRole(user.role);
         const permissions = Array.from(computePermissions(role, user.permissions ?? null));
         // A signed-in account on a device that isn't remembered yet: remember it (see "Remembered devices").
-        if (!(req as any).cookies?.[DEVICE_COOKIE]) await rememberDevice(req, res, userId);
+        // Never for a billing sign-in from the app: it must end when the browser closes (lib/appWebSession.ts).
+        if (!(req as any).cookies?.[DEVICE_COOKIE] && !appWebLink(req)) await rememberDevice(req, res, userId);
         res.json({ ...safeUser, role, permissions });
         return;
       }

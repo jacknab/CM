@@ -1200,16 +1200,6 @@ export default function DashboardBilling() {
                     <>
                       <div className="space-y-3">
                         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                          <p className="text-gray-900 font-semibold text-sm">Try our Solo plan instead</p>
-                          <p className="text-gray-500 text-sm mt-1">Free — perfect for independent stylists and booth renters.</p>
-                          {(currentPlan?.code ?? "") !== "solo" && (
-                            <button className="mt-3 text-sm font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 px-3 py-1.5 rounded-lg transition-colors"
-                              onClick={() => { setSwitchingTo("solo"); setShowPlanConfirm(true); setCancelStep("idle"); }}>
-                              Switch to Solo (free)
-                            </button>
-                          )}
-                        </div>
-                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                           <p className="text-gray-900 font-semibold text-sm">Need help with something?</p>
                           <p className="text-gray-500 text-sm mt-1">Our team can usually resolve issues quickly.</p>
                           <a href="mailto:support@certxa.com" className="text-primary text-sm font-medium underline mt-2 inline-block">Contact support →</a>
