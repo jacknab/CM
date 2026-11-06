@@ -6,12 +6,12 @@
 import { createContext, useContext } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CreditCard, Home, Loader2, LogOut } from "lucide-react";
+import { CalendarDays, CreditCard, Home, Loader2, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { isProAccount } from "@shared/proAccount";
 import { isSoloPlanCode } from "@shared/soloPlan";
 
-export type SoloStore = { id: number; name: string; timezone: string | null };
+export type SoloStore = { id: number; name: string; timezone: string | null; bookingSlug?: string | null };
 type SoloCtx = { store: SoloStore; user: { firstName?: string | null; staffId?: number | null } };
 const Ctx = createContext<SoloCtx | null>(null);
 
@@ -29,9 +29,10 @@ export const SOLO_COLORS = {
   primary: "#7C3AED",
 };
 
-// Pages as they are built (Calendar, Clients and Catalog follow).
+// Pages as they are built (Clients and Catalog follow).
 const NAV = [
   { to: "/solo", label: "Home", icon: Home, end: true },
+  { to: "/solo/calendar", label: "Calendar", icon: CalendarDays, end: false },
   { to: "/solo/billing", label: "Billing", icon: CreditCard, end: false },
 ];
 

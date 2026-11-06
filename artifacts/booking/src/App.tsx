@@ -156,6 +156,7 @@ const ProCredits = lazy(() => import("@/pages/ProCredits"));
 const SoloBilling = lazy(() => import("@/pages/solo/SoloBilling"));
 const SoloLayout = lazy(() => import("@/pages/solo/SoloLayout"));
 const SoloHome = lazy(() => import("@/pages/solo/SoloHome"));
+const SoloCalendar = lazy(() => import("@/pages/solo/SoloCalendar"));
 const PayLink = lazy(() => import("@/pages/PayLink"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
@@ -578,6 +579,7 @@ function AppRoutes() {
       {/* The Solo dashboard (plans/solo-web-dashboard.md): its own layout, only for Solo accounts */}
       <Route path="/solo" element={<SoloLayout />}>
         <Route index element={<SoloHome />} />
+        <Route path="calendar" element={<SoloCalendar />} />
       </Route>
       {/* A booking paid from a link the business texted (routes/payLinks.ts) */}
       <Route path="/pay/:token" element={<PayLink />} />

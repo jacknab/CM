@@ -49,7 +49,15 @@
   - The app's billing sign-in can now also reach `/api/solo/billing/card`, `GET /api/pro/phone` and `POST /api/pro/phone/cancel` (method + exact address).
   - Tests: 7 server and 11 browser checks for Home; 14 server and 21 browser checks for Billing; 721/721 API tests passed.
   - The change-card form itself (a real Stripe SetupIntent) was not tried: the test server has no Stripe test keys.
-- Step 4b (Calendar, Clients, Catalog) and sending Solo accounts to `/solo` on sign-in: not started.
+- **Step 4b-1 — Calendar (`/solo/calendar`): LIVE 2026-11-06, committed.**
+  - `pages/solo/SoloCalendar.tsx` (Month / Week / Day; the day is a 24-hour timeline with blocked time, overlapping bookings side by side and a now line; drag to move with Notify client; paid bookings never move).
+  - `SoloBookingPanel.tsx`: details; Mark as paid (cash, the visit's total, like the app; prepaid = Mark as done), Change time, No-show, Cancel with or without a text; Book again; Delete for no-shows and cancelled bookings.
+  - `SoloNewBooking.tsx`: New booking (client or new client, one own service at the owner's place, open times from the public availability for the owner) and Block time.
+  - Helpers: `soloTime.ts` (business-time days), `soloBookings.ts` (the app's booking mapping), `soloUi.tsx`.
+  - App-only on purpose: card checkout, refunds, fees, payment links, packages, house calls, add-ons, extra services, repeat bookings, notes editing, answering booking requests.
+  - No server changes: the compact API already answers these with `X-Certxa-Solo: 1`, and the allow-list covers every call.
+  - Tests: 29 server checks (one wrong expectation: delete answers 204) and 39 browser checks passed.
+- Step 4b-2 (Clients, Catalog) and sending Solo accounts to `/solo` on sign-in: not started.
 
 Owner decisions (2026-11-06):
 
