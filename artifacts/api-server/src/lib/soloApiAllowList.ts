@@ -88,6 +88,11 @@ async function soloAccount(userId: string): Promise<{ solo: boolean; storeId: nu
   return entry;
 }
 
+/** Is this account Solo (app account, or a store on the Solo / Plus plan)? Cached a minute. */
+export async function isSoloUser(userId: string): Promise<boolean> {
+  return (await soloAccount(userId)).solo;
+}
+
 // ── Report: addresses Solo accounts used that are not on the list ────────────
 /** One shape per address: ids, long codes and e-mail-like parts become placeholders. */
 export function pathShape(path: string): string {

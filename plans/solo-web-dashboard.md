@@ -35,7 +35,21 @@
   - Tests: 24 report-mode, 25 enforce-mode and 32 billing-link checks passed; 721/721 API tests passed (4 new in `soloApiAllowList.test.ts`).
   - Rollout: deploy in report mode, read `solo_api_report` after a few days, add anything legitimate to the list, then set `SOLO_API_LOCK=enforce` (export it before `pm2 restart --update-env`).
   - Until step 4 is live, Solo website users still use the salon dashboard, so "web" rows are expected noise. Judge enforcement for the app by the "app" rows.
-- Step 4: not started.
+- **Step 4a — Solo dashboard layout + Home, and the Billing page redesign: LIVE since 2026-11-06 ~23:00 UTC, committed.**
+  - `/solo` has its own layout (`pages/solo/SoloLayout.tsx`): a sidebar on computers and tabs on phones. Only Solo accounts get in; salon accounts go to their dashboard, and signed-out visitors go to sign-in.
+  - Solo accounts are NOT yet sent to `/solo` when they sign in. That waits until Calendar, Clients and Catalog exist.
+  - Home (`pages/solo/SoloHome.tsx`) is the app's Home on the web: greeting, Taken today, Needs your attention (requests and unread texts, answered in the app), Next up, and today's appointments.
+  - The Solo dashboard uses the app's API: `lib/soloApi.ts` sends `X-Certxa-Solo: 1`, and `certxaPro.ts` `proClient()` accepts a Solo website sign-in that sends it. That gives the same data and rules: owner-only, and the paid lock (which now applies to Solo web too).
+  - `certxaPro.ts` `appointmentSelect` now uses LEFT JOIN services, so POS quick sales (no service) appear in the list and count in "Taken today", in the app as well. The app's calendar filters them by `calendarHidden`.
+  - Billing page order (owner): card on file (change / remove), then Plus, then Business Phone, then text credits, then payments.
+  - `routes/soloCard.ts` provides GET/DELETE `/api/solo/billing/card`, plus setup-intent and save. One card serves Plus, Business Phone and credits.
+  - Changing the card updates the Stripe default AND the Plus row (`savedCard` reads the row first), and the old card is detached.
+  - Remove is refused while Plus or a Business Phone line exists, cancelled or not, until it ends. It then empties the card on the Plus row (the column is NOT NULL); `savedCard` skips an empty value.
+  - Cancel is the existing period-end cancel for both Plus (`/api/solo/plus/cancel`) and Business Phone (`/api/pro/phone/cancel`).
+  - The app's billing sign-in can now also reach `/api/solo/billing/card`, `GET /api/pro/phone` and `POST /api/pro/phone/cancel` (method + exact address).
+  - Tests: 7 server and 11 browser checks for Home; 14 server and 21 browser checks for Billing; 721/721 API tests passed.
+  - The change-card form itself (a real Stripe SetupIntent) was not tried: the test server has no Stripe test keys.
+- Step 4b (Calendar, Clients, Catalog) and sending Solo accounts to `/solo` on sign-in: not started.
 
 Owner decisions (2026-11-06):
 

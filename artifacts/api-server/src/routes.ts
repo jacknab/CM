@@ -4342,6 +4342,9 @@ export async function registerRoutes(
   // Certxa Pro text message credits: one tap with a card on file, else certxa.com/pro-credits (routes/soloCredits.ts).
   const { default: soloCreditsRouter } = await import("./routes/soloCredits.js");
   app.use(soloCreditsRouter);
+  // The Solo billing page's card on file (change / remove).
+  const { default: soloCardRouter } = await import("./routes/soloCard.js");
+  app.use(soloCardRouter);
   // Payment links texted from the Certxa Pro app, paid on certxa.com/pay/<token> (routes/payLinks.ts).
   const { default: payLinksRouter } = await import("./routes/payLinks.js");
   app.use(payLinksRouter);

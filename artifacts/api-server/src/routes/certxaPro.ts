@@ -5,6 +5,8 @@ import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { verifySoloToken } from "../lib/soloAuth";
+import { appWebLink } from "../lib/appWebSession";
+import { isSoloUser } from "../lib/soloApiAllowList";
 import { storage } from "../storage";
 import { getBufferMinutes, getHouseCallTravelMinutes, neededWindow } from "../lib/appointmentBuffer";
 import { checkHouseCall, saveClientAddress, type ClientAddress } from "../lib/houseCalls";
@@ -129,7 +131,8 @@ const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a
     'email', (SELECT e.email_address FROM client_emails e WHERE e.client_id=c.id ORDER BY e.is_primary DESC, e.id LIMIT 1)) AS customer,
   json_build_object('id', s.id, 'name', s.name, 'duration', s.duration, 'price', s.price::float8) AS service
   FROM appointments a LEFT JOIN clients c ON c.id=a.customer_id AND c.store_id=a.store_id
-  JOIN services s ON s.id=a.service_id AND s.store_id=a.store_id`;
+  -- LEFT: a POS quick sale has no service (service_id NULL); Home's "Taken today" counts it (2026-11-06).
+  LEFT JOIN services s ON s.id=a.service_id AND s.store_id=a.store_id`;
 
 async function appointment(appointmentId: number, storeId: number) {
   const result = await pool.query(`${appointmentSelect} WHERE a.id=$1 AND a.store_id=$2`, [appointmentId, storeId]);
@@ -150,12 +153,29 @@ function fromApp(req: Request): boolean {
   return !!bearer?.startsWith("Bearer ") && !!verifySoloToken(bearer.slice(7));
 }
 
-function nativeOnly(req: Request, _res: Response, next: NextFunction) {
-  const bearer = req.headers.authorization;
-  if (!bearer?.startsWith("Bearer ") || !verifySoloToken(bearer.slice(7))) return next("router");
+/**
+ * The Certxa Pro app (its token), or the Solo dashboard on the website (owner, 2026-11-06; plans/solo-web-dashboard.md):
+ * a Solo account signed in on the website whose page marks its requests with X-Certxa-Solo: 1. Both get the same
+ * answers and the same rules (owner-only calendar, paid bookings locked). Salon dashboard pages never send the header,
+ * so they keep the web API; the app's billing-only website sign-in never gets this.
+ */
+async function proClient(req: Request): Promise<boolean> {
+  if (fromApp(req)) return true;
+  if (req.headers["x-certxa-solo"] !== "1" || appWebLink(req)) return false;
+  const session = req.session as { userId?: string; staffId?: number } | undefined;
+  if (!session?.userId || session.staffId) return false;
+  return isSoloUser(session.userId);
+}
+
+async function nativeOnly(req: Request, _res: Response, next: NextFunction) {
   // Staff retain the older permission-scoped API. The compact API is for
   // owner sessions and must not bypass staff customer/appointment restrictions.
   if ((req.session as { staffId?: number } | undefined)?.staffId) return next("router");
+  try {
+    if (!(await proClient(req))) return next("router");
+  } catch {
+    return next("router");
+  }
   next();
 }
 
@@ -168,7 +188,7 @@ router.post("/appointments/:id/cancel", isAuthenticated, async (req, res) => {
   try {
     const storeId = await store(req, res);
     if (!storeId) return;
-    if (fromApp(req) && await isPaid(parsedId.data, storeId)) return res.status(409).json(PAID_LOCKED);
+    if (await proClient(req) && await isPaid(parsedId.data, storeId)) return res.status(409).json(PAID_LOCKED);
     const staffId = (req.session as { staffId?: number } | undefined)?.staffId;
     if (staffId) {
       const assigned = await pool.query(

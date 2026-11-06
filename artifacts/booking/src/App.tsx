@@ -154,6 +154,8 @@ const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBookin
 const ProPlus = lazy(() => import("@/pages/ProPlus"));
 const ProCredits = lazy(() => import("@/pages/ProCredits"));
 const SoloBilling = lazy(() => import("@/pages/solo/SoloBilling"));
+const SoloLayout = lazy(() => import("@/pages/solo/SoloLayout"));
+const SoloHome = lazy(() => import("@/pages/solo/SoloHome"));
 const PayLink = lazy(() => import("@/pages/PayLink"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
@@ -573,6 +575,10 @@ function AppRoutes() {
       {/* Certxa Pro text message credits, opened from the app (routes/soloCredits.ts) */}
       <Route path="/pro-credits" element={<ProCredits />} />
       <Route path="/solo/billing" element={<SoloBilling />} />
+      {/* The Solo dashboard (plans/solo-web-dashboard.md): its own layout, only for Solo accounts */}
+      <Route path="/solo" element={<SoloLayout />}>
+        <Route index element={<SoloHome />} />
+      </Route>
       {/* A booking paid from a link the business texted (routes/payLinks.ts) */}
       <Route path="/pay/:token" element={<PayLink />} />
 

@@ -46,7 +46,7 @@ export async function savedCard(storeId: number): Promise<{ customerId: string; 
   if (!isStripeConfigured()) return null;
   const plus = (await pool.query(
     `SELECT stripe_customer_id, stripe_payment_method_id, card_brand, card_last4 FROM saas_billing_profiles
-      WHERE store_id = $1 AND stripe_payment_method_id IS NOT NULL ORDER BY updated_at DESC NULLS LAST LIMIT 1`, [storeId])).rows[0];
+      WHERE store_id = $1 AND COALESCE(stripe_payment_method_id, '') <> '' ORDER BY updated_at DESC NULLS LAST LIMIT 1`, [storeId])).rows[0];
   if (plus?.stripe_customer_id && plus.stripe_payment_method_id) {
     return { customerId: plus.stripe_customer_id, paymentMethodId: plus.stripe_payment_method_id, brand: plus.card_brand ?? null, last4: plus.card_last4 ?? null };
   }
@@ -65,7 +65,7 @@ export async function savedCard(storeId: number): Promise<{ customerId: string; 
   }
 }
 
-async function ensureCustomer(storeId: number): Promise<string> {
+export async function ensureCustomer(storeId: number): Promise<string> {
   const store = (await pool.query(`SELECT name, email, stripe_customer_id FROM locations WHERE id = $1`, [storeId])).rows[0];
   let customerId: string | null = store?.stripe_customer_id ?? null;
   if (customerId) {

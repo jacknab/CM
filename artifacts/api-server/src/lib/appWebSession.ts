@@ -18,9 +18,11 @@ type AppWebLink = { scope: "billing"; storeId: number | null; lastSeen: number }
 /** Where a billing sign-in may go: its pages, and the data those pages read. */
 const PAGE_PATHS = ["/solo/billing", "/pro-plus", "/pro-credits"];
 const API_PATHS = [
-  "/api/solo/plus", "/api/solo/credits", "/api/solo/billing/history",
+  "/api/solo/plus", "/api/solo/credits", "/api/solo/billing/history", "/api/solo/billing/card",
   "/api/app-web-session/end", "/api/auth/user", "/api/auth/logout",
 ];
+/** Exactly these (method + address, nothing under them): Business Phone's billing, not its calls, texts or settings. */
+const API_EXACT = ["GET /api/pro/phone", "POST /api/pro/phone/cancel"];
 
 const under = (path: string, bases: string[]) => bases.some((b) => path === b || path.startsWith(b + "/"));
 
@@ -72,7 +74,7 @@ export function appWebSessionGuard(req: Request, res: Response, next: NextFuncti
 
   if (isApi) {
     // Never a new app link from here (…/web-link): each one is made by the signed-in app.
-    if (!under(path, API_PATHS) || /\/web-link$/.test(path)) {
+    if ((!under(path, API_PATHS) && !API_EXACT.includes(`${req.method} ${path.replace(/\/+$/, "")}`)) || /\/web-link$/.test(path)) {
       res.status(403).json({ error: "Not available from this page.", code: "APP_LINK_SCOPE" });
       return;
     }
