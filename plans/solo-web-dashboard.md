@@ -2,7 +2,7 @@
 
 ## Status
 
-- **Step 1 — Billing and the secure app link: LIVE (deployed 2026-11-06 ~18:30, API + website). Not committed.**
+- **Step 1 — Billing and the secure app link: LIVE (deployed 2026-11-06 ~18:30, API + website). Committed in 66612e30.**
   - Server:
     - `lib/appWebSession.ts` adds the billing-only sign-in: browser-session cookie, 30-minute idle limit, billing pages and data only, no new app links, no remembered device.
     - The `/billing/start`, `/pro-plus/start` and `/pro-credits/start` routes all use it.
@@ -15,7 +15,7 @@
     - `/billing` sends Solo accounts to `/solo/billing`.
     - `/pro-plus` and `/pro-credits` get a "‹ Billing" link back.
   - Tests: 32 + 23 server checks and 19 browser checks passed; 717/717 API tests passed.
-- **Step 2 — Solo removed from the website's plan choices: LIVE (deployed 2026-11-06 ~19:20, API + website). Not committed.**
+- **Step 2 — Solo removed from the website's plan choices: LIVE (deployed 2026-11-06 ~19:20, API + website). Committed in 66612e30.**
   - Server:
     - `lib/soloPlanRules.ts` `planChangeRefusal`: salon accounts can't move to Solo or Plus, and app accounts can't move to salon plans. It is applied in billing subscribe and change-plan, and in subscription subscribe and finalize-setup.
     - `/api/plans/public-plans` drops Solo.
@@ -26,7 +26,16 @@
     - `/manage/billing` also sends Solo accounts to `/solo/billing`.
   - Tests: 17 server and 15 browser checks passed; step 1 checks re-run; 717/717 API tests passed.
   - Left as is: the marketing `/pricing` page still shows Solo (it reads `/api/public/pricing-plans`). The Trial Expired fallback prices are out of date, but that page is never shown now, because an ended trial counts as "suspended".
-- Steps 3–4: not started.
+- **Step 3 — Server allow-list for Solo accounts: LIVE in report mode (deployed 2026-11-06 19:36; migration 0321 applied). Not committed.**
+  - `lib/soloApiAllowList.ts` holds `SOLO_API_ALLOW`, which is the Pro app's 47 API areas read from its source, plus sign-in, Solo billing and public pages.
+  - `soloApiLock` runs right after the session middleware (auth.ts). It reads the account from the cookie or the app's token. A Solo account means `certxa_pro`, or a store on the solo/solo_plus plan.
+  - The `SOLO_API_LOCK` mode (env) is "report" by default; "enforce" refuses with 403 NOT_ON_SOLO; "off" does nothing.
+  - Report: misses are counted in `solo_api_report` (migration 0321: method, path shape, app/web, hits, stores, first/last seen) and saved every minute.
+  - The app's billing-only sign-in is skipped here, because it has its own smaller list.
+  - Tests: 24 report-mode, 25 enforce-mode and 32 billing-link checks passed; 721/721 API tests passed (4 new in `soloApiAllowList.test.ts`).
+  - Rollout: deploy in report mode, read `solo_api_report` after a few days, add anything legitimate to the list, then set `SOLO_API_LOCK=enforce` (export it before `pm2 restart --update-env`).
+  - Until step 4 is live, Solo website users still use the salon dashboard, so "web" rows are expected noise. Judge enforcement for the app by the "app" rows.
+- Step 4: not started.
 
 Owner decisions (2026-11-06):
 

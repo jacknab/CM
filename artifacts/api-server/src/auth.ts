@@ -23,6 +23,7 @@ import { emitPlatformEmailEvent } from "./services/platform-email-engine";
 import { clientIntelligence } from "../shared/schema/intelligence";
 import { runIntelligenceForStore } from "./intelligence/orchestrator";
 import { appWebSessionGuard, endAppWebSession, appWebLink } from "./lib/appWebSession";
+import { soloApiLock } from "./lib/soloApiAllowList";
 import {
   getGoogleLoginAuthUrl,
   exchangeGoogleLoginCode,
@@ -181,6 +182,8 @@ export function setupAuth(app: Express) {
   // A billing sign-in opened from the Certxa Pro app reaches billing only, and ends when idle (lib/appWebSession.ts).
   app.use(appWebSessionGuard);
   app.post("/api/app-web-session/end", endAppWebSession);
+  // Solo accounts may only use what the Certxa Pro app and the Solo pages use (lib/soloApiAllowList.ts).
+  app.use(soloApiLock);
 
   // 10 years — practically "never expires", used for front-desk / kiosk devices
   const KIOSK_MAX_AGE = 1000 * 60 * 60 * 24 * 365 * 10;
