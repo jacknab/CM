@@ -11,6 +11,7 @@ import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { Globe, Copy, Check, ExternalLink, Link2, QrCode, Loader2, Smartphone, LayoutList, Layout, Users, User, Pencil } from "lucide-react";
 import { QRCodeImage } from "@/components/ui/qr-code";
 import { BookingInstructionsCard } from "@/components/BookingInstructionsCard";
+import { SiteAppearanceCard } from "@/components/SiteAppearanceCard";
 import html2canvas from "html2canvas";
 import { useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -434,7 +435,7 @@ ${cards}
           <Card className="p-6">
             <h3 className="text-lg font-semibold mb-3">Booking Page Appearance</h3>
             <p className="text-sm text-muted-foreground mb-4">Choose a layout for your public booking page.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div 
                 className={`border rounded-lg p-4 cursor-pointer hover:border-primary transition-colors flex items-start gap-3 ${theme === 'simple' ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-card'}`}
                 onClick={() => setTheme('simple')}
@@ -471,6 +472,19 @@ ${cards}
                   <div className="text-sm text-muted-foreground mt-1">Traditional stepped booking experience with focus on clarity.</div>
                 </div>
               </div>
+              <div 
+                className={`border rounded-lg p-4 cursor-pointer hover:border-primary transition-colors flex items-start gap-3 ${theme === 'solo' ? 'border-primary bg-primary/5 ring-1 ring-primary' : ''}`}
+                onClick={() => setTheme('solo')}
+                data-testid="theme-solo"
+              >
+                <div className={`p-2 rounded-full ${theme === 'solo' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                  <User className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold">Solo Theme</div>
+                  <div className="text-sm text-muted-foreground mt-1">A full website: services, portfolio, reviews and booking.</div>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end mt-4">
               <Button 
@@ -483,6 +497,8 @@ ${cards}
             </div>
           </Card>
         )}
+
+        {selectedStore?.bookingSlug && <SiteAppearanceCard storeId={selectedStore.id} />}
 
         {selectedStore?.bookingSlug && (
           <>

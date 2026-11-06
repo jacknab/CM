@@ -9,6 +9,7 @@ import type { ContentField } from "./content-extractor";
 import { logger } from "./logger";
 import type { TenantData } from "./tenant-data";
 import { buildTenantSeo, type TenantSeoMeta, type TenantSeoOverrides } from "./tenant-seo";
+import { CATEGORY_PAGE_STORE_IDS, categoryNotFoundHtml, categoryPagePaths, categoryPagesFor, categoryPageUrl, renderCategoryPage } from "./categoryPages";
 
 // ── Shared path helpers ───────────────────────────────────────────────────────
 
@@ -1021,7 +1022,18 @@ async function buildTenantSitemapPaths(website: {
 }): Promise<string[]> {
   const isAuto = website.publisherType === "auto" || website.publisher_type === "auto";
   const storeid = website.storeid;
-  if (!isAuto || storeid == null) return [];
+  if (storeid == null) return [];
+  // A template website with service category pages (lib/categoryPages.ts) lists them after its homepage.
+  if (!isAuto) {
+    if (!CATEGORY_PAGE_STORE_IDS.has(Number(storeid))) return [];
+    try {
+      const { buildTenantData } = await import("./tenant-data");
+      return categoryPagePaths(categoryPagesFor(await buildTenantData(storeid, { id: 0, name: "", slug: "" }), Number(storeid)));
+    } catch (err) {
+      logger.warn({ err, storeid }, "Failed to build category page paths; falling back to homepage only");
+      return [];
+    }
+  }
 
   try {
     const { buildTenantData } = await import("./tenant-data");
@@ -1230,7 +1242,9 @@ async function serveTenantSite(
   },
   splat: string | undefined,
   basePath: string,
-  res: Response
+  res: Response,
+  /** The page's own path on the website ("services/pedicures/"). Used only for service category pages. */
+  routePath?: string
 ): Promise<void> {
   if (!website.templateId) {
     res.status(422).send("<html><body><p>No template assigned to this website.</p></body></html>");
@@ -1266,8 +1280,10 @@ async function serveTenantSite(
   let seo: SeoMeta = { canonical: canonicalUrl, ...savedSeo };
   const storeId = website.storeid == null ? null : Number(website.storeid);
   // The salon switched its booking system off (lib/bookingSystem.ts): the website stays, its booking buttons go.
+  let bookingOn = true;
   if (storeId !== null && Number.isInteger(storeId) && storeId > 0 && await isBookingSystemOff(storeId)) {
     replacementScript += HIDE_BOOKING_SCRIPT;
+    bookingOn = false;
   }
   // Build tenant data when we have a storeId so we can inject live STORE_DATA
   // into the served template. This ensures pre-built demo content is
@@ -1302,6 +1318,26 @@ async function serveTenantSite(
     } catch (err) {
       logger.warn({ err, websiteId: website.id }, "Failed to build store data injection script");
     }
+  }
+
+  // Service category pages (lib/categoryPages.ts), only for salons that have them: every /services/... address is
+  // either a real category page or a real 404, never the homepage.
+  const pagePath = (routePath ?? splat ?? "").replace(/^\/+/, "");
+  if (storeId !== null && CATEGORY_PAGE_STORE_IDS.has(storeId) && /^services(\/|$)/i.test(pagePath)) {
+    const m = /^services\/([^/]+)(\/)?$/.exec(pagePath);
+    const pages = tenantDataForInjection ? categoryPagesFor(tenantDataForInjection, storeId) : [];
+    const page = m ? pages.find((p) => p.slug === m[1]) : undefined;
+    res.setHeader("Cache-Control", "no-store");
+    if (page && !m![2]) {
+      res.redirect(301, categoryPageUrl(canonicalUrl, page));
+      return;
+    }
+    if (page && tenantDataForInjection) {
+      res.status(200).type("html").send(renderCategoryPage(tenantDataForInjection, page, pages, canonicalUrl, bookingOn));
+      return;
+    }
+    res.status(404).type("html").send(categoryNotFoundHtml(tenantDataForInjection?.business?.name ?? website.name));
+    return;
   }
 
   if (NOINDEX_SITE_SLUGS.has(website.slug)) {
@@ -1436,7 +1472,7 @@ export async function handleTenantSiteBySlug(req: Request, res: Response): Promi
     ? req.path.slice(sitePrefix.length + 1)
     : undefined;
   const basePath = `/api/tenant/${slug}/site`;
-  await serveTenantSite(website, splat, basePath, res);
+  await serveTenantSite(website, splat, basePath, res, splat ?? req.path);
 }
 
 // ── Tenant site by custom domain (reads Host header; called from Nginx) ───────

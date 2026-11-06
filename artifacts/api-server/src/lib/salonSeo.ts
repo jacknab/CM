@@ -20,6 +20,7 @@ import { loadLineSettings } from "./onlineLineService";
 import { addressIsPrivate } from "./publicStore";
 import { displayPhone, toE164 } from "./tenant-seo";
 import { resolveStorePlan } from "./featureAccess";
+import { isBookingSystemOff } from "./bookingSystem";
 import { craftFor, craftTitle, placesSentence, proByLabel, soloKeywords, type SoloPlaces } from "./proCraft";
 
 export interface SalonFacts {
@@ -33,7 +34,6 @@ export interface SalonFacts {
   streetAddress: string | null;
   postcode: string | null;
   phone: string | null;
-  email: string | null;
   /** Only when the street address is public. */
   latitude: number | null;
   longitude: number | null;
@@ -53,6 +53,8 @@ export interface SalonFacts {
   places: SoloPlaces;
   /** A barbershop or haircut studio with the Online Check-In Line on: where walk-ins check in from their phone. */
   onlineCheckin: string | null;
+  /** False when the business switched its booking system off: nothing then says it can be booked online. */
+  bookingOn: boolean;
 }
 
 const CACHE_MS = 5 * 60_000;
@@ -91,7 +93,7 @@ export async function salonFacts(slug: string): Promise<SalonFacts | null> {
 
 async function loadFacts(slug: string): Promise<SalonFacts | null> {
   const { rows } = await pool.query(
-    `SELECT id, name, category, address, city, state, postcode, phone, email, store_latitude, store_longitude, booking_slug, booking_site, own_place, address_private, account_status,
+    `SELECT id, name, category, address, city, state, postcode, phone, store_latitude, store_longitude, booking_slug, booking_site, own_place, address_private, account_status,
             house_calls, house_call_radius_miles, (SELECT first_name FROM users u WHERE u.id = locations.user_id) AS owner_first_name
        FROM locations WHERE lower(booking_slug) = $1 LIMIT 1`,
     [slug],
@@ -127,10 +129,10 @@ async function loadFacts(slug: string): Promise<SalonFacts | null> {
     streetAddress: !privateAddress && s.address ? String(s.address) : null,
     postcode: !privateAddress && s.postcode ? String(s.postcode) : null,
     phone: s.phone ?? null,
-    email: s.email ?? null,
     latitude: !privateAddress && s.store_latitude != null && Number.isFinite(Number(s.store_latitude)) ? Number(s.store_latitude) : null,
     longitude: !privateAddress && s.store_longitude != null && Number.isFinite(Number(s.store_longitude)) ? Number(s.store_longitude) : null,
     canonical: `https://${s.booking_slug}.certxa.com/`,
+    bookingOn: !(await isBookingSystemOff(Number(s.id))),
     about: site.about?.trim() ? site.about.trim().replace(/\s+/g, " ") : null,
     image: site.coverImage || site.logoImage || null,
     instagram: site.instagram?.trim() || null,
@@ -196,7 +198,8 @@ export function salonFaq(f: SalonFacts): { q: string; a: string }[] {
   if (f.onlineCheckin) faq.push({ q: `Does ${name} take walk-ins? Can I check in online?`,
     a: `Yes. Walk-ins are welcome, and you can join the line from your phone at ${f.onlineCheckin} — it shows the current wait and texts you when it's time to come in.` });
   faq.push({ q: `How do I book an appointment ${f.solo ? "with" : "at"} ${name}?`,
-    a: `Book online at ${f.canonical} — choose a service and an open time.${f.phone ? ` You can also call ${f.phone}.` : ""}` });
+    a: f.bookingOn ? `Book online at ${f.canonical} — choose a service and an open time.${f.phone ? ` You can also call ${f.phone}.` : ""}`
+      : `${name} isn't taking online bookings right now.${f.phone ? ` Call ${f.phone} to make an appointment.` : ""}` });
   if (f.services.length) faq.push({ q: `What services does ${name} offer?`, a: `${f.services.slice(0, 12).map((s) => s.name).join(", ")}.` });
   const p = priced(f);
   if (p.length) {
@@ -216,7 +219,7 @@ export function salonHead(f: SalonFacts): SalonHead {
   // "Toby's offers Basic Manicure, Full Set Acrylics, and Gel X Full Set in Denver, CO. Book online or call (720) 243-6886."
   // Built from whole sentences that fit (the most booked services first), never cut mid-sentence.
   const phone = displayPhone(f.phone);
-  const close = `Book online${phone ? ` or call ${phone}` : ""}.`;
+  const close = f.bookingOn ? `Book online${phone ? ` or call ${phone}` : ""}.` : phone ? `Call ${phone}.` : "";
   let description = "";
   for (let n = Math.min(3, f.services.length); n >= 0 && !description; n--) {
     const names = f.services.slice(0, n).map((s) => s.name);
@@ -226,7 +229,7 @@ export function salonHead(f: SalonFacts): SalonHead {
       ? `${f.byLabel ?? nameWithWork(f)}${f.cityState ? ` in ${f.cityState}` : ""}${list ? `: ${list}` : ""}.${placesSentence(f.places) ? ` ${placesSentence(f.places)}` : ""}`
       : list ? `${f.name} offers ${list}${f.cityState ? ` in ${f.cityState}` : ""}.`
       : `${f.name} is a ${f.category ? f.category.toLowerCase() : "salon"}${f.cityState ? ` in ${f.cityState}` : ""}.`;
-    const both = `${first} ${close}`;
+    const both = `${first} ${close}`.trim();
     if (both.length <= 158) description = both;
     else if (n === 0) description = clip(first, 158);
   }
@@ -246,7 +249,6 @@ export function salonHead(f: SalonFacts): SalonHead {
     ...(f.byLabel ? { alternateName: f.byLabel } : {}),
     url: f.canonical,
     ...(f.phone ? { telephone: toE164(f.phone) ?? f.phone } : {}),
-    ...(f.email ? { email: f.email } : {}),
     ...(f.image ? { image: f.image } : {}),
     ...(f.city ? { areaServed: { "@type": "City", name: f.city } } : {}),
     ...(f.latitude != null && f.longitude != null ? { geo: { "@type": "GeoCoordinates", latitude: f.latitude, longitude: f.longitude } } : {}),
@@ -273,11 +275,11 @@ export function salonHead(f: SalonFacts): SalonHead {
         })),
       },
     } : {}),
-    potentialAction: [
-      { "@type": "ReserveAction", target: { "@type": "EntryPoint", urlTemplate: f.canonical, actionPlatform: ["https://schema.org/DesktopWebPlatform", "https://schema.org/MobileWebPlatform"] } },
+    ...((actions) => (actions.length ? { potentialAction: actions } : {}))([
+      ...(f.bookingOn ? [{ "@type": "ReserveAction", target: { "@type": "EntryPoint", urlTemplate: f.canonical, actionPlatform: ["https://schema.org/DesktopWebPlatform", "https://schema.org/MobileWebPlatform"] } }] : []),
       // Walk-ins join the line from their phone (Online Check-In Line).
       ...(f.onlineCheckin ? [{ "@type": "JoinAction", name: "Check in online", target: { "@type": "EntryPoint", urlTemplate: f.onlineCheckin, actionPlatform: ["https://schema.org/MobileWebPlatform", "https://schema.org/DesktopWebPlatform"] } }] : []),
-    ],
+    ]),
   };
   const faq = salonFaq(f);
   const jsonLd = {
@@ -295,7 +297,10 @@ export function salonHead(f: SalonFacts): SalonHead {
  * The salon's facts as plain readable text, put inside the page before the booking app starts (GEO): what crawlers
  * that don't run JavaScript — most AI ones — read. The app replaces it as soon as it starts.
  */
-export function salonSummaryHtml(f: SalonFacts): string {
+/** A Solo website's service category pages (lib/soloCategoryPages.ts): where the summary, sitemap and llms.txt link. */
+export type ServicePageLink = { name: string; url: string };
+
+export function salonSummaryHtml(f: SalonFacts, servicePages: ServicePageLink[] = []): string {
   const p = priced(f);
   const faq = salonFaq(f);
   const where = addressLine(f);
@@ -306,16 +311,18 @@ export function salonSummaryHtml(f: SalonFacts): string {
 ${kindIn(f) ? `<p>${esc(f.solo ? `Independent ${craftFor(f.category).pro}${f.cityState ? ` in ${f.cityState}` : ""}` : kindIn(f))}${f.rating ? ` · Rated ${f.rating.value}/5 (${f.rating.count} ${f.rating.source} reviews)` : ""}</p>` : ""}
 ${f.solo && placesSentence(f.places) ? `<p>${esc(placesSentence(f.places))}</p>` : ""}
 ${f.about ? `<p>${esc(f.about)}</p>` : ""}
-<p><a href="${esc(f.canonical)}">Book an appointment online</a>${f.phone ? ` · Call <a href="tel:${esc(f.phone.replace(/[^\d+]/g, ""))}">${esc(f.phone)}</a>` : ""}</p>
+${f.bookingOn ? `<p><a href="${esc(f.canonical)}">Book an appointment online</a>${f.phone ? ` · Call <a href="tel:${esc(f.phone.replace(/[^\d+]/g, ""))}">${esc(f.phone)}</a>` : ""}</p>`
+  : `<p>Not taking online bookings right now.${f.phone ? ` Call <a href="tel:${esc(f.phone.replace(/[^\d+]/g, ""))}">${esc(f.phone)}</a>` : ""}</p>`}
 ${where ? `<h2>Location</h2><p>${esc(where)}</p>` : ""}
 ${hasHours(f) ? `<h2>Hours</h2><ul>${hoursText(f).map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
 ${services ? `<h2>Services${p.length ? " and prices" : ""}</h2><ul>${services}</ul>` : ""}
+${servicePages.length ? `<h2>Services by category</h2><ul>${servicePages.map((x) => `<li><a href="${esc(x.url)}">${esc(x.name)}</a></li>`).join("")}</ul>` : ""}
 ${faq.length ? `<h2>Questions</h2>${faq.map((x) => `<h3>${esc(x.q)}</h3><p>${esc(x.a)}</p>`).join("")}` : ""}
 </main>`;
 }
 
 /** The booking app's page with the salon's head and readable summary in place of the generic ones. */
-export function applySalonPage(template: string, f: SalonFacts): string {
+export function applySalonPage(template: string, f: SalonFacts, servicePages: ServicePageLink[] = []): string {
   const head = salonHead(f);
   const t = esc(head.title), d = esc(head.description), c = esc(f.canonical), n = esc(f.name), k = esc(head.keywords);
   const img = f.image ? esc(f.image) : null;
@@ -324,7 +331,8 @@ export function applySalonPage(template: string, f: SalonFacts): string {
     [/<meta\s+name=["']description["'][^>]*>/i, `<meta name="description" content="${d}" />`],
     [/<meta\s+name=["']robots["'][^>]*>/i, `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />`],
     [/<meta\s+name=["']keywords["'][^>]*>/i, `<meta name="keywords" content="${k}" />`],
-    [/<link\s+rel=["']canonical["'][^>]*>/i, `<link rel="canonical" href="${c}" />`],
+    // Marked as the salon's own, so the booking app's head manager leaves it alone (components/SeoManager.tsx).
+    [/<link\s+rel=["']canonical["'][^>]*>/i, `<link rel="canonical" href="${c}" data-salon-page="true" />`],
     [/<meta\s+property=["']og:type["'][^>]*>/i, `<meta property="og:type" content="business.business" />`],
     [/<meta\s+property=["']og:title["'][^>]*>/i, `<meta property="og:title" content="${t}" />`],
     [/<meta\s+property=["']og:description["'][^>]*>/i, `<meta property="og:description" content="${d}" />`],
@@ -352,7 +360,17 @@ export function applySalonPage(template: string, f: SalonFacts): string {
   // Structured data (escaped so nothing in a salon's text can close the script) and the llms.txt pointer.
   const ld = JSON.stringify(head.jsonLd).replace(/</g, "\\u003c");
   html = html.replace("</head>", `  <link rel="alternate" type="text/markdown" href="${c}llms.txt" title="${n} — facts for AI assistants" />\n  <script type="application/ld+json">${ld}</script>\n  </head>`);
-  return html.replace(/<div id="root"><\/div>/, `<div id="root">${salonSummaryHtml(f)}</div>`);
+  return html.replace(/<div id="root"><\/div>/, `<div id="root">${salonSummaryHtml(f, servicePages)}</div>`);
+}
+
+/** The public, read-only data the salon's page loads: the same anyone visiting it gets (lib/publicStore.ts rules). */
+export function salonPageReads(slug: string): string[] {
+  const s = encodeURIComponent(slug);
+  return [
+    "/api/store/by-subdomain",
+    `/api/public/booking-payment-policy/${s}`,
+    ...["services", "reviews", "gallery", "service-reviews", "shop", "team", "service-pages"].map((part) => `/api/public/store/${s}/${part}`),
+  ];
 }
 
 /** robots.txt for the salon's subdomain: everything public is open, AI crawlers included. */
@@ -361,6 +379,9 @@ export function salonRobotsTxt(f: SalonFacts): string {
     `# ${f.name} — ${f.canonical}`,
     "User-agent: *",
     "Allow: /",
+    // Only the public reads this page makes as it loads, so a crawler that renders it sees the salon instead of
+    // "not found". Exact paths for this salon ($ ends the match); every other /api/ address, sign-in included, stays shut.
+    ...salonPageReads(f.slug).map((p) => `Allow: ${p}$`),
     "Disallow: /api/",
     "",
     "# AI search and answer engines are welcome.",
@@ -371,18 +392,18 @@ export function salonRobotsTxt(f: SalonFacts): string {
   ].join("\n");
 }
 
-export function salonSitemapXml(f: SalonFacts): string {
+export function salonSitemapXml(f: SalonFacts, servicePages: ServicePageLink[] = []): string {
   const today = new Date().toISOString().slice(0, 10);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${esc(f.canonical)}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>${esc(f.canonical)}llms.txt</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.3</priority></url>
+${servicePages.map((x) => `  <url><loc>${esc(x.url)}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>\n`).join("")}  <url><loc>${esc(f.canonical)}llms.txt</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.3</priority></url>
 </urlset>
 `;
 }
 
 /** llms.txt: the salon's facts for AI assistants, in plain Markdown (GEO). */
-export function salonLlmsTxt(f: SalonFacts): string {
+export function salonLlmsTxt(f: SalonFacts, servicePages: ServicePageLink[] = []): string {
   const lines = [`# ${who(f)}`, "", `> ${salonHead(f).description}`, ""];
   lines.push("## About", "");
   if (f.solo) {
@@ -394,7 +415,7 @@ export function salonLlmsTxt(f: SalonFacts): string {
   const where = addressLine(f);
   if (where) lines.push(`- Location: ${where}`);
   if (f.phone) lines.push(`- Phone: ${f.phone}`);
-  lines.push(`- Book online: ${f.canonical}`);
+  lines.push(f.bookingOn ? `- Book online: ${f.canonical}` : `- Website: ${f.canonical} (not taking online bookings right now)`);
   if (f.onlineCheckin) lines.push(`- Walk-ins: check in online (live wait, text when it's time to come in): ${f.onlineCheckin}`);
   if (f.rating) lines.push(`- Rating: ${f.rating.value}/5 from ${f.rating.count} ${f.rating.source} reviews`);
   if (f.instagram) lines.push(`- Instagram: ${f.instagram}`);
@@ -404,8 +425,9 @@ export function salonLlmsTxt(f: SalonFacts): string {
     lines.push("", `## Services${priced(f).length ? " and prices" : ""}`, "");
     for (const s of f.services) lines.push(`- ${s.name}${f.showPrices && s.price ? ` — ${money(s.price)}` : ""}${s.duration ? ` (${s.duration} min)` : ""}`);
   }
+  if (servicePages.length) lines.push("", "## Service pages", "", ...servicePages.map((x) => `- [${x.name}](${x.url})`));
   const faq = salonFaq(f);
   if (faq.length) lines.push("", "## Questions", "", ...faq.flatMap((x) => [`### ${x.q}`, "", x.a, ""]));
-  lines.push("", "Bookings are made online at the link above (powered by Certxa).", "");
+  lines.push("", f.bookingOn ? "Bookings are made online at the link above (powered by Certxa)." : "Online booking is switched off for now (powered by Certxa).", "");
   return lines.join("\n");
 }

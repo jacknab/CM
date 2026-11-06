@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 
 interface BookingContextValue {
   isOpen: boolean;
@@ -21,6 +21,20 @@ export function BookingProvider({ children }: { children: ReactNode }) {
     setIsOpen(true);
     document.body.style.overflow = 'hidden';
   };
+
+  // A link to "/?book=<serviceId>" (a service category page's Book button) opens the booking panel with that service
+  // chosen. The parameter is removed from the address so a refresh doesn't open it again.
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      const id = url.searchParams.get('book');
+      if (!id || !/^\d+$/.test(id)) return;
+      url.searchParams.delete('book');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+      openBooking(Number(id));
+    } catch { /* an unusual address: leave the page as it is */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const closeBooking = () => {
     setIsOpen(false);

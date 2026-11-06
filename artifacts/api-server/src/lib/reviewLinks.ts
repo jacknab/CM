@@ -22,6 +22,19 @@ export async function usesBuiltInReviewsOnly(storeId: number): Promise<boolean> 
 }
 
 /**
+ * The business's Google reviews as its website names them (owner, 2026-11-05: a Google review is always shown as
+ * Google's): how many and their average, or null when the website shows none — a Solo business (Certxa's own
+ * reviews only) or one with no synced Google reviews.
+ */
+export async function googleReviewSummary(storeId: number): Promise<{ rating: number; count: number } | null> {
+  if (await usesBuiltInReviewsOnly(storeId)) return null;
+  const { rows } = await pool.query<{ n: number; avg: number | null }>(
+    "SELECT COUNT(*)::int AS n, AVG(rating)::float AS avg FROM google_reviews WHERE store_id = $1", [storeId]);
+  const count = Number(rows[0]?.n ?? 0);
+  return count > 0 ? { count, rating: Math.round(Number(rows[0]?.avg ?? 0) * 10) / 10 } : null;
+}
+
+/**
  * Only the token itself is a new concept — actual review content is stored
  * in the existing `reviews` table (see routes.ts's REVIEWS section and
  * shared/schema.ts's `reviews` export), same as the pre-existing

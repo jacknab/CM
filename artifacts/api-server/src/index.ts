@@ -136,6 +136,7 @@ process.on("uncaughtException", (err) => {
 
 import cors from "cors";
 import express, { type Request, Response, NextFunction } from "express";
+import { isPublicBookingRead } from "./lib/publicRateLimit";
 import rateLimit from "express-rate-limit";
 import { registerRoutes } from "./routes";
 import { setupAuth } from "./auth";
@@ -469,7 +470,21 @@ app.use("/api/auth/staff-request-otp", authLimiter);
 app.use("/api/auth/staff-otp-login", authLimiter);
 app.use("/api/auth/google", authLimiter);
 app.use("/api/support/auth/login", authLimiter);
-app.use("/api/public", publicLimiter);
+// A booking page reads a dozen small, read-only things as it loads (the business, its services, team, reviews, photos,
+// prices, open times) and more as the client taps through days. 60 a minute let one busy page — or a few clients on
+// the salon's Wi-Fi or a phone carrier's shared address — run out and see an empty menu (owner, 2026-11-06). Those
+// reads (GET only) get their own, larger allowance; everything else under /api/public — booking, house-call checks,
+// waitlist, shop orders and any other write — keeps the 60-a-minute limit.
+const publicReadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 240,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please try again later." },
+  skip: (req) => process.env.NODE_ENV !== "production",
+});
+app.use("/api/public", (req: Request, res: Response, next: NextFunction) =>
+  (isPublicBookingRead(req.method, req.path) ? publicReadLimiter : publicLimiter)(req, res, next));
 app.use("/api/book", publicLimiter);
 app.use("/api/reviews/gate", publicLimiter);
 // Public tenant-data endpoints (/api/tenant/:slug/data, /status, etc.) do
@@ -601,6 +616,13 @@ app.get("/api/health", async (_req, res) => {
   });
 }
 
+// Salon staff and device screens are never search results, on any host: the kiosk, front desk and the nail and barber
+// stations. A header, so it holds before any page or script loads, and on salon websites that would otherwise answer
+// these paths with their homepage.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (/^\/(kiosk|frontdesk|checkin-kiosk|nail|barber)(\/|$)/.test(req.path)) res.setHeader("X-Robots-Tag", "noindex, nofollow");
+  next();
+});
 app.use(subdomainMiddleware);
 
 // Root (/) is served by the PHP middleware below — phpMiddleware handles isPhpRoute("/")
@@ -1760,7 +1782,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
           try {
             const facts = await salonFacts(decodeURIComponent(segments[2]));
             if (facts) {
-              res.status(200).type("html").send(applySalonPage(indexTemplate, facts));
+              // A Solo website links its service category pages from the summary (lib/soloCategoryPages.ts).
+              const { soloCategoryLinksBySlug } = await import("./lib/soloCategoryPages");
+              const pages = await soloCategoryLinksBySlug(decodeURIComponent(segments[2]), facts).catch(() => []);
+              res.status(200).type("html").send(applySalonPage(indexTemplate, facts, pages));
               return;
             }
           } catch (err) {

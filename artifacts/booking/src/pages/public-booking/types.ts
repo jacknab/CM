@@ -25,6 +25,10 @@ export interface StoreData {
   displayRating?: number | null;
   displayReviewCount?: number;
   reviewSource?: "google" | "native" | null;
+  /** The business's Google reviews, named as Google's on the website (null: none shown, or a Solo business). */
+  googleReviews?: { rating: number; count: number } | null;
+  /** false: the business switched its booking system off; the website stays, its booking controls don't. */
+  bookingSystem?: boolean;
   businessHours?: {
     id: number;
     dayOfWeek: number;

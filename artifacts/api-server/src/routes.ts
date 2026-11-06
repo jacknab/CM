@@ -1,6 +1,6 @@
 import { forgetBookingSystem, isBookingSystemOff, isBookingSystemOffBySlug } from "./lib/bookingSystem";
 import { printSettingsOf } from "@shared/printSettings";
-import { usesBuiltInReviewsOnly } from "./lib/reviewLinks";
+import { googleReviewSummary, usesBuiltInReviewsOnly } from "./lib/reviewLinks";
 import { isAccountStopped } from "./lib/accountSuspension";
 import express, { type Express, type Request, type RequestHandler, type Response } from "express";
 import { checkHouseCall, placeOfZip, saveClientAddress, type ClientAddress } from "./lib/houseCalls";
@@ -8925,7 +8925,10 @@ If you have any questions, please contact your administrator.
       // Public (a salon's own subdomain): no internal fields, no private street address (lib/publicStore.ts).
       const publicStore = publicStoreView(store);
       const hours = await storage.getBusinessHours(store.id);
-      return res.json({ ...publicStore, businessHours: hours, byLabel: store.bookingSlug ? (await salonFacts(store.bookingSlug))?.byLabel ?? null : null });
+      return res.json({ ...publicStore, businessHours: hours, byLabel: store.bookingSlug ? (await salonFacts(store.bookingSlug))?.byLabel ?? null : null,
+        // As /api/public/store/:slug gives them: booking switched on or off, and the Google reviews the website names.
+        bookingSystem: !(await isBookingSystemOff(store.id)),
+        googleReviews: await googleReviewSummary(store.id) });
     } else {
       return res.status(404).json({ message: "Store not found for this subdomain" });
     }
@@ -8990,6 +8993,8 @@ If you have any questions, please contact your administrator.
         displayRating, displayReviewCount, reviewSource,
         // false: the salon switched its booking system off (lib/bookingSystem.ts) — no booking from this page.
         bookingSystem: !(await isBookingSystemOff(store.id)),
+        // The Google reviews the website shows, named as Google's (null: none, or a Solo business).
+        googleReviews: await googleReviewSummary(store.id),
       });
     } catch (error) {
       return res.status(500).json({ message: "Internal server error" });
@@ -9134,6 +9139,8 @@ If you have any questions, please contact your administrator.
             reviewerPhotoUrl: r.reviewerPhotoUrl,
             reviewMediaItems: r.reviewMediaItems,
             reviewCreateTime: r.reviewCreateTime,
+            // Where the review was written, so a website names Google as its source (owner, 2026-11-05).
+            source: "google" as const,
           }))
         );
       }
@@ -9173,6 +9180,7 @@ If you have any questions, please contact your administrator.
           reviewCreateTime: r.createdAt,
           ownerResponse: r.ownerResponse,
           ownerResponseAt: r.ownerResponseAt,
+          source: "certxa" as const,
         }))
       );
     } catch (error) {
@@ -9504,6 +9512,56 @@ If you have any questions, please contact your administrator.
       }
     } catch { /* never blocks on a failed check */ }
     next();
+  });
+
+  // GET /api/public/store/:slug/team — the professionals clients can book (active, on the calendar, doing at least one
+  // service): photo, role, bio and the services each does, for the website's team section and "choose a professional".
+  // Barbershops and hair salons also get each one's own price for each service (lib/pricingLevels.ts), the price the
+  // booking is made at; every other business books at the service's price, so no prices are sent for them.
+  app.get("/api/public/store/:slug/team", async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(req.params.slug);
+      if (!store) return res.status(404).json({ message: "Store not found" });
+      const status = ((store as any).accountStatus ?? "active").toLowerCase();
+      if (status === "suspended" || status === "canceled") return res.json([]);
+      const t = await priceTable(store.id);
+      const info = new Map((await pool.query<{ id: number; role: string | null; bio: string | null; avatar_url: string | null }>(
+        "SELECT id, role, bio, avatar_url FROM staff WHERE store_id = $1", [store.id])).rows.map((r) => [Number(r.id), r]));
+      const priced = usesPricingLevels((store as any).category);
+      const team = t.staff.map((m) => {
+        const mine = t.prices.filter((p) => p.staffId === m.id);
+        const row = info.get(m.id);
+        return {
+          id: m.id,
+          name: m.name,
+          role: displayRole(row?.role ?? null, (store as any).category ?? null),
+          bio: row?.bio?.trim() || null,
+          avatarUrl: row?.avatar_url ?? m.avatarUrl,
+          serviceIds: mine.map((p) => p.serviceId),
+          ...(priced ? { prices: Object.fromEntries(mine.map((p) => [p.serviceId, p.price])) } : {}),
+        };
+      }).filter((m) => m.serviceIds.length > 0);
+      return res.json(team);
+    } catch (error) {
+      console.error("[public team]", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // GET /api/public/store/:slug/service-pages — a Solo website's service category pages ({ name, url }), the same list
+  // its sitemap and summary give (lib/soloCategoryPages.ts), for the links on its homepage. Empty for any other design.
+  app.get("/api/public/store/:slug/service-pages", async (req, res) => {
+    try {
+      const store = await storage.getStoreBySlug(req.params.slug);
+      if (!store || (store as any).bookingTheme !== "solo" || !(store as any).bookingSlug) return res.json([]);
+      const facts = await salonFacts(String((store as any).bookingSlug));
+      if (!facts) return res.json([]);
+      const { soloCategoryLinks } = await import("./lib/soloCategoryPages");
+      return res.json(await soloCategoryLinks({ id: store.id, category: (store as any).category ?? null, bookingTheme: "solo" }, facts));
+    } catch (error) {
+      console.error("[service-pages]", error);
+      return res.json([]);
+    }
   });
 
   app.get("/api/public/store/:slug/availability", async (req, res) => {

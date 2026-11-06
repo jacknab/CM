@@ -1,5 +1,6 @@
 import { isBookingSystemOff } from "../lib/bookingSystem";
 import { salonFacts, salonLlmsTxt, salonRobotsTxt, salonSitemapXml } from "../lib/salonSeo";
+import { serveSoloServicesPath, soloCategoryLinks } from "../lib/soloCategoryPages";
 import { type Request, type Response, type NextFunction } from 'express';
 import { isAccountStopped } from "../lib/accountSuspension";
 import { db } from '../db';
@@ -378,8 +379,9 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
             </div></body></html>`);
         }
 
-        // The salon switched its booking system off (lib/bookingSystem.ts): its booking page is closed.
-        if (await isBookingSystemOff(store.id)) {
+        // The salon switched its booking system off (lib/bookingSystem.ts): its booking page is closed. The Solo design
+        // is the business's whole website, so it stays up with its booking controls hidden (owner, 2026-11-05).
+        if ((store as any).bookingTheme !== "solo" && await isBookingSystemOff(store.id)) {
           const storeName = String((store as any).name ?? "This business").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
           return res.status(200).send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${storeName}</title>
             <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#fafafa;color:#1a1a1a;}
@@ -398,10 +400,18 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
             if (facts) {
               res.setHeader("Cache-Control", "public, max-age=3600");
               if (file === "/robots.txt") return res.type("text/plain").send(salonRobotsTxt(facts));
-              if (file === "/sitemap.xml") return res.type("application/xml").send(salonSitemapXml(facts));
-              return res.type("text/markdown; charset=utf-8").send(salonLlmsTxt(facts));
+              // A Solo website lists its service category pages too (lib/soloCategoryPages.ts).
+              const pages = await soloCategoryLinks(store as any, facts).catch(() => []);
+              if (file === "/sitemap.xml") return res.type("application/xml").send(salonSitemapXml(facts, pages));
+              return res.type("text/markdown; charset=utf-8").send(salonLlmsTxt(facts, pages));
             }
           }
+        }
+
+        // A Solo website's service category pages (/services/<category>/), built on the server; any other /services
+        // address there is a real 404, never the homepage (lib/soloCategoryPages.ts).
+        if ((store as any).bookingTheme === "solo" && /^\/services(\/|$)/i.test(req.path || "")) {
+          return serveSoloServicesPath(req, res, store as any);
         }
 
         // Rewrite the root path so the booking SPA receives the slug while the

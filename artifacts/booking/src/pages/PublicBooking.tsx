@@ -110,8 +110,10 @@ export default function PublicBooking() {
   } })();
 
   // Barbershops and hair salons: their own booking page, priced by professional (pricing levels). Every other
-  // business, nail salons included, gets its design exactly as before. ?previewTheme= still shows a design.
-  if (!previewTheme && /barber|hair/i.test(effectiveStore.category ?? "")) {
+  // business, nail salons included, gets its design exactly as before. ?previewTheme= still shows a design, and a
+  // business that chose the Solo design gets it whatever its type: Solo shows each professional's own price too
+  // (owner, 2026-11-05: Solo is a design, not a trade).
+  if (!previewTheme && theme !== "solo" && /barber|hair/i.test(effectiveStore.category ?? "")) {
     return <ProBooking store={effectiveStore as StoreData} slug={effectiveSlug!} fallback={themed} />;
   }
   return themed;

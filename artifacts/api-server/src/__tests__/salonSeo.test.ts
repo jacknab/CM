@@ -4,9 +4,9 @@ import { applySalonPage, salonFaq, salonHead, salonLlmsTxt, salonRobotsTxt, type
 
 const facts = (over: Partial<SalonFacts> = {}): SalonFacts => ({
   slug: "tobys", name: "Toby’s", category: "Nail Salon", city: "Denver", state: "CO", cityState: "Denver, CO",
-  streetAddress: "100 Main St", postcode: "80202", phone: "7202436886", email: "hi@tobys.example", latitude: 39.74, longitude: -104.99,
+  streetAddress: "100 Main St", postcode: "80202", phone: "7202436886", latitude: 39.74, longitude: -104.99,
   canonical: "https://tobys.certxa.com/",
-  about: null, image: null, instagram: null, showPrices: true, onlineCheckin: null,
+  about: null, image: null, instagram: null, showPrices: true, onlineCheckin: null, bookingOn: true,
   services: [
     { name: "Gel Manicure", price: 35, duration: 45, category: "Manicure" },
     { name: "Pedicure", price: 40, duration: 50, category: "Pedicure" },
@@ -28,7 +28,7 @@ describe("a salon's booking page for search and AI engines", () => {
     expect(html).toContain('<meta name="geo.region" content="US-CO" />');
     expect(html).toContain('<meta name="geo.placename" content="Denver" />');
     expect(html).toContain('hreflang="x-default" href="https://tobys.certxa.com/"');
-    expect(html).toContain('<link rel="canonical" href="https://tobys.certxa.com/" />');
+    expect(html).toContain('<link rel="canonical" href="https://tobys.certxa.com/" data-salon-page="true" />');
     expect(html).toContain('content="index, follow');
     expect(html).not.toContain("Certxa is a platform");
     expect(html).not.toContain("noindex");
@@ -65,11 +65,12 @@ describe("a salon's booking page for search and AI engines", () => {
     expect(salonFaq(f).some((x) => /charge/.test(x.q))).toBe(false);
   });
 
-  it("the rating, phone and email are in the business data (as GlossGenius has them)", () => {
+  it("the rating and phone are in the business data, and the account e-mail never is", () => {
     const f = facts({ rating: { value: 4.8, count: 37, source: "Google" } });
     const ld = JSON.parse(applySalonPage(TEMPLATE, f).match(/<script type="application\/ld\+json">(.*?)<\/script>/)![1])["@graph"][0];
-    expect(ld).toMatchObject({ telephone: "+17202436886", email: "hi@tobys.example", areaServed: { name: "Denver" },
+    expect(ld).toMatchObject({ telephone: "+17202436886", areaServed: { name: "Denver" },
       aggregateRating: { ratingValue: 4.8, reviewCount: 37 }, geo: { latitude: 39.74 } });
+    expect(ld.email).toBeUndefined();
     expect(salonLlmsTxt(f)).toContain("Rating: 4.8/5 from 37 Google reviews");
   });
 
@@ -84,6 +85,30 @@ describe("a salon's booking page for search and AI engines", () => {
     expect(r).toContain("User-agent: GPTBot");
     expect(r).toContain("User-agent: PerplexityBot");
     expect(r).toContain("Sitemap: https://tobys.certxa.com/sitemap.xml");
+  });
+
+  it("robots.txt opens exactly the public reads the page loads with, and nothing else under /api/", () => {
+    const lines = salonRobotsTxt(facts()).split("\n");
+    const star = lines.slice(lines.indexOf("User-agent: *"), lines.indexOf("") );
+    expect(star).toEqual([
+      "User-agent: *",
+      "Allow: /",
+      "Allow: /api/store/by-subdomain$",
+      "Allow: /api/public/booking-payment-policy/tobys$",
+      "Allow: /api/public/store/tobys/services$",
+      "Allow: /api/public/store/tobys/reviews$",
+      "Allow: /api/public/store/tobys/gallery$",
+      "Allow: /api/public/store/tobys/service-reviews$",
+      "Allow: /api/public/store/tobys/shop$",
+      "Allow: /api/public/store/tobys/team$",
+      "Allow: /api/public/store/tobys/service-pages$",
+      "Disallow: /api/",
+    ]);
+    expect(lines.join("\n")).not.toMatch(/Allow: \/api\/auth|Allow: \/api\/\$?$/m);
+  });
+
+  it("the salon's canonical is marked as the salon's, so the booking app keeps it", () => {
+    expect(applySalonPage(TEMPLATE, facts())).toContain('<link rel="canonical" href="https://tobys.certxa.com/" data-salon-page="true" />');
   });
 
   it("a Solo pro is described by their craft and how they work, never as a salon", () => {
@@ -145,5 +170,22 @@ describe("a barbershop with online check-in", () => {
     expect(proByLabel("Spa", "Lee", "Calm")).toBe("Beauty by Lee");
     expect(proByLabel("Nail Salon", "", "Toby’s")).toBeNull();
     expect(proByLabel("Nail Salon", "Toby", "Hair by Toby")).toBeNull();
+  });
+});
+
+describe("booking switched off", () => {
+  it("never says the salon can be booked online", () => {
+    const f = facts({ bookingOn: false });
+    const head = salonHead(f);
+    expect(head.description).not.toMatch(/book online/i);
+    expect(JSON.stringify(head.jsonLd)).not.toContain("ReserveAction");
+    expect(salonFaq(f).find((x) => /How do I book/.test(x.q))?.a).toMatch(/isn't taking online bookings/);
+    expect(salonLlmsTxt(f)).not.toMatch(/Book online:/);
+    expect(applySalonPage('<html><head><title>x</title></head><body><div id="root"></div></body></html>', f)).toContain("Not taking online bookings right now");
+  });
+  it("still offers online booking when it is on", () => {
+    const head = salonHead(facts());
+    expect(head.description).toMatch(/Book online/);
+    expect(JSON.stringify(head.jsonLd)).toContain("ReserveAction");
   });
 });

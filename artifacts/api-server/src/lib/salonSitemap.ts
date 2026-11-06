@@ -3,18 +3,21 @@
  *
  * Each salon is listed once, at the canonical URL its own page declares:
  *  - a published template website (wb_websites): siteBaseUrl(), no trailing slash, as template-serve's canonical;
- *  - a salon that never had a template website (Solo/Pro booking page): https://<booking_slug>.certxa.com/, as salonSeo's canonical.
+ *  - a salon with no published template website that never had one or uses the Solo design (its booking page is its
+ *    website): https://<booking_slug>.certxa.com/, as salonSeo's canonical, plus its Solo category pages.
  * Left out: websites whose store was deleted, unpublished websites, test salons, accounts that are stopped (suspended, closed, trial over —
  * their site is blocked), booking URLs and old slugs that only redirect.
  */
 import { pool } from "../db";
 import { siteBaseUrl } from "./template-serve";
 import { isAccountStopped } from "./accountSuspension";
+import { buildTenantData } from "./tenant-data";
+import { CATEGORY_PAGE_STORE_IDS, categoryPagesFor, categoryPageUrl } from "./categoryPages";
+import { soloCategoryPages } from "./soloCategoryPages";
 
-/** Salons that exist only for testing. The database has no test flag, so they are named here. */
-export const TEST_STORE_IDS = new Set<number>([
-  40, // "Test Salon — Evaluation Only" (test-salon-evaluation-only)
-]);
+// Salons that exist only for testing (lib/testStores.ts); re-exported for existing imports.
+import { TEST_STORE_IDS } from "./testStores";
+export { TEST_STORE_IDS };
 
 export interface SalonSitemapEntry { storeId: number; loc: string }
 
@@ -23,8 +26,9 @@ export async function salonSitemapEntries(): Promise<SalonSitemapEntry[]> {
   const { rows } = await pool.query<{
     store_id: number; booking_slug: string | null; slug: string | null;
     custom_domain: string | null; custom_domain_status: string | null;
+    category: string | null; booking_theme: string | null;
   }>(
-    `SELECT l.id AS store_id, l.booking_slug, w.slug, w.custom_domain, w.custom_domain_status
+    `SELECT l.id AS store_id, l.booking_slug, w.slug, w.custom_domain, w.custom_domain_status, l.category, l.booking_theme
        FROM locations l
        LEFT JOIN LATERAL (
          SELECT slug, custom_domain, custom_domain_status
@@ -33,8 +37,10 @@ export async function salonSitemapEntries(): Promise<SalonSitemapEntry[]> {
           ORDER BY id LIMIT 1
        ) w ON true
       WHERE w.slug IS NOT NULL
-         -- The booking page counts only for a salon that never had a template website; an unpublished one stays out.
-         OR (NULLIF(l.booking_slug, '') IS NOT NULL AND NOT EXISTS (SELECT 1 FROM wb_websites x WHERE x.storeid = l.id::text))
+         -- The booking page counts for a salon that never had a template website, or that uses the Solo design (its
+         -- booking page is then its whole website). An unpublished template website on any other design stays out.
+         OR (NULLIF(l.booking_slug, '') IS NOT NULL
+             AND (l.booking_theme = 'solo' OR NOT EXISTS (SELECT 1 FROM wb_websites x WHERE x.storeid = l.id::text)))
       ORDER BY l.id`,
   );
 
@@ -49,6 +55,19 @@ export async function salonSitemapEntries(): Promise<SalonSitemapEntry[]> {
     if (!loc.startsWith("https://") || seen.has(loc)) continue;
     seen.add(loc);
     out.push({ storeId: r.store_id, loc });
+    // The website's service category pages, where they're on (lib/categoryPages.ts).
+    if (r.slug && CATEGORY_PAGE_STORE_IDS.has(r.store_id)) {
+      try {
+        const td = await buildTenantData(r.store_id, { id: 0, name: "", slug: r.slug });
+        for (const page of categoryPagesFor(td, r.store_id)) out.push({ storeId: r.store_id, loc: categoryPageUrl(loc, page) });
+      } catch { /* the homepage stays listed */ }
+    }
+    // A Solo website's service category pages (lib/soloCategoryPages.ts), at the same address as its pages give.
+    if (!r.slug && r.booking_theme === "solo") {
+      try {
+        for (const page of await soloCategoryPages(r.store_id, r.category)) out.push({ storeId: r.store_id, loc: `${loc}services/${page.slug}/` });
+      } catch { /* the homepage stays listed */ }
+    }
   }
   return out;
 }

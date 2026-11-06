@@ -9,6 +9,7 @@
 import type { TenantData } from "./tenant-data";
 import { TEST_STORE_IDS } from "./salonSitemap";
 import { displayPhone, toE164 } from "./tenant-seo";
+import { categoryPagesFor } from "./categoryPages";
 
 export const SITE_SUMMARY_ATTR = "data-site-summary";
 
@@ -58,11 +59,14 @@ export function siteSummaryHtml(td: TenantData, storeId: number): string {
     ? `<h3>${esc(g.name)}</h3><ul>${g.items.join("")}</ul>`
     : `<ul>${g.items.join("")}</ul>`).join("");
 
+  const cats = categoryPagesFor(td, storeId);
+
   return `<main ${SITE_SUMMARY_ATTR} style="max-width:720px;margin:0 auto;padding:24px;font-family:system-ui,sans-serif;line-height:1.5;color:#1a1a1a">
 <h1>${esc(b.name.trim())}</h1>
 ${phone ? `<p>Call ${tel ? `<a href="tel:${esc(tel)}">${esc(phone)}</a>` : esc(phone)}</p>` : ""}
 ${where ? `<h2>Location</h2><p>${esc(where)}</p>` : ""}
 ${hours.length ? `<h2>Hours</h2><ul>${hours.join("")}</ul>` : ""}
 ${services ? `<h2>Services${priced ? " and prices" : ""}</h2>${services}` : ""}
+${cats.length ? `<h2>Services by category</h2><ul>${cats.map((c) => `<li><a href="/services/${c.slug}/">${esc(c.name)}</a></li>`).join("")}</ul>` : ""}
 </main>`;
 }
