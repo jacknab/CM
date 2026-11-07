@@ -154,6 +154,20 @@ router.get("/api/public/sounds/message-chime.wav", (_req, res) => {
   res.type("audio/wav").set("Cache-Control", "public, max-age=86400").sendFile(CHIME_FILE);
 });
 
+/** The chat bubble on a pro's website (owner, 2026-11-07): shown while the pro is available for live chat. */
+router.get("/api/public/store/:slug/chat", async (req, res) => {
+  try {
+    const storeId = await resolveStoreIdBySlug(String(req.params.slug));
+    if (!storeId) return res.status(404).json({ error: "This business wasn't found." });
+    res.setHeader("Cache-Control", "no-store");
+    const available = await liveChatAvailable(storeId);
+    return res.json({ available, online: available ? await proOnline(storeId) : false });
+  } catch (err: any) {
+    console.error("[pro-messages] chat status", err?.message ?? err);
+    return res.status(500).json({ error: "Chat isn't available right now." });
+  }
+});
+
 /** What the message pages need before sending: the reCAPTCHA site key (public), or null when it's off. */
 router.get("/api/public/messages-config", (_req, res) => {
   res.setHeader("Cache-Control", "public, max-age=300");
@@ -193,7 +207,9 @@ router.post("/api/public/store/:slug/messages", publicLimiter, async (req, res) 
       emailText("Keep this e-mail: the button opens your conversation, where you can read answers and write back.", { muted: true, size: 13 }),
     ].join(""), undefined, undefined, { business, preheader: `Your message to ${business} was sent.` })
       .catch((e: any) => console.warn("[pro-messages] confirmation e-mail:", e?.message ?? e));
-    return res.status(201).json({ ok: true });
+    // The link code goes back to the person who wrote, so the chat bubble on the website can carry on the
+    // conversation live (it's in their e-mail too).
+    return res.status(201).json({ ok: true, link: token });
   } catch (err: any) {
     console.error("[pro-messages] new", err?.message ?? err);
     return res.status(500).json({ error: "Your message could not be sent. Please try again." });

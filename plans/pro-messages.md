@@ -39,6 +39,16 @@ dropped; a per-process rate limit in front.
   chime; the inbox still updates live. Inbox rows swipe left to Delete (no confirm, like a mail app).
 - Client page shows "Online now" (green dot) or "Away · you'll get the answer by e-mail", and "<Business> is typing…".
 
+## Chat bubble (2026-11-07)
+- Solo websites: a chat bubble bottom right (`SiteChat.tsx`), above the sticky booking bar, while the pro's "Available
+  for live chat" is on (`GET /api/public/store/:slug/chat` → available, online; green dot when online). It opens a chat
+  with the pro: name, e-mail, message (same spam rules), then the live conversation. Starting a conversation returns
+  its link code to the writer, so the bubble keeps it (localStorage `certxa.chat.<slug>`); "New chat" starts over.
+- The conversation view is shared with the e-mailed page: `components/chat/ChatThread.tsx` (variant page / panel).
+  Its live connection always goes to certxa.com (nginx doesn't pass WebSockets on <slug>.certxa.com).
+- Chat replies have their own limits (120/hour per conversation, 300 per sender, double sends within 15 s dropped);
+  new conversations keep the strict ones. The client page chimes (`/api/public/sounds/message-chime.wav`).
+
 ## Status
 - 2026-11-07: built and tested (34 server + 13 browser checks on the isolated server). Server + website deployed with
   the migration; the app part ships with the next OTA (`scripts/ota-update.sh`).

@@ -48,6 +48,7 @@ import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import SoloShop, { type ShopData, type ShopView } from "./SoloShop";
 import SiteLegal from "./SiteLegal";
 import SiteMessage from "./SiteMessage";
+import SiteChat from "./SiteChat";
 import { bookingClosed } from "./bookingClosed";
 import { SoloCart, type CartLine } from "./SoloCart";
 import { SoloPay, SoloSaveCard, type DepositHold } from "./SoloPay";
@@ -1548,6 +1549,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
       <SiteLegal store={store} />
       {/* Send a message (#message): to the pro's inbox in the app (SiteMessage.tsx). */}
       <SiteMessage store={store} slug={slug} />
+      {/* Chat with the pro, while they're available for live chat (SiteChat.tsx); above the booking bar when it shows. */}
+      <SiteChat store={store} slug={slug} raised={barShown} />
       {/* ── BOOKING PANEL ─────────────────────────────────────────────────── */}
       <BookingPanel
         isOpen={bookingOpen}
