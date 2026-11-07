@@ -1,10 +1,11 @@
+import { visitSentence } from '@/utils/visitSentence';
 import { MapPin, Phone, Clock } from 'lucide-react';
 import SectionHeading from '@/components/SectionHeading';
 import { useSite } from '@/context/SiteContext';
 import { useReveal } from '@/hooks/useReveal';
 
 export default function Contact() {
-  const { address, city, phone, phoneHref, hours, salonName } = useSite();
+  const { address, city, phone, phoneHref, hours, salonName, canBookOnline } = useSite();
   const { ref, visible } = useReveal<HTMLDivElement>();
 
   // An address saved on one line already holds the city: don't repeat it.
@@ -19,7 +20,7 @@ export default function Contact() {
         <SectionHeading
           eyebrow="Visit Us"
           title="Find the Studio"
-          description={`${city ? `Conveniently located in ${city}. ` : ''}Walk-ins welcome based on availability, but booking ahead guarantees your spot.`}
+          description={`${city ? `Conveniently located in ${city}. ` : ''}${visitSentence(salonName, canBookOnline)}`}
         />
 
         <div

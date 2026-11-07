@@ -24,6 +24,8 @@ export interface BusinessData {
   online_booking_mode?: string | null;
   /** The website's opening sentence, written for this salon. */
   hero_text?: string | null;
+  /** The hero photo: the salon's cover, else a nail photo picked for it. */
+  hero_image?: string | null;
 }
 
 export interface HoursEntry {

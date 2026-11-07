@@ -2,14 +2,14 @@ import { Sparkles, Star, Clock } from 'lucide-react';
 import { useSite } from '@/context/SiteContext';
 
 export default function Hero() {
-  const { salonName, tagline, reviewCount, avgRating, services, heroText, isPreparedSite, canBookOnline, phone, phoneHref } = useSite();
+  const { salonName, tagline, reviewCount, avgRating, services, heroText, isPreparedSite, canBookOnline, phone, phoneHref, heroImage } = useSite();
 
   return (
     <section id="home" className="relative overflow-hidden pt-16 sm:pt-20">
       {/* Background image with overlay */}
       <div className="absolute inset-0 -z-10">
         <img
-          src="https://images.pexels.com/photos/3997389/pexels-photo-3997389.jpeg?auto=compress&cs=tinysrgb&w=1600"
+          src={heroImage || "https://images.pexels.com/photos/3997389/pexels-photo-3997389.jpeg?auto=compress&cs=tinysrgb&w=1600"}
           alt={`A professional nail technician performing a luxury manicure at ${salonName}`}
           className="h-full w-full object-cover"
           {...{ fetchpriority: 'high' }}

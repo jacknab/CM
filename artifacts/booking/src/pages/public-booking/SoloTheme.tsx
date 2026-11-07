@@ -350,6 +350,28 @@ function visitCityLine(store: StoreData): string {
   return parts.length >= 3 ? parts.slice(-2).join(", ") : "";
 }
 
+/** One of a few equivalent Visit Us sentences, picked by the salon's name (owner, 2026-11-07): not the same on every site. */
+function visitSentence(salonName: string, canBookOnline: boolean): string {
+  const on = [
+    "Walk-ins welcome based on availability, but booking ahead guarantees your spot.",
+    "Book online to hold your time, or stop by and we will fit you in when we can.",
+    "Plan your visit with the hours and map below, then book a time that suits you.",
+    "Use the map for directions, and book ahead online to skip the wait.",
+    "Stop in when you are nearby, or book online in a few taps.",
+  ];
+  const off = [
+    "Online booking is not available here, so please call ahead to confirm services and opening times.",
+    "Call before you visit to check today\u2019s openings and the services you would like.",
+    "Give us a call to confirm details, or use the map below to find your way.",
+    "Questions about a service or today\u2019s hours? Call before you stop by.",
+    "Use the map below for directions, and call ahead to confirm the services you need.",
+  ];
+  const list = canBookOnline ? on : off;
+  let h = 0;
+  for (const ch of salonName) h = (Math.imul(h, 31) + ch.charCodeAt(0)) >>> 0;
+  return list[h % list.length];
+}
+
 function VisitUs({ store, phoneHref, phoneLabel, hours }: { store: StoreData; phoneHref?: string; phoneLabel?: string | null; hours: { day: string; time: string }[] }) {
   const address = String(store.address ?? "").trim();
   const city = visitCityLine(store);
@@ -367,7 +389,7 @@ function VisitUs({ store, phoneHref, phoneLabel, hours }: { store: StoreData; ph
           </span>
           <h2 className="mt-3 text-3xl font-medium leading-tight sm:mt-4 sm:text-5xl" style={{ fontFamily: heading, color: C.ink900 }}>Find the Studio</h2>
           <p className="mt-4 text-base leading-relaxed" style={{ color: C.ink600 }}>
-            {city ? `Conveniently located in ${city}. ` : ""}Walk-ins welcome based on availability, but booking ahead guarantees your spot.
+            {city ? `Conveniently located in ${city}. ` : ""}{visitSentence(store.name ?? "", !bookingClosed(store))}
           </p>
         </div>
         <div className={`mt-8 grid gap-5 sm:mt-12 sm:gap-8 ${mapSrc ? "lg:grid-cols-2" : "mx-auto max-w-xl"}`}>
