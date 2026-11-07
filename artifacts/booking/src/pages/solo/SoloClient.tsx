@@ -26,7 +26,7 @@ type Client = {
   phones?: { phoneType?: string | null; isPrimary?: boolean | null }[];
   marketingPreferences?: Prefs | null;
 };
-type Visit = { id: number; date: string; status: string; totalPaid?: string | number | null; tipAmount?: string | number | null; serviceName?: string | null };
+type Visit = { id: number; date: string; status: string; totalPaid?: string | number | null; tipAmount?: string | number | null; serviceName?: string | null; refundedCents?: number | null };
 type Photo = { id: number; url: string; kind: "before" | "after" | null; onWebsite: boolean; createdAt: string };
 
 const OPEN = new Set(["pending", "confirmed", "started", "paid"]);
@@ -181,13 +181,17 @@ export default function SoloClient() {
   );
 
   const visitRow = (v: Visit) => {
-    const paidCents = Math.round((Number(v.totalPaid ?? 0) - Number(v.tipAmount ?? 0)) * 100);
+    // Refunded (owner, 2026-11-07): Refunded / Part refunded, and what's left after the refund.
+    const refunded = Number(v.refundedCents ?? 0) || 0;
+    const totalCents = Math.round(Number(v.totalPaid ?? 0) * 100);
+    const paidCents = totalCents - Math.round(Number(v.tipAmount ?? 0) * 100) - refunded;
+    const statusText = refunded > 0 && v.status === "completed" ? (refunded >= totalCents ? "Refunded" : `Part refunded · ${money(refunded)}`) : STATUS_TEXT[v.status] ?? v.status;
     return (
       <li key={v.id} style={border}>
         <button type="button" onClick={() => void openVisit(v)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[#FBFAFE]" data-testid={`solo-client-visit-${v.id}`}>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{v.serviceName || "Visit"}</span>
-            <span className="block text-xs" style={muted}>{date(v.date)} · {STATUS_TEXT[v.status] ?? v.status}</span>
+            <span className="block text-xs" style={muted}>{date(v.date)} · {statusText}</span>
           </span>
           {v.status === "completed" && paidCents > 0 && <span className="text-sm font-semibold">{money(paidCents)}</span>}
         </button>

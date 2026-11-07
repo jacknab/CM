@@ -259,7 +259,9 @@ router.get("/customers", async (req, res) => {
       FROM clients c
       LEFT JOIN LATERAL (
         SELECT COUNT(DISTINCT COALESCE(a.ticket_group_id,a.id))::int AS visits,
-               COALESCE(ROUND(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)),0))*100),0)::int AS spent_cents,
+               -- Refunds come off what the client spent (owner, 2026-11-07).
+               COALESCE(ROUND(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)),0)
+                 - (SELECT COALESCE(SUM(r.amount_cents),0)/100.0 FROM payment_refunds r WHERE r.appointment_id=a.id AND r.status IS DISTINCT FROM 'failed'))*100),0)::int AS spent_cents,
                MAX(COALESCE(a.completed_at,a.date)) AS last_visit_at
           -- A visit paid in the app is saved as 'paid' (it wasn't counted, so active clients looked inactive, 2026-11-04).
           FROM appointments a WHERE a.customer_id=c.id AND a.store_id=c.store_id AND a.status IN ('completed','paid')
@@ -750,6 +752,8 @@ router.post("/appointments/:id/refund", async (req, res) => {
       const a = (await client.query(`SELECT id, status, payment_method, total_paid, stripe_payment_intent_id FROM appointments WHERE id=$1 AND store_id=$2`,
         [parsedId.data, storeId])).rows[0];
       if (!a) return res.status(404).json({ error: "Appointment not found" });
+      // A booking an older app build marked "paid" recorded no payment (no amount, no method): there is nothing to refund.
+      if (a.status === "paid" && a.total_paid == null) return res.status(409).json({ error: "No payment was recorded for this booking, so there's nothing to refund.", code: "NO_PAYMENT_RECORDED" });
       if (a.status !== "completed" || a.total_paid == null) return res.status(409).json({ error: "Only a paid booking can be refunded." });
       const refunded = Number((await client.query(`SELECT COALESCE(SUM(amount_cents), 0) AS c FROM payment_refunds WHERE appointment_id=$1 AND status IS DISTINCT FROM 'failed'`,
         [a.id])).rows[0].c) || 0;

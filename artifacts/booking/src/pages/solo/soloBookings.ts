@@ -37,6 +37,7 @@ export type Booking = {
   depositDue: boolean;
   depositPaidCents: number;
   paidCents: number | null;
+  refundedCents: number;
   lines: { label: string; cents: number }[];
   address: string | null;
 };
@@ -72,6 +73,7 @@ export function toBooking(a: ApiAppointment, tz: string): Booking {
     depositDue: a.paymentStatus === "awaiting_payment",
     depositPaidCents: a.paymentStatus === "awaiting_payment" ? 0 : cents(a.depositCollected),
     paidCents: a.totalPaid != null ? cents(a.totalPaid) - Number(a.refundedCents ?? 0) : null,
+    refundedCents: Number(a.refundedCents ?? 0) || 0,
     lines: others.length || travelFeeCents
       ? [{ label: a.service?.name || "Service", cents: serviceCents }, ...others, ...(travelFeeCents ? [{ label: "Travel fee", cents: travelFeeCents }] : [])]
       : [],

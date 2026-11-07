@@ -64,7 +64,7 @@ export default function SoloBookingPanel({ booking, tz, onClose, onBookAgain }: 
       <aside className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-white shadow-xl" data-testid="solo-booking-panel" aria-label="Booking">
         <div className="flex items-center justify-between border-b px-5 py-4" style={{ borderColor: SOLO_COLORS.border }}>
           <span className="rounded-full bg-[#F2F1F7] px-2.5 py-0.5 text-[11px] font-semibold text-[#6B6F86]" data-testid="solo-booking-status">
-            {booking.depositDue && open ? "Deposit due" : STATUS_TEXT[booking.status] ?? "Booked"}
+            {booking.depositDue && open ? "Deposit due" : booking.status === "paid" && booking.refundedCents > 0 && booking.paidCents === 0 ? "Refunded" : STATUS_TEXT[booking.status] ?? "Booked"}
           </span>
           <button type="button" onClick={onClose} className="text-sm font-medium" style={muted}>Close</button>
         </div>
@@ -90,6 +90,7 @@ export default function SoloBookingPanel({ booking, tz, onClose, onBookAgain }: 
               <dt className="font-semibold">{booking.status === "paid" ? "Paid" : "Total"}</dt>
               <dd className="font-semibold" data-testid="solo-booking-total">{money(booking.status === "paid" && booking.paidCents != null ? booking.paidCents : booking.amountCents)}</dd>
             </div>
+            {booking.status === "paid" && booking.refundedCents > 0 && (booking.paidCents ?? 0) > 0 && <div className="flex justify-between gap-3"><dt style={muted}>Part refunded</dt><dd>−{money(booking.refundedCents)}</dd></div>}
             {booking.depositPaidCents > 0 && booking.status !== "paid" && <div className="flex justify-between gap-3"><dt style={muted}>Deposit paid</dt><dd>{money(booking.depositPaidCents)}</dd></div>}
           </dl>
 

@@ -22489,7 +22489,8 @@ or
       const { rows } = await pool.query(
         `WITH v AS (
            SELECT a.customer_id::text AS cid, COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id))::int AS visits,
-                  COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)), 0) AS spent,
+                  COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)
+                    - (SELECT COALESCE(SUM(r.amount_cents), 0) / 100.0 FROM payment_refunds r WHERE r.appointment_id = a.id AND r.status IS DISTINCT FROM 'failed')), 0) AS spent,
                   MAX(COALESCE(a.completed_at, a.date)) AS last_visit
              FROM appointments a WHERE a.store_id = $1 AND a.status = 'completed' AND a.customer_id IS NOT NULL GROUP BY 1)
          SELECT c.id, c.full_name, c.created_at, COALESCE(v.visits, 0) AS visits, COALESCE(v.spent, 0) AS spent, v.last_visit

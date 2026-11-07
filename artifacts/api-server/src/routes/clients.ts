@@ -73,7 +73,9 @@ function getUserId(req: any): string | undefined {
 // services it had (ticket_group_id), spend is what they paid less tips, last visit is when the visit was paid.
 const LIVE_VISITS = sql`(SELECT COUNT(DISTINCT COALESCE(a.ticket_group_id, a.id)) FROM appointments a
   WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
-const LIVE_SPENT = sql`(SELECT COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)), 0) FROM appointments a
+// Refunds come off (owner, 2026-11-07).
+const LIVE_SPENT = sql`(SELECT COALESCE(SUM(CAST(a.total_paid AS DECIMAL(10,2)) - COALESCE(CAST(a.tip_amount AS DECIMAL(10,2)), 0)
+    - (SELECT COALESCE(SUM(r.amount_cents), 0) / 100.0 FROM payment_refunds r WHERE r.appointment_id = a.id AND r.status IS DISTINCT FROM 'failed')), 0) FROM appointments a
   WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
 const LIVE_LAST_VISIT = sql`(SELECT MAX(COALESCE(a.completed_at, a.date)) FROM appointments a
   WHERE a.customer_id = clients.id AND a.store_id = clients.store_id AND a.status = 'completed')`;
@@ -458,11 +460,14 @@ router.get("/:id", isAuthenticated, async (req, res) => {
       db.execute(sql`
         SELECT
           COUNT(DISTINCT COALESCE(ticket_group_id, id))::int                        AS total_visits,
-          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0)) * 100), 0)::int AS total_spent_cents,
+          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0) - rf.refunded) * 100), 0)::int AS total_spent_cents,
           MAX(COALESCE(completed_at, date))                                         AS last_visit_at,
-          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0))
+          COALESCE(ROUND(SUM(CAST(total_paid AS DECIMAL(10,2)) - COALESCE(CAST(tip_amount AS DECIMAL(10,2)), 0) - rf.refunded)
             FILTER (WHERE COALESCE(completed_at, date) >= now() - interval '12 months') * 100), 0)::int AS spent_12m_cents
         FROM appointments
+        -- Refunds come off what the client spent (owner, 2026-11-07), on the visit they were made for.
+        CROSS JOIN LATERAL (SELECT COALESCE(SUM(r.amount_cents), 0) / 100.0 AS refunded FROM payment_refunds r
+          WHERE r.appointment_id = appointments.id AND r.status IS DISTINCT FROM 'failed') rf
         WHERE customer_id = ${clientId}
           AND store_id    = ${client.storeId}
           -- A visit paid in the Certxa Pro app is saved as 'paid' (it wasn't counted, 2026-11-04).
@@ -1458,6 +1463,8 @@ router.get("/:id/appointments", isAuthenticated, async (req, res) => {
         status: appointments.status,
         totalPaid: appointments.totalPaid,
         tipAmount: appointments.tipAmount,
+        // Refunded so far (cents), so a visit can say Refunded / Part refunded (owner, 2026-11-07).
+        refundedCents: sql<number>`(SELECT COALESCE(SUM(r.amount_cents), 0)::int FROM payment_refunds r WHERE r.appointment_id = ${appointments.id} AND r.status IS DISTINCT FROM 'failed')`,
         staffName: staff.name,
         serviceName: services.name,
       })
