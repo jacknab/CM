@@ -30,6 +30,7 @@ import { pushOwnerMessage } from "../lib/ownerPush";
 import { sendEmail } from "../mail";
 import { emailButton, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import { checkRecaptcha, recaptchaSiteKey } from "../lib/recaptcha";
+import { clientViewing, liveMessage, liveRead, proOnline } from "../lib/proMessagesLive";
 
 const router = Router();
 
@@ -108,8 +109,16 @@ async function businessName(storeId: number): Promise<string> {
   return (await pool.query(`SELECT name FROM locations WHERE id = $1`, [storeId])).rows[0]?.name || "Your appointment";
 }
 
-function notifyPro(storeId: number, threadId: number, name: string, subject: string, body: string) {
-  void pushOwnerMessage(storeId, { title: `Message from ${name}`, body: snippet(`${subject ? `${subject}: ` : ""}${body}`, 140), data: { type: "web_message", threadId } });
+/**
+ * A client message reaches the pro: live in the app when it's open (it chimes there for every message), else a push
+ * alert — one per conversation until the pro reads it (owner, 2026-11-07: not a push for every message). `firstUnread`:
+ * the conversation had nothing unread before this message.
+ */
+async function notifyPro(storeId: number, threadId: number, name: string, subject: string, m: { id: number; body: string; created_at: Date }, firstUnread: boolean) {
+  liveMessage({ storeId, threadId, clientName: name, subject, message: { id: m.id, sender: "client", body: m.body, createdAt: new Date(m.created_at).toISOString() } });
+  if (!firstUnread || await proOnline(storeId)) return;
+  console.log(`[pro-messages] push store=${storeId} thread=${threadId}`);
+  void pushOwnerMessage(storeId, { title: `Message from ${name}`, body: snippet(`${subject ? `${subject}: ` : ""}${m.body}`, 140), data: { type: "web_message", threadId } });
 }
 
 // ── The client (public) ─────────────────────────────────────────────────────────────────────────────────
@@ -142,8 +151,8 @@ router.post("/api/public/store/:slug/messages", publicLimiter, async (req, res) 
        VALUES ($1,$2,$3,$4,$5,$6,1) RETURNING id`,
       [storeId, client?.id ?? null, d.name, d.email, d.phone || null, subject])).rows[0];
     await pool.query(`INSERT INTO pro_message_links (token_hash, thread_id) VALUES ($1,$2)`, [hash(token), thread.id]);
-    await pool.query(`INSERT INTO pro_messages (thread_id, sender, body, ip_hash) VALUES ($1,'client',$2,$3)`, [thread.id, d.message, ipHash(req)]);
-    notifyPro(storeId, thread.id, d.name, subject, d.message);
+    const first = (await pool.query(`INSERT INTO pro_messages (thread_id, sender, body, ip_hash) VALUES ($1,'client',$2,$3) RETURNING id, body, created_at`, [thread.id, d.message, ipHash(req)])).rows[0];
+    void notifyPro(storeId, thread.id, d.name, subject, first, true);
 
     const business = await businessName(storeId);
     void sendEmail(storeId, d.email, `Your message to ${business}`, [
@@ -174,7 +183,9 @@ router.get("/api/public/messages/:token", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     return res.json({
       business: await businessName(t.store_id), subject: t.subject, clientName: t.client_name,
-      messages: (await messagesOf(t.id)).map((m) => ({ sender: m.sender, body: m.body, createdAt: m.created_at })),
+      messages: (await messagesOf(t.id)).map((m) => ({ id: m.id, sender: m.sender, body: m.body, createdAt: m.created_at })),
+      // The pro has the app open: answers come straight in (lib/proMessagesLive.ts keeps this current on the page).
+      proOnline: await proOnline(t.store_id),
     });
   } catch (err: any) {
     console.error("[pro-messages] open", err?.message ?? err);
@@ -191,10 +202,10 @@ router.post("/api/public/messages/:token/reply", publicLimiter, async (req, res)
     const spam = await spamCheck(req, parsed.data.message, { website: parsed.data.website, threadId: t.id, recaptchaToken: parsed.data.recaptchaToken, action: "reply" });
     if (spam === "drop") return res.json({ ok: true });
     if (spam !== "ok") return res.status(429).json({ error: spam });
-    await pool.query(`INSERT INTO pro_messages (thread_id, sender, body, ip_hash) VALUES ($1,'client',$2,$3)`, [t.id, parsed.data.message, ipHash(req)]);
-    await pool.query(`UPDATE pro_message_threads SET pro_unread = pro_unread + 1, last_message_at = now() WHERE id = $1`, [t.id]);
-    notifyPro(t.store_id, t.id, t.client_name, t.subject, parsed.data.message);
-    return res.status(201).json({ ok: true });
+    const m = (await pool.query(`INSERT INTO pro_messages (thread_id, sender, body, ip_hash) VALUES ($1,'client',$2,$3) RETURNING id, sender, body, created_at`, [t.id, parsed.data.message, ipHash(req)])).rows[0];
+    const unread = (await pool.query(`UPDATE pro_message_threads SET pro_unread = pro_unread + 1, last_message_at = now() WHERE id = $1 RETURNING pro_unread`, [t.id])).rows[0]?.pro_unread;
+    void notifyPro(t.store_id, t.id, t.client_name, t.subject, m, unread === 1);
+    return res.status(201).json({ ok: true, message: { id: m.id, sender: m.sender, body: m.body, createdAt: m.created_at } });
   } catch (err: any) {
     console.error("[pro-messages] client reply", err?.message ?? err);
     return res.status(500).json({ error: "Your message could not be sent. Please try again." });
@@ -245,7 +256,7 @@ async function ownThread(req: Request, res: Response) {
 router.get("/api/pro/messages/:id", isAuthenticated, async (req, res) => {
   try {
     const t = await ownThread(req, res); if (!t) return;
-    if (t.pro_unread) await pool.query(`UPDATE pro_message_threads SET pro_unread = 0 WHERE id = $1`, [t.id]);
+    if (t.pro_unread) { await pool.query(`UPDATE pro_message_threads SET pro_unread = 0 WHERE id = $1`, [t.id]); liveRead(t.store_id, t.id); }
     return res.json({
       id: t.id, clientId: t.client_id, clientName: t.client_name, clientEmail: t.client_email, clientPhone: t.client_phone,
       subject: t.subject, createdAt: t.created_at,
@@ -261,6 +272,10 @@ router.post("/api/pro/messages/:id/reply", isAuthenticated, async (req, res) => 
     const t = await ownThread(req, res); if (!t) return;
     const m = (await pool.query(`INSERT INTO pro_messages (thread_id, sender, body) VALUES ($1,'pro',$2) RETURNING id, sender, body, created_at`, [t.id, parsed.data.message])).rows[0];
     await pool.query(`UPDATE pro_message_threads SET last_message_at = now(), pro_unread = 0 WHERE id = $1`, [t.id]);
+    const message = { id: m.id, sender: m.sender, body: m.body, createdAt: new Date(m.created_at).toISOString() };
+    liveMessage({ storeId: t.store_id, threadId: t.id, message });
+    // The client has the conversation open and sees it arrive: no e-mail (owner, 2026-11-07).
+    if (await clientViewing(t.id)) return res.status(201).json({ message, emailed: false, live: true });
     // A private-link code for this e-mail (the code itself is never stored; earlier e-mails' links keep working).
     const token = crypto.randomBytes(24).toString("base64url");
     await pool.query(`INSERT INTO pro_message_links (token_hash, thread_id) VALUES ($1,$2)`, [hash(token), t.id]);
@@ -273,7 +288,7 @@ router.post("/api/pro/messages/:id/reply", isAuthenticated, async (req, res) => 
     ].join(""), undefined, undefined, { business, preheader: snippet(parsed.data.message, 90) })
       .catch((e: any) => ({ success: false, error: e?.message ?? String(e) }));
     if (!sent.success) console.warn(`[pro-messages] thread=${t.id} answer e-mail not sent: ${sent.error ?? "unknown"}`);
-    return res.status(201).json({ message: { id: m.id, sender: m.sender, body: m.body, createdAt: m.created_at }, emailed: !!sent.success });
+    return res.status(201).json({ message, emailed: !!sent.success, live: false });
   } catch (err: any) { console.error("[pro-messages] reply", err?.message ?? err); return res.status(500).json({ error: "Your answer could not be sent. Please try again." }); }
 });
 

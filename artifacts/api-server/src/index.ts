@@ -1396,6 +1396,9 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Real-time owner dashboard WebSocket stream at /ws/dashboard
   const { setupDashboardWS } = await import("./routes/dashboardWS");
   setupDashboardWS(httpServer);
+  // Website messages, live while the pro has the app open (lib/proMessagesLive.ts).
+  const { setupProMessagesWS } = await import("./lib/proMessagesLive");
+  setupProMessagesWS(httpServer);
 
   // Public contact form → creates support ticket (channel='WEB')
   const { contactRouter } = await import("./routes/contact");

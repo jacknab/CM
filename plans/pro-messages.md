@@ -26,6 +26,16 @@ nothing); at most 3 links; per sender address (salted hash) 10 messages an hour 
 conversations an hour per business; per conversation 15 client replies an hour; the same message twice in 10 minutes
 dropped; a per-process rate limit in front.
 
+## Live (instant messenger, 2026-11-07)
+- `lib/proMessagesLive.ts`: WebSocket `/ws/pro-messages`. The app (`?as=pro`, Bearer token in a header) connects only while
+  it is on screen (`lib/inboxLive.ts` in the app) = online. A client page (`?as=client&link=<code>`) gets the pro's
+  answers, typing and online status. Typing is relayed only, never stored. Events go through the cross-process bus;
+  `pm:online:<store>` and `pm:viewer:<thread>` are 45-second Redis keys renewed every 20 s.
+- Pro online: client messages arrive live and the app chimes (local notification with `soft_chime.wav`), no push.
+  Pro away: a push for the first unread message of a conversation only, again after the pro reads it.
+- Client page open: the pro's answer appears live, no e-mail. Page closed: the e-mail with the link, as before.
+- Client page shows "Online now" (green dot) or "Away · you'll get the answer by e-mail", and "<Business> is typing…".
+
 ## Status
 - 2026-11-07: built and tested (34 server + 13 browser checks on the isolated server). Server + website deployed with
   the migration; the app part ships with the next OTA (`scripts/ota-update.sh`).
