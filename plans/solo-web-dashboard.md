@@ -57,7 +57,8 @@
   - App-only on purpose: card checkout, refunds, fees, payment links, packages, house calls, add-ons, extra services, repeat bookings, notes editing, answering booking requests.
   - No server changes: the compact API already answers these with `X-Certxa-Solo: 1`, and the allow-list covers every call.
   - Tests: 29 server checks (one wrong expectation: delete answers 204) and 39 browser checks passed.
-- Step 4b-2 (Clients, Catalog) and sending Solo accounts to `/solo` on sign-in: not started.
+- **Step 4b-2 — Clients (`/solo/clients`, `/solo/clients/:id`) and Catalog (`/solo/catalog/:section`): LIVE 2026-11-07, committed.** The app's Clients list + profile (visits open the booking panel, photos, notes, details, VIP, tags, text preferences, edit, delete) and all 7 Catalog sections. Server: the app's service list now includes allowQuantity (it was missing, so saving a service in the app turned "Clients choose how many" off). Tests: 41/45 server (4 wrong expectations) + 49 browser checks; Calendar 39 still pass; 721 API tests.
+- Sending Solo accounts to `/solo` on sign-in: not started.
 
 Owner decisions (2026-11-06):
 

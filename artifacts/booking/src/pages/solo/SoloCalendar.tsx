@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { soloApi } from "@/lib/soloApi";
 import { SOLO_COLORS, useSolo } from "./SoloLayout";
@@ -92,6 +93,15 @@ export default function SoloCalendar() {
   const opened = openId != null ? all.find((b) => b.id === openId) ?? null : null;
   const [creating, setCreating] = useState<null | { kind: "booking"; prefill?: { customerId: number | null; serviceId: number | null } } | { kind: "block" }>(null);
   const [removing, setRemoving] = useState<TimeBlock | null>(null);
+  // "Book appointment" on a client (SoloClient.tsx) opens New booking for them; the state is cleared so a reload doesn't reopen it.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const st = location.state as { newBookingFor?: number; serviceId?: number | null } | null;
+    if (!st?.newBookingFor) return;
+    setCreating({ kind: "booking", prefill: { customerId: st.newBookingFor, serviceId: st.serviceId ?? null } });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state]); // eslint-disable-line react-hooks/exhaustive-deps
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState("");
 

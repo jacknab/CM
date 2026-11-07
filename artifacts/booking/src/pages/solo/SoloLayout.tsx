@@ -6,7 +6,7 @@
 import { createContext, useContext } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, CreditCard, Home, Loader2, LogOut } from "lucide-react";
+import { CalendarDays, CreditCard, Home, LayoutList, Loader2, LogOut, Users } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { isProAccount } from "@shared/proAccount";
 import { isSoloPlanCode } from "@shared/soloPlan";
@@ -29,10 +29,12 @@ export const SOLO_COLORS = {
   primary: "#7C3AED",
 };
 
-// Pages as they are built (Clients and Catalog follow).
+// Settings stay in the Certxa Pro app.
 const NAV = [
   { to: "/solo", label: "Home", icon: Home, end: true },
   { to: "/solo/calendar", label: "Calendar", icon: CalendarDays, end: false },
+  { to: "/solo/clients", label: "Clients", icon: Users, end: false },
+  { to: "/solo/catalog", label: "Catalog", icon: LayoutList, end: false },
   { to: "/solo/billing", label: "Billing", icon: CreditCard, end: false },
 ];
 

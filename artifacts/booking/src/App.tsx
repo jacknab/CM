@@ -157,6 +157,9 @@ const SoloBilling = lazy(() => import("@/pages/solo/SoloBilling"));
 const SoloLayout = lazy(() => import("@/pages/solo/SoloLayout"));
 const SoloHome = lazy(() => import("@/pages/solo/SoloHome"));
 const SoloCalendar = lazy(() => import("@/pages/solo/SoloCalendar"));
+const SoloClients = lazy(() => import("@/pages/solo/SoloClients"));
+const SoloClient = lazy(() => import("@/pages/solo/SoloClient"));
+const SoloCatalog = lazy(() => import("@/pages/solo/SoloCatalog"));
 const PayLink = lazy(() => import("@/pages/PayLink"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
@@ -580,6 +583,10 @@ function AppRoutes() {
       <Route path="/solo" element={<SoloLayout />}>
         <Route index element={<SoloHome />} />
         <Route path="calendar" element={<SoloCalendar />} />
+        <Route path="clients" element={<SoloClients />} />
+        <Route path="clients/:id" element={<SoloClient />} />
+        <Route path="catalog" element={<SoloCatalog />} />
+        <Route path="catalog/:section" element={<SoloCatalog />} />
       </Route>
       {/* A booking paid from a link the business texted (routes/payLinks.ts) */}
       <Route path="/pay/:token" element={<PayLink />} />
