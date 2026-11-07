@@ -2059,7 +2059,7 @@ export default function AspenTheme({ store, slug, preselectedStaffId, preselecte
       >
         <div className="mx-auto w-full max-w-2xl px-5 text-center sm:px-8">
           {store.bookingSite?.aboutImage && (
-            <img src={store.bookingSite.aboutImage} alt={salonName} data-testid="aspen-about-photo" className="mx-auto mb-4 h-36 w-36 rounded-full object-cover" />
+            <img src={store.bookingSite.aboutImage} alt={salonName} data-testid="aspen-about-photo" className="mx-auto mb-4 h-44 w-44 rounded-2xl object-cover shadow-sm" />
           )}
           <h2 id="about-heading" className="text-3xl font-semibold sm:text-4xl" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }} itemProp="name">
             {salonName}
