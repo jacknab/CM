@@ -677,47 +677,59 @@ router.post("/appointments/:id/no-show", async (req, res) => {
       if (!current) return res.status(404).json({ error: "Appointment not found" });
       return res.status(409).json({ error: current.status === "completed" ? "This booking is paid." : "This booking is already closed." });
     }
-    return res.json(await appointment(parsedId.data, storeId));
+    // The no-show fee is charged right away when the client has a card on file and agreed to a fee (owner, 2026-11-07).
+    // A declined card leaves the booking a no-show; feeError says why, and Charge fee tries again.
+    const fee = await chargeBookingFee(storeId, parsedId.data);
+    const feeError = !fee.ok && fee.status === 402 ? fee.error : null;
+    return res.json({ ...(await appointment(parsedId.data, storeId)), feeError });
   } catch (error) { return unexpected(res, error); }
 });
 
-// The fee, charged only when the pro taps it, to the card the client saved when booking online. Once per booking.
-// The amount is the one saved with the booking when the client booked (lib/feeTerms.ts): a policy changed since
-// never changes it. Older bookings without saved terms use the shop's fee % of the booking's price.
+// The no-show / late-cancel fee, to the card the client saved when booking online. Once per booking. Charged when
+// the pro marks a no-show (owner, 2026-11-07), or when the pro taps Charge fee (a cancelled booking, or a retry after
+// a declined card). The amount is the one saved with the booking when the client booked (lib/feeTerms.ts): a policy
+// changed since never changes it. Older bookings without saved terms use the shop's fee % of the booking's price.
+type FeeOutcome = { ok: true } | { ok: false; status: 402 | 404 | 409; error: string };
+async function chargeBookingFee(storeId: number, appointmentId: number): Promise<FeeOutcome> {
+  const a = (await pool.query(
+    `SELECT a.id, a.status, a.fee_charged_cents, a.service_id, a.custom_lines, a.travel_fee,
+            COALESCE(a.stripe_customer_id, c.stripe_customer_id) AS customer, COALESCE(a.stripe_payment_method_id, c.stripe_payment_method_id) AS pm,
+            (SELECT s.price FROM services s WHERE s.id=a.service_id) AS service_price,
+            (SELECT COALESCE(SUM(ad.price),0) FROM appointment_addons aa JOIN addons ad ON ad.id=aa.addon_id WHERE aa.appointment_id=a.id) AS addons
+       FROM appointments a LEFT JOIN clients c ON c.id=a.customer_id WHERE a.id=$1 AND a.store_id=$2`, [appointmentId, storeId])).rows[0];
+  if (!a) return { ok: false, status: 404, error: "Appointment not found" };
+  if (a.status !== "no_show" && a.status !== "cancelled") return { ok: false, status: 409, error: "Mark the booking as a no-show or cancel it first." };
+  if (a.fee_charged_cents != null) return { ok: false, status: 409, error: "A fee was already charged for this booking." };
+  const { agreedFee } = await import("../lib/feeTerms");
+  const terms = await agreedFee(a.id);
+  const pct = terms?.percent ?? 0;
+  if (pct <= 0) return { ok: false, status: 409, error: terms?.saved ? "No cancellation or no-show fee was agreed when this booking was made." : "Set a fee in Settings › Cancellation policy first." };
+  if (!a.customer || !a.pm) return { ok: false, status: 409, error: "This client has no card on file." };
+  const lines = Array.isArray(a.custom_lines) ? a.custom_lines : [];
+  const total = (Number(a.service_price) || 0) + (Number(a.addons) || 0) + lines.reduce((n: number, l: any) => n + (Number(l?.price) || 0), 0);
+  const feeCents = terms?.cents ?? Math.round(total * pct);
+  if (feeCents < 50) return { ok: false, status: 409, error: "The fee would be under $0.50, which can't be charged." };
+  const kind = a.status === "no_show" ? "no_show" : "late_cancel";
+  const { chargeCancellationFee } = await import("../lib/cancellationFee");
+  let piId: string;
+  try {
+    piId = await chargeCancellationFee({ storeId, appointmentId: a.id, stripeCustomerId: a.customer, stripePaymentMethodId: a.pm, feeCents, kind });
+  } catch (err: any) {
+    return { ok: false, status: 402, error: err?.raw?.message || err?.message || "The client's card was declined." };
+  }
+  await pool.query(`UPDATE appointments SET fee_kind=$3, fee_charged_cents=$4, fee_payment_intent=$5, fee_charged_at=now()
+    WHERE id=$1 AND store_id=$2 AND fee_charged_cents IS NULL`, [a.id, storeId, kind, feeCents, piId]);
+  return { ok: true };
+}
+
 router.post("/appointments/:id/fee", async (req, res) => {
   const parsedId = id.safeParse(req.params.id);
   if (!parsedId.success) return invalid(res, parsedId.error);
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const a = (await pool.query(
-      `SELECT a.id, a.status, a.fee_charged_cents, a.service_id, a.custom_lines, a.travel_fee,
-              COALESCE(a.stripe_customer_id, c.stripe_customer_id) AS customer, COALESCE(a.stripe_payment_method_id, c.stripe_payment_method_id) AS pm,
-              (SELECT s.price FROM services s WHERE s.id=a.service_id) AS service_price,
-              (SELECT COALESCE(SUM(ad.price),0) FROM appointment_addons aa JOIN addons ad ON ad.id=aa.addon_id WHERE aa.appointment_id=a.id) AS addons
-         FROM appointments a LEFT JOIN clients c ON c.id=a.customer_id WHERE a.id=$1 AND a.store_id=$2`, [parsedId.data, storeId])).rows[0];
-    if (!a) return res.status(404).json({ error: "Appointment not found" });
-    if (a.status !== "no_show" && a.status !== "cancelled") return res.status(409).json({ error: "Mark the booking as a no-show or cancel it first." });
-    if (a.fee_charged_cents != null) return res.status(409).json({ error: "A fee was already charged for this booking." });
-    const { agreedFee } = await import("../lib/feeTerms");
-    const terms = await agreedFee(a.id);
-    const pct = terms?.percent ?? 0;
-    if (pct <= 0) return res.status(409).json({ error: terms?.saved ? "No cancellation or no-show fee was agreed when this booking was made." : "Set a fee in Settings › Cancellation policy first." });
-    if (!a.customer || !a.pm) return res.status(409).json({ error: "This client has no card on file." });
-    const lines = Array.isArray(a.custom_lines) ? a.custom_lines : [];
-    const total = (Number(a.service_price) || 0) + (Number(a.addons) || 0) + lines.reduce((n: number, l: any) => n + (Number(l?.price) || 0), 0);
-    const feeCents = terms?.cents ?? Math.round(total * pct);
-    if (feeCents < 50) return res.status(409).json({ error: "The fee would be under $0.50, which can't be charged." });
-    const kind = a.status === "no_show" ? "no_show" : "late_cancel";
-    const { chargeCancellationFee } = await import("../lib/cancellationFee");
-    let piId: string;
-    try {
-      piId = await chargeCancellationFee({ storeId, appointmentId: a.id, stripeCustomerId: a.customer, stripePaymentMethodId: a.pm, feeCents, kind });
-    } catch (err: any) {
-      return res.status(402).json({ error: err?.raw?.message || err?.message || "The client's card was declined." });
-    }
-    await pool.query(`UPDATE appointments SET fee_kind=$3, fee_charged_cents=$4, fee_payment_intent=$5, fee_charged_at=now()
-      WHERE id=$1 AND store_id=$2 AND fee_charged_cents IS NULL`, [a.id, storeId, kind, feeCents, piId]);
-    return res.json(await appointment(a.id, storeId));
+    const outcome = await chargeBookingFee(storeId, parsedId.data);
+    if (!outcome.ok) return res.status(outcome.status).json({ error: outcome.error });
+    return res.json(await appointment(parsedId.data, storeId));
   } catch (error) { return unexpected(res, error); }
 });
 
@@ -730,6 +742,25 @@ router.get("/appointments/:id", async (req, res, next) => {
     const storeId = await store(req, res); if (!storeId) return;
     const row = await appointment(parsedId.data, storeId);
     // Not a booking with a service (a POS quick sale), or not found: the main route answers, as before.
+// The "Available for services" hours grid was removed (owner, 2026-11-07): business hours decide. App builds before
+// "Build Nov 7 · F" still load and save their Hours screen through these two; they say business hours and accept a
+// business-hours save, and refuse the grid. Delete both once every phone has that app update.
+router.get("/pro/service-hours", (_req, res) => res.json({ mode: "business", hours: [[], [], [], [], [], [], []] }));
+router.put("/pro/service-hours", (req, res) => {
+  if (req.body?.mode === "business") return res.status(204).end();
+  return res.status(410).json({ error: "Available for services was removed. Set your business hours instead." });
+});
+
+// A house call's plan: when to leave and from where, setup, and when they're done (lib/routePlanner.ts).
+router.get("/pro/appointments/:id/route", async (req, res) => {
+  const parsedId = id.safeParse(req.params.id);
+  if (!parsedId.success) return invalid(res, parsedId.error);
+  try {
+    const storeId = await store(req, res); if (!storeId) return;
+    return res.json(await routeForAppointment(storeId, parsedId.data));
+  } catch (error) { return unexpected(res, error); }
+});
+
     if (!row) return next("router");
     return res.json(row);
   } catch (error) { return unexpected(res, error); }
