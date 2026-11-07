@@ -346,7 +346,7 @@ function extractCity(address?: string): string {
   return "";
 }
 
-function formatBusinessHours(businessHours?: StoreData["serviceHours"]): { day: string; time: string }[] {
+function formatBusinessHours(businessHours?: StoreData["businessHours"]): { day: string; time: string }[] {
   if (!businessHours?.length) return [];
   return [...businessHours]
     .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
@@ -354,55 +354,10 @@ function formatBusinessHours(businessHours?: StoreData["serviceHours"]): { day: 
       day: DAY_NAMES[h.dayOfWeek],
       time: h.isClosed
         ? "Closed"
-        : h.openTime === "00:00" && h.closeTime === "24:00" && (h.blocks?.length ?? 1) === 1
+        : h.openTime === "00:00" && h.closeTime === "24:00"
           ? "Open 24 hours"
-          : (h.blocks?.length ? h.blocks : [{ open: h.openTime, close: h.closeTime }]).map((b) => `${formatTime12h(b.open)} – ${formatTime12h(b.close)}`).join(", "),
+          : `${formatTime12h(h.openTime)} – ${formatTime12h(h.closeTime)}`,
     }));
-}
-
-/** Which of a day's 24 hours are on, from the blocks the pro picked, or from the day's open and close times. */
-function dayHours(day: NonNullable<StoreData["serviceHours"]>[number] | undefined): boolean[] {
-  const on = Array.from({ length: 24 }, () => false);
-  if (!day || day.isClosed) return on;
-  for (const b of day.blocks?.length ? day.blocks : [{ open: day.openTime, close: day.closeTime }]) {
-    const hour = (t: string) => { const [h, m] = t.split(":").map(Number); return h + (m || 0) / 60; };
-    for (let h = Math.floor(hour(b.open)); h < Math.ceil(hour(b.close)) && h < 24; h++) on[h] = true;
-  }
-  return on;
-}
-
-/** The hours the grid shows (owner, 2026-11-05): 8 AM to 11 PM, 15 one-hour blocks, the same as the app. */
-const GRID_HOURS = Array.from({ length: 15 }, (_, i) => 8 + i);
-
-/** The week as seven rows of one-hour blocks, 8 AM to 11 PM, coloured where the pro can be booked. */
-function ServiceHoursGrid({ week }: { week: NonNullable<StoreData["serviceHours"]> }) {
-  const summary = formatBusinessHours(week).map((row) => `${row.day}: ${row.time}`).join(". ");
-  return (
-    <div className="mt-4" data-testid="solo-hours-grid">
-      <p className="sr-only">{summary}</p>
-      <div aria-hidden="true">
-        <div className="grid gap-[2px]" style={{ gridTemplateColumns: `2rem repeat(${GRID_HOURS.length}, minmax(0, 1fr))` }}>
-          <span />
-          {([["8a", 4], ["12p", 4], ["4p", 4], ["8p", 3]] as const).map(([label, span]) => (
-            <span key={label} className="text-left text-[10px]" style={{ gridColumn: `span ${span}`, color: C.ink600 }}>{label}</span>
-          ))}
-          {[0, 1, 2, 3, 4, 5, 6].map((d) => {
-            const on = dayHours(week.find((x) => x.dayOfWeek === d));
-            return [
-              <span key={`day-${d}`} className="self-center text-left text-[11px] leading-none" style={{ color: C.ink800 }}>{DAY_NAMES[d].slice(0, 3)}</span>,
-              ...GRID_HOURS.map((hour) => on[hour]).map((open, i) => (
-                <span key={`${d}-${GRID_HOURS[i]}`} data-testid="solo-hour-block" data-on={open ? "1" : "0"} className="aspect-square rounded-[2px]" style={{ background: open ? C.gold700 : "#E2E2E2" }} />
-              )),
-            ];
-          })}
-        </div>
-        <div className="mt-3 flex justify-center gap-5 text-xs" style={{ color: C.ink600 }}>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-[2px]" style={{ background: C.gold700 }} /> Available</span>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-[2px]" style={{ background: "#E2E2E2" }} /> Not available</span>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 function buildDirectionsUrl(address?: string): string {
@@ -517,8 +472,8 @@ function BookingPanel({
   const cancelAckNeeded = !!cancelPolicy.data?.required && !!cancelPolicy.data?.text;
 
 
-  // The days they work: their hours for services when they've set them, else business hours.
-  const week = store.serviceHours ?? store.businessHours ?? [];
+  // The days they work: business hours.
+  const week = store.businessHours ?? [];
   const isDayOff = (day: Date) => !!week.find((d) => d.dayOfWeek === day.getDay())?.isClosed;
   /** The first day from `from` that they work (at most a week on, in case nothing is set). */
   const firstWorkingDay = (from?: Date) => {
@@ -1341,11 +1296,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   const avgRating      = isGoogleSourced && store.googleReviews?.rating ? store.googleReviews.rating
                         : typeof store.displayRating === "number" && store.displayRating > 0 ? store.displayRating
                         : ratedReviews.length ? ratedReviews.reduce((sum, r) => sum + Number(r.rating), 0) / ratedReviews.length : 0;
-  // What can really be booked, when the pro has set it.
-  // The pro picks one in the app's Hours screen (owner, 2026-11-05): the Available for services grid, or business hours.
-  // The grid is on when serviceHours comes back; the page then shows only the grid, otherwise only business hours.
-  const serviceWeek    = store.serviceHours ?? [];
-  const hours          = serviceWeek.length > 0 ? [] : formatBusinessHours(store.businessHours);
+  const hours          = formatBusinessHours(store.businessHours);
   const cancelPolicyText = useCancellationPolicy(slug).data?.text?.trim() ?? "";
 
   // Scroll detection
@@ -2158,13 +2109,6 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                   </div>
                 ))}
               </dl>
-            </div>
-          )}
-
-          {serviceWeek.length > 0 && (
-            <div className="mt-8 border-t pt-7" style={{ borderColor: C.cream200 }}>
-              <h3 className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Available for Services</h3>
-              <ServiceHoursGrid week={serviceWeek} />
             </div>
           )}
 
