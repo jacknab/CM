@@ -34,31 +34,38 @@ export async function cancelBookingWithPolicy(
     };
   }
 
-  const cutoffHours = (store as any).cancellationHoursCutoff ?? 24;
+  // The terms saved with the booking when the client booked (lib/feeTerms.ts); older bookings use the shop's settings.
+  const { agreedFee } = await import("./feeTerms");
+  const terms = await agreedFee(Number(appointment.id));
+  const cutoffHours = terms?.saved && terms.cutoffHours != null ? terms.cutoffHours : ((store as any).cancellationHoursCutoff ?? 24);
   let cancellationFeeCharged: number | null = null;
   let cancellationFeeError = false;
 
   if (cutoffHours > 0 && appointment.status !== "cancelled") {
     const hoursUntilAppointment = (new Date(appointment.date).getTime() - Date.now()) / 3600_000;
     if (hoursUntilAppointment < cutoffHours) {
-      const feePct = Number((store as any).cancellationFeeValue) || 0;
+      const feePct = terms?.saved ? terms.percent : (Number((store as any).cancellationFeeValue) || 0);
       const feeCust = (appointment as any).stripeCustomerIdApt ?? (appointment as any).customer?.stripeCustomerId ?? null;
       const feePm = (appointment as any).stripePaymentMethodIdApt ?? (appointment as any).customer?.stripePaymentMethodId ?? null;
 
       if (feePct > 0 && feeCust && feePm) {
         // Fee configured AND the client has a card on file — charge it, then allow the cancel.
         const servicePrice = Number((appointment as any).service?.price ?? 0);
-        const feeCents = Math.round(servicePrice * (feePct / 100) * 100);
+        const feeCents = terms?.cents ?? Math.round(servicePrice * (feePct / 100) * 100);
         if (feeCents >= 50) {
           try {
             const { chargeCancellationFee } = await import("./cancellationFee");
-            await chargeCancellationFee({
+            const piId = await chargeCancellationFee({
               storeId: store.id,
               appointmentId: appointment.id,
               stripeCustomerId: feeCust,
               stripePaymentMethodId: feePm,
               feeCents,
             });
+            // Recorded like a fee the pro charges, so it can't be charged a second time from the app.
+            const { pool } = await import("../db");
+            await pool.query(`UPDATE appointments SET fee_kind='late_cancel', fee_charged_cents=$2, fee_payment_intent=$3, fee_charged_at=now()
+              WHERE id=$1 AND fee_charged_cents IS NULL`, [appointment.id, feeCents, piId]);
             cancellationFeeCharged = feeCents / 100;
           } catch (feeErr: any) {
             console.error(`[cancel] late-cancel fee charge failed for appointment ${appointment.id}:`, feeErr?.message);

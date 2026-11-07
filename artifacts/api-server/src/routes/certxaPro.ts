@@ -119,9 +119,12 @@ const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a
   a.custom_lines AS "customLines",
   -- Paid: how, how much, and how much has been refunded since (Refund on a paid booking, 2026-11-03).
   a.payment_method AS "paymentMethod", a.total_paid::float8 AS "totalPaid",
-  -- No-show / late-cancel fee: whether the client has a card on file to charge, the shop's fee %, and a fee already charged.
+  -- No-show / late-cancel fee: whether the client has a card on file to charge, the fee % and amount agreed at booking
+  -- (lib/feeTerms.ts; older bookings: the shop's fee % and no amount), and a fee already charged.
   (COALESCE(a.stripe_payment_method_id, c.stripe_payment_method_id) IS NOT NULL) AS "cardOnFile",
-  (SELECT l.cancellation_fee_value::float8 FROM locations l WHERE l.id=a.store_id) AS "feePercent",
+  CASE WHEN a.fee_terms_at IS NOT NULL THEN a.fee_percent_agreed::float8
+    ELSE (SELECT l.cancellation_fee_value::float8 FROM locations l WHERE l.id=a.store_id) END AS "feePercent",
+  CASE WHEN a.fee_terms_at IS NOT NULL THEN COALESCE(a.fee_cents_agreed, 0) END AS "feeCents",
   a.fee_kind AS "feeKind", a.fee_charged_cents AS "feeChargedCents",
   (SELECT COALESCE(SUM(r.amount_cents), 0) FROM payment_refunds r WHERE r.appointment_id=a.id AND r.status IS DISTINCT FROM 'failed')::int AS "refundedCents",
   (SELECT COALESCE(json_agg(json_build_object('addon', json_build_object('id', ad.id, 'name', ad.name, 'price', ad.price::float8)) ORDER BY aa.id), '[]'::json)
@@ -678,8 +681,9 @@ router.post("/appointments/:id/no-show", async (req, res) => {
   } catch (error) { return unexpected(res, error); }
 });
 
-// The fee, charged only when the pro taps it: the shop's fee % (Settings › Cancellation policy) of the booking's price,
-// to the card the client saved when booking online. Once per booking.
+// The fee, charged only when the pro taps it, to the card the client saved when booking online. Once per booking.
+// The amount is the one saved with the booking when the client booked (lib/feeTerms.ts): a policy changed since
+// never changes it. Older bookings without saved terms use the shop's fee % of the booking's price.
 router.post("/appointments/:id/fee", async (req, res) => {
   const parsedId = id.safeParse(req.params.id);
   if (!parsedId.success) return invalid(res, parsedId.error);
@@ -688,19 +692,20 @@ router.post("/appointments/:id/fee", async (req, res) => {
     const a = (await pool.query(
       `SELECT a.id, a.status, a.fee_charged_cents, a.service_id, a.custom_lines, a.travel_fee,
               COALESCE(a.stripe_customer_id, c.stripe_customer_id) AS customer, COALESCE(a.stripe_payment_method_id, c.stripe_payment_method_id) AS pm,
-              (SELECT l.cancellation_fee_value FROM locations l WHERE l.id=a.store_id) AS pct,
               (SELECT s.price FROM services s WHERE s.id=a.service_id) AS service_price,
               (SELECT COALESCE(SUM(ad.price),0) FROM appointment_addons aa JOIN addons ad ON ad.id=aa.addon_id WHERE aa.appointment_id=a.id) AS addons
          FROM appointments a LEFT JOIN clients c ON c.id=a.customer_id WHERE a.id=$1 AND a.store_id=$2`, [parsedId.data, storeId])).rows[0];
     if (!a) return res.status(404).json({ error: "Appointment not found" });
     if (a.status !== "no_show" && a.status !== "cancelled") return res.status(409).json({ error: "Mark the booking as a no-show or cancel it first." });
     if (a.fee_charged_cents != null) return res.status(409).json({ error: "A fee was already charged for this booking." });
-    const pct = Number(a.pct) || 0;
-    if (pct <= 0) return res.status(409).json({ error: "Set a fee in Settings › Cancellation policy first." });
+    const { agreedFee } = await import("../lib/feeTerms");
+    const terms = await agreedFee(a.id);
+    const pct = terms?.percent ?? 0;
+    if (pct <= 0) return res.status(409).json({ error: terms?.saved ? "No cancellation or no-show fee was agreed when this booking was made." : "Set a fee in Settings › Cancellation policy first." });
     if (!a.customer || !a.pm) return res.status(409).json({ error: "This client has no card on file." });
     const lines = Array.isArray(a.custom_lines) ? a.custom_lines : [];
     const total = (Number(a.service_price) || 0) + (Number(a.addons) || 0) + lines.reduce((n: number, l: any) => n + (Number(l?.price) || 0), 0);
-    const feeCents = Math.round(total * pct);
+    const feeCents = terms?.cents ?? Math.round(total * pct);
     if (feeCents < 50) return res.status(409).json({ error: "The fee would be under $0.50, which can't be charged." });
     const kind = a.status === "no_show" ? "no_show" : "late_cancel";
     const { chargeCancellationFee } = await import("../lib/cancellationFee");

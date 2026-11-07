@@ -10189,6 +10189,11 @@ If you have any questions, please contact your administrator.
         : undefined;
 
       // Enforce: reject bookings that lack required payment evidence. A page that takes the card right after booking
+      // The cancellation/no-show terms in force now are saved with the booking (lib/feeTerms.ts); a booking made
+      // from a request keeps the terms the client sent the request with.
+      const { currentFeeTerms, requestFeeTerms, saveFeeTerms } = await import("./lib/feeTerms.js");
+      const feeTerms = (fromRequest ? await requestFeeTerms(fromRequest) : null)
+        ?? await currentFeeTerms(store.id, parsed.cancellationPolicyAccepted === true);
       // (payStep) holds the booking until it's added, as a deposit does.
       const cardLater = effectivePolicy === "card_on_file" && !input.stripeSetupIntentId && !!parsed.payStep;
       if (effectivePolicy === "card_on_file" && !input.stripeSetupIntentId && !cardLater) {
@@ -10304,7 +10309,7 @@ If you have any questions, please contact your administrator.
           storeId: store.id, customerId: customer.id, customerName: customer.name || input.customerName, phoneE164: e164CustomerPhone,
           email: input.customerEmail || null, body: req.body, startsAt: new Date(input.date), duration: visitMinutes,
           staffId: input.staffId, serviceIds: [input.serviceId], visitAt: houseCall ? "client" : "place",
-          clientAddress: houseCall?.address ?? null, travelFee: houseCall?.travelFee ?? null, notes: input.notes || null,
+          clientAddress: houseCall?.address ?? null, travelFee: houseCall?.travelFee ?? null, notes: input.notes || null, feeTerms,
         });
         return res.status(202).json({ requested: true, requestId: created.id });
       }
@@ -10432,6 +10437,7 @@ If you have any questions, please contact your administrator.
       if (resolvedPackage && resolvedPackage.addonIds.length > 0) {
         await storage.setAppointmentAddons(appointmentId, resolvedPackage.addonIds);
       }
+      await saveFeeTerms(appointmentId, feeTerms, visitCents);
 
       // ── Save payment tracking fields ────────────────────────────────────────
       if (input.paymentPolicy !== "none") {

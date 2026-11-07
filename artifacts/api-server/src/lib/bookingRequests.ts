@@ -78,6 +78,8 @@ export async function createBookingRequest(input: {
   storeId: number; customerId: number; customerName: string; phoneE164: string; email: string | null;
   body: Record<string, unknown>; startsAt: Date; duration: number; staffId: number | null; serviceIds: number[];
   visitAt: "place" | "client"; clientAddress: unknown; travelFee: number | null; notes: string | null;
+  /** The cancellation/no-show terms the client agreed to with this request (lib/feeTerms.ts). */
+  feeTerms?: unknown;
 }): Promise<{ id: number }> {
   const store = await storeInfo(input.storeId);
   if (!store) throw new Error("Store not found");
@@ -89,12 +91,13 @@ export async function createBookingRequest(input: {
   const hours = Math.max(1, Number(store.booking_request_expiry_hours) || 48);
   const row = await pool.query<{ id: number }>(
     `INSERT INTO booking_requests (store_id, client_id, client_name, client_phone, client_email, staff_id, service_ids, details,
-       starts_at, duration, visit_at, client_address, travel_fee, notes, status, expires_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13,$14,'requested', now() + make_interval(hours => $15))
+       starts_at, duration, visit_at, client_address, travel_fee, notes, status, expires_at, fee_terms)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12::jsonb,$13,$14,'requested', now() + make_interval(hours => $15), $16::jsonb)
      RETURNING id`,
     [input.storeId, input.customerId, input.customerName, input.phoneE164, input.email, input.staffId, JSON.stringify(input.serviceIds),
      JSON.stringify(details), input.startsAt.toISOString(), input.duration, input.visitAt,
-     input.clientAddress ? JSON.stringify(input.clientAddress) : null, input.travelFee, input.notes, hours]);
+     input.clientAddress ? JSON.stringify(input.clientAddress) : null, input.travelFee, input.notes, hours,
+     input.feeTerms ? JSON.stringify(input.feeTerms) : null]);
   const id = row.rows[0].id;
   const service = await serviceName(input.serviceIds[0]);
   void textClient({ store_id: input.storeId, client_phone: input.phoneE164, client_id: input.customerId },
