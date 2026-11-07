@@ -1324,8 +1324,6 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
             <div className="hidden shrink-0 items-center gap-6 lg:flex">
               {[
                 ...shopLinks,
-                // Contact: the message page (SiteMessage.tsx), with the phone number when there is one (owner, 2026-11-07).
-                { label: "Contact", href: "#message" },
               ].map((link) => (
                 <a
                   key={link.href}
@@ -1395,8 +1393,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                   { label: "About", href: "#about" },
                   { label: "Services", href: "#services" },
                   ...portfolioLink,
-                  ...shopLinks,
                   { label: "Contact", href: "#message" },
+                  ...shopLinks,
                 ].map((link) => (
                   <li key={link.href}>
                     <a
@@ -1452,6 +1450,16 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
               {t.label}
             </button>
           ))}
+          {/* Contact, right after Portfolio (owner, 2026-11-07): opens the message page (SiteMessage.tsx), not a tab. */}
+          <button
+            type="button"
+            onClick={() => { window.location.hash = "message"; }}
+            data-testid="solo-tab-contact"
+            className="flex-1 px-3 py-3.5 text-sm font-semibold transition-colors sm:text-base"
+            style={{ color: C.ink600, borderBottom: "2px solid transparent", marginBottom: -1 }}
+          >
+            Contact
+          </button>
         </div>
       </div>
 

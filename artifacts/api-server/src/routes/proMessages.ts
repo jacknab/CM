@@ -13,7 +13,8 @@
  *   POST   /api/pro/messages/:id/reply         { message } → e-mailed to the client with the link
  *   DELETE /api/pro/messages/:id               deleted for good (spam)
  *
- * Spam protection, all on the server: a hidden field only bots fill in, a minimum time to fill in the form, limits per
+ * Spam protection, all on the server: a hidden field only bots fill in, a minimum time to fill in the form, Google
+ * reCAPTCHA v3 when its keys are set (lib/recaptcha.ts), limits per
  * sender address (hashed) and per e-mail address, length and link limits, and the same message twice dropped. A
  * request caught by the hidden field or the timer is answered as if it worked, so a bot learns nothing.
  */
@@ -28,6 +29,7 @@ import { resolveStoreIdBySlug } from "../lib/salonNetworkGuard";
 import { pushOwnerMessage } from "../lib/ownerPush";
 import { sendEmail } from "../mail";
 import { emailButton, emailText, escapeEmailHtml } from "../lib/emailLayout";
+import { checkRecaptcha, recaptchaSiteKey } from "../lib/recaptcha";
 
 const router = Router();
 
@@ -63,8 +65,10 @@ const newInput = z.object({
   message: text(5000).min(2, "Write your message"),
   website: z.string().max(500).optional().default(""), // the hidden field
   startedAt: z.number().int().optional(),
+  // Google reCAPTCHA v3 token (lib/recaptcha.ts), when the keys are set.
+  recaptchaToken: z.string().max(4000).optional(),
 }).strict();
-const replyInput = z.object({ message: text(5000).min(1, "Write your message"), website: z.string().max(500).optional().default("") }).strict();
+const replyInput = z.object({ message: text(5000).min(1, "Write your message"), website: z.string().max(500).optional().default(""), recaptchaToken: z.string().max(4000).optional() }).strict();
 const proReplyInput = z.object({ message: text(5000).min(1, "Write your message") }).strict();
 
 function invalid(res: Response, error: z.ZodError) {
@@ -72,10 +76,14 @@ function invalid(res: Response, error: z.ZodError) {
 }
 
 /** Spam rules for a client's message. "drop": a bot, answer as if it worked. A string: a refusal to show. */
-async function spamCheck(req: Request, body: string, opts: { website: string; startedAt?: number; email?: string; storeId?: number; threadId?: number }): Promise<"ok" | "drop" | string> {
+async function spamCheck(req: Request, body: string, opts: { website: string; startedAt?: number; email?: string; storeId?: number; threadId?: number; recaptchaToken?: string; action: string }): Promise<"ok" | "drop" | string> {
   if (opts.website.trim()) return "drop";
   if (opts.startedAt !== undefined && Date.now() - opts.startedAt < LIMITS.minFillMs) return "drop";
   if (linkCount(body) > LIMITS.maxLinks) return "Please send fewer links in your message.";
+  // Google reCAPTCHA v3: how human the visit looked (lib/recaptcha.ts). Scores are logged to tune the cutoff.
+  const rc = await checkRecaptcha(opts.recaptchaToken, opts.action, req.ip);
+  if (!(rc.ok && rc.skipped)) console.log(`[pro-messages] recaptcha ${opts.action}: ${rc.ok ? `ok ${rc.score}` : `refused ${rc.reason}${rc.score !== undefined ? ` ${rc.score}` : ""}`}`);
+  if (!rc.ok) return "Your message couldn't be sent. Please try again in a moment.";
   const ip = ipHash(req);
   const r = (await pool.query(
     `SELECT COUNT(*) FILTER (WHERE created_at > now() - interval '1 hour')::int AS hour,
@@ -106,6 +114,12 @@ function notifyPro(storeId: number, threadId: number, name: string, subject: str
 
 // ── The client (public) ─────────────────────────────────────────────────────────────────────────────────
 
+/** What the message pages need before sending: the reCAPTCHA site key (public), or null when it's off. */
+router.get("/api/public/messages-config", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.json({ recaptchaSiteKey: recaptchaSiteKey() });
+});
+
 router.post("/api/public/store/:slug/messages", publicLimiter, async (req, res) => {
   const parsed = newInput.safeParse(req.body ?? {});
   if (!parsed.success) return invalid(res, parsed.error);
@@ -113,7 +127,7 @@ router.post("/api/public/store/:slug/messages", publicLimiter, async (req, res) 
     const storeId = await resolveStoreIdBySlug(String(req.params.slug));
     if (!storeId) return res.status(404).json({ error: "This business wasn't found." });
     const d = parsed.data;
-    const spam = await spamCheck(req, d.message, { website: d.website, startedAt: d.startedAt, email: d.email, storeId });
+    const spam = await spamCheck(req, d.message, { website: d.website, startedAt: d.startedAt, email: d.email, storeId, recaptchaToken: d.recaptchaToken, action: "message" });
     if (spam === "drop") return res.json({ ok: true });
     if (spam !== "ok") return res.status(429).json({ error: spam });
 
@@ -174,7 +188,7 @@ router.post("/api/public/messages/:token/reply", publicLimiter, async (req, res)
   try {
     const t = await threadByToken(String(req.params.token));
     if (!t) return res.status(404).json({ error: "This conversation wasn't found." });
-    const spam = await spamCheck(req, parsed.data.message, { website: parsed.data.website, threadId: t.id });
+    const spam = await spamCheck(req, parsed.data.message, { website: parsed.data.website, threadId: t.id, recaptchaToken: parsed.data.recaptchaToken, action: "reply" });
     if (spam === "drop") return res.json({ ok: true });
     if (spam !== "ok") return res.status(429).json({ error: spam });
     await pool.query(`INSERT INTO pro_messages (thread_id, sender, body, ip_hash) VALUES ($1,'client',$2,$3)`, [t.id, parsed.data.message, ipHash(req)]);

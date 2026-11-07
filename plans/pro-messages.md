@@ -4,8 +4,9 @@ A client writes to a Certxa Pro business from its website; the pro reads and ans
 each answer by e-mail with a link to a private page where they read the conversation and write back.
 
 ## Pieces
-- **Website form**: Solo websites (`SoloTheme`) › About › Contact › "Send a message", or `<slug>.certxa.com/#message`
-  (`pages/public-booking/SiteMessage.tsx`). Name, e-mail, phone (optional), subject (optional), message.
+- **Website form**: Solo websites (`SoloTheme`): the Contact tab after Portfolio, Contact in the phone menu, About › Contact ›
+  "Send a message", or `<slug>.certxa.com/#message`. A sheet over the site in its own look (`SiteMessage.tsx`): Name,
+  Email, Message (the subject is the start of the message), and the business's phone number when there is one.
 - **Client's private page**: `certxa.com/msg/<code>` (`pages/MessageThread.tsx`). Every e-mail carries its own code;
   all keep working until the conversation is deleted. Only the SHA-256 of a code is stored (`pro_message_links`).
 - **Server**: `routes/proMessages.ts`, migration `0322_pro_messages.sql` (`pro_message_threads`, `pro_messages`,
@@ -20,7 +21,7 @@ each answer by e-mail with a link to a private page where they read the conversa
   reach the pro (said in the e-mail).
 
 ## Spam protection (server)
-Hidden trap field and a 3-second minimum to fill in the form (both answered "OK" without saving, so bots learn
+Google reCAPTCHA v3 (invisible; `lib/recaptcha.ts`, keys `RECAPTCHA_SITE_KEY` / `RECAPTCHA_SECRET_KEY` / `RECAPTCHA_MIN_SCORE` = 0.5 in `/etc/certxa.env`, backup `/root/certxa.env.bak-2026-11-07-recaptcha`; scores logged as `[pro-messages] recaptcha …`; Google unreachable = allowed). The pages show Google's notice and hide its badge; the site's CSP allows www.google.com + www.gstatic.com scripts. Also: hidden trap field and a 3-second minimum to fill in the form (both answered "OK" without saving, so bots learn
 nothing); at most 3 links; per sender address (salted hash) 10 messages an hour and 30 a day; per e-mail 3 new
 conversations an hour per business; per conversation 15 client replies an hour; the same message twice in 10 minutes
 dropped; a per-process rate limit in front.

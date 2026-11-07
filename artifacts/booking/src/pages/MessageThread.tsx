@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
+import { RecaptchaNotice, recaptchaToken, useRecaptcha } from "@/lib/recaptcha";
 
 type Thread = { business: string; subject: string; clientName: string; messages: { sender: "client" | "pro"; body: string; createdAt: string }[] };
 
@@ -21,6 +22,7 @@ export default function MessageThread() {
   const [error, setError] = useState("");
   const [sentNote, setSentNote] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const siteKey = useRecaptcha();
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/public/messages/${encodeURIComponent(token)}`);
@@ -35,8 +37,9 @@ export default function MessageThread() {
     if (!text.trim() || busy) return;
     setBusy(true); setError(""); setSentNote(false);
     try {
+      const rc = await recaptchaToken(siteKey, "reply");
       const res = await fetch(`/api/public/messages/${encodeURIComponent(token)}/reply`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text.trim(), website }),
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text.trim(), website, ...(rc ? { recaptchaToken: rc } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Your message could not be sent. Please try again.");
@@ -82,6 +85,7 @@ export default function MessageThread() {
           <button type="button" onClick={send} disabled={busy || !text.trim()} className="flex w-full items-center justify-center gap-2 rounded-full bg-gray-900 px-6 py-3 text-sm font-semibold text-white disabled:opacity-50" data-testid="msg-send">
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}Send
           </button>
+          {siteKey && <RecaptchaNotice />}
         </div>
       </div>
     </main>
