@@ -26,7 +26,10 @@ export function categorySlug(name: string): string {
 
 /** The salon's category pages, in its own category order; none unless category pages are on for it. */
 export function categoryPagesFor(td: TenantData, storeId: number): CategoryPage[] {
-  if (!CATEGORY_PAGE_STORE_IDS.has(storeId) || !td.business) return [];
+  // Every template website has them since 2026-11-07 (owner: the Solo site's SEO everywhere), except one Certxa
+  // prepared that its owner hasn't claimed yet (no near-alike pages across prepared salons).
+  void storeId;
+  if (!td.business || td.isUnclaimedAutoCreated) return [];
   const seen = new Set<string>();
   const pages: CategoryPage[] = [];
   for (const c of td.serviceCategories) {

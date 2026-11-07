@@ -112,7 +112,8 @@ export const isSoloDesign = (theme: string | null | undefined): boolean => theme
 
 /** Links to the category pages of a business on the Solo design (empty for any other design): sitemap, summary, llms.txt. */
 export async function soloCategoryLinks(store: { id: number; category?: string | null; bookingTheme?: string | null }, f: SalonFacts): Promise<{ name: string; url: string }[]> {
-  if (!isSoloDesign(store.bookingTheme)) return [];
+  // Every booking-site design has them since 2026-11-07 (owner: the Solo site's SEO everywhere).
+  void store.bookingTheme;
   return (await soloCategoryPages(store.id, store.category ?? null)).map((p) => ({ name: p.name, url: soloCategoryUrl(f, p) }));
 }
 

@@ -410,7 +410,8 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
 
         // A Solo website's service category pages (/services/<category>/), built on the server; any other /services
         // address there is a real 404, never the homepage (lib/soloCategoryPages.ts).
-        if (isSoloDesign((store as any).bookingTheme) && /^\/services(\/|$)/i.test(req.path || "")) {
+        // Every booking-site design has them since 2026-11-07 (owner: the Solo site's SEO everywhere).
+        if (/^\/services(\/|$)/i.test(req.path || "")) {
           return serveSoloServicesPath(req, res, store as any);
         }
 
