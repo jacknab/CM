@@ -24,6 +24,7 @@ import { clientIntelligence } from "../shared/schema/intelligence";
 import { runIntelligenceForStore } from "./intelligence/orchestrator";
 import { appWebSessionGuard, endAppWebSession, appWebLink } from "./lib/appWebSession";
 import { soloApiLock } from "./lib/soloApiAllowList";
+import { soloPageGuard } from "./lib/soloPageGuard";
 import {
   getGoogleLoginAuthUrl,
   exchangeGoogleLoginCode,
@@ -184,6 +185,8 @@ export function setupAuth(app: Express) {
   app.post("/api/app-web-session/end", endAppWebSession);
   // Solo accounts may only use what the Certxa Pro app and the Solo pages use (lib/soloApiAllowList.ts).
   app.use(soloApiLock);
+  // …and the same for website pages: a Solo account only ever sees /solo (lib/soloPageGuard.ts).
+  app.use(soloPageGuard);
 
   // 10 years — practically "never expires", used for front-desk / kiosk devices
   const KIOSK_MAX_AGE = 1000 * 60 * 60 * 24 * 365 * 10;

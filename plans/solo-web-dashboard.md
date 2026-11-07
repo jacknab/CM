@@ -170,3 +170,9 @@ Solo is app-only. The website's plan choices for salon accounts lose Solo:
 - the Solo plan offer on `AccountLocked.tsx` and `TrialExpired.tsx`.
 
 The server also refuses a Solo plan change from a non-app account, so it can't be done by calling the endpoint directly.
+- **Step 6 — backend lock-down: LIVE 2026-11-07, committed.**
+  - Pages: `lib/soloPageGuard.ts` (after the session, next to the API lock). A signed-in Solo account asking for any booking-app page outside its allow-list (Solo pages, Plus/credits, sign-in, public pages, marketing pages, the support team's portal) gets a server 302 to the matching Solo page (`/settings` → `/solo`, `/calendar` → `/solo/calendar`, …). Rentals host and staff sign-ins are left alone.
+  - Data: `SOLO_API_LOCK=enforce` in `/etc/certxa.env` (backup `/root/certxa.env.bak-2026-11-07-sololock`). Before switching, the live report (39 addresses, all store 41 using salon pages) was read; added to the list: `/api/plans/my-features`, `/api/store/by-subdomain`, `/api/booking/manage/*`, `/api/r2/*`, `/api/live-chat/*`.
+  - Tests with enforce on: 42 server checks; Calendar 39, Clients/Catalog 49, sign-in/Billing 24 browser checks with no refused calls; 724 API tests.
+  - To undo the data lock: set `SOLO_API_LOCK=report`, `export` it, `pm2 reload certxa-api --update-env`.
+

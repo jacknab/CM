@@ -45,6 +45,11 @@ export const SOLO_API_ALLOW: string[] = [
   "/api/pos/email-receipt", "/api/pos/sms-receipt", "/api/pos-settings/*", "/api/tip-presets/*",
   "/api/pro/*", "/api/reviews/*",
   "/api/stores/*", "/api/user/delete-account", "/api/waitlist/*",
+  // The Solo dashboard on the website (/solo): its plan (owner, 2026-11-07)
+  "/api/plans/my-features",
+  // Public pages an owner may open while signed in: their booking site, a client's manage-booking link, stored
+  // photos and images, and the support chat (its agent side checks the support team's own sign-in)
+  "/api/store/by-subdomain", "/api/booking/manage/*", "/api/r2/*", "/api/live-chat/*",
 ];
 
 const ALLOW = SOLO_API_ALLOW.map((p) => {
