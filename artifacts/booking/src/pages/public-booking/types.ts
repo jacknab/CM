@@ -29,6 +29,8 @@ export interface StoreData {
   googleReviews?: { rating: number; count: number } | null;
   /** false: the business switched its booking system off; the website stays, its booking controls don't. */
   bookingSystem?: boolean;
+  /** The hours an independent pro set as available for services: what can really be booked. Null when not set. */
+  serviceHours?: { dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean; blocks?: { open: string; close: string }[] }[] | null;
   businessHours?: {
     id: number;
     dayOfWeek: number;
@@ -79,6 +81,8 @@ export interface AddonData {
   price: string;
   duration: number;
   storeId: number;
+  allowQuantity?: boolean;
+  maxQuantity?: number;
 }
 
 export interface ServiceAddonData {

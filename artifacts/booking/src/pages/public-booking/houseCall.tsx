@@ -79,7 +79,11 @@ export function useHouseCall(store: unknown, slug: string, services: OfferedAtSe
     travelFee: houseCall && confirmed ? confirmed.travelFee : 0,
     /** Changes whenever the open times have to be fetched again. */
     timesKey: houseCall ? `client:${confirmed ? JSON.stringify(confirmed.address) : ""}` : "place",
-    applyParams(params: URLSearchParams) { if (houseCall) params.set("visitAt", "client"); },
+    applyParams(params: URLSearchParams) {
+      if (!houseCall) return;
+      params.set("visitAt", "client");
+      if (confirmed) params.set("visitAddress", JSON.stringify(confirmed.address)); // times are planned around the other visits
+    },
     bookFields: houseCall && confirmed ? { visitAt: "client" as const, clientAddress: confirmed.address }
       : offered ? { visitAt: "place" as const } : {},
   // eslint-disable-next-line react-hooks/exhaustive-deps

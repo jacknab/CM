@@ -107,13 +107,16 @@ export function SoloCart({ store, lines, total, directionsUrl, phoneHref, phoneL
                     <span>{money(line.price)}</span>
                     {remove(line.name, () => onRemoveService(line.id))}
                   </div>
-                  {line.addons.map((addon) => (
+                  {[...new Set(line.addons)].map((addon) => {
+                    const count = line.addons.filter((a) => a === addon).length;
+                    return (
                     <div key={addon.id} className="flex items-center gap-2 pl-3 text-[13px] text-gray-600">
-                      <span className="min-w-0 flex-1">{addon.name}</span>
-                      <span>{money(Number(addon.price))}</span>
+                      <span className="min-w-0 flex-1">{addon.name}{count > 1 ? ` × ${count}` : ""}</span>
+                      <span>{money(Number(addon.price) * count)}</span>
                       {remove(addon.name, () => onRemoveAddon(line.id, addon.id))}
                     </div>
-                  ))}
+                    );
+                  })}
                 </li>
               ))}
             </ul>

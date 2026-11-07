@@ -14,6 +14,7 @@
  * Booking flow opens as a slide-in panel from the right, matching the
  * BookingPanel in templates-storage/nail-salon-bloom/project/src/components/BookingPanel.tsx
  */
+import { BusyError, getPublicJson } from "./publicFetch";
 import { storeAddressLine } from "@/lib/storeAddress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -88,6 +89,10 @@ interface ServiceEntry {
   categoryId?: number;
   imageUrl?: string | null;
   offeredAt?: string | null;
+  allowQuantity?: boolean;
+  maxQuantity?: number;
+  /** How many on this visit; `price` and `duration` here are then for all of them. */
+  quantity?: number;
 }
 
 interface ServiceCategoryEntry {
@@ -96,6 +101,18 @@ interface ServiceCategoryEntry {
 }
 
 /** The chosen colour, faintly: a selected service. */
+/** − 1 + for a service or add-on sold by quantity. */
+function QtyStepper({ value, max, onChange, name }: { value: number; max: number; onChange: (next: number) => void; name: string }) {
+  const button = "grid h-9 w-9 place-items-center rounded-full border text-lg font-semibold leading-none disabled:opacity-30";
+  return (
+    <div className="flex items-center gap-3" role="group" aria-label={`How many ${name}`} data-testid={`solo-qty-${name}`}>
+      <button type="button" onClick={() => onChange(value - 1)} className={button} style={{ borderColor: C.cream300, color: C.ink800 }} aria-label={`One less ${name}`}>−</button>
+      <span className="min-w-[1.5rem] text-center text-[15px] font-bold" style={{ color: C.ink900 }} aria-live="polite">{value}</span>
+      <button type="button" onClick={() => onChange(value + 1)} disabled={value >= max} className={button} style={{ borderColor: C.cream300, color: C.ink800 }} aria-label={`One more ${name}`}>+</button>
+    </div>
+  );
+}
+
 const TINT = "color-mix(in srgb, var(--site-accent, #B45309) 12%, white)";
 
 function CheckDot({ on, small }: { on: boolean; small?: boolean }) {
@@ -104,6 +121,18 @@ function CheckDot({ on, small }: { on: boolean; small?: boolean }) {
     <span className={`grid ${size} shrink-0 place-items-center rounded-full border`} style={{ background: on ? C.gold700 : "transparent", borderColor: on ? C.gold700 : C.cream300 }} aria-hidden="true">
       {on && <Check className={small ? "h-3 w-3" : "h-3.5 w-3.5"} color="#fff" strokeWidth={3} />}
     </span>
+  );
+}
+
+/** The client's profile photo on their review, or their first initial when there is none. */
+function ReviewerAvatar({ name, photoUrl }: { name: string; photoUrl?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [photoUrl]);
+  if (photoUrl && !broken) {
+    return <img src={photoUrl} alt="" loading="lazy" onError={() => setBroken(true)} className="h-10 w-10 shrink-0 rounded-full object-cover" data-testid="solo-review-avatar" />;
+  }
+  return (
+    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-base font-semibold text-white" style={{ background: C.gold700 }} aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
   );
 }
 
@@ -136,6 +165,8 @@ interface GoogleReviewEntry {
   serviceName?: string | null;
   staffName?: string | null;
   reviewCreateTime?: string | null;
+  /** Where the review was written: a Google review is always named as Google's. */
+  source?: "google" | "certxa";
 }
 
 /** Mirrors ServiceReviewResult from serviceReviewMatcher.ts — one per service, keyed by service ID */
@@ -157,7 +188,37 @@ interface TimeSlot {
   time: string;
   staffId: number;
   staffName: string;
+  /** Who does the second service, when another professional does it. */
+  extraStaffId?: number;
 }
+
+/** A professional clients can book (GET /api/public/store/:slug/team). */
+interface TeamMember {
+  id: number;
+  name: string;
+  role: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  serviceIds: number[];
+  /** Barbershops and hair salons: this professional's own price for each service they do. */
+  prices?: Record<string, number>;
+}
+
+/** A service's price with this professional (their own price at a barbershop or hair salon), for however many. */
+function proPrice(svc: ServiceEntry, team: TeamMember[], staffId: number | null | undefined): number {
+  const own = staffId != null ? team.find((m) => m.id === staffId)?.prices?.[String(svc.id)] : undefined;
+  const quantity = Number((svc as { quantity?: number }).quantity) || 1;
+  if (own != null) return own * quantity;
+  // No one chosen yet: the lowest price a professional who does it charges ("from").
+  const all = team.map((m) => m.prices?.[String(svc.id)]).filter((x): x is number => x != null);
+  return all.length ? Math.min(...all) * quantity : Number(svc.price ?? 0);
+}
+/** True when the professionals who do this service charge different prices for it. */
+function pricesVary(svc: ServiceEntry, team: TeamMember[]): boolean {
+  const all = team.map((m) => m.prices?.[String(svc.id)]).filter((x): x is number => x != null);
+  return all.length > 1 && Math.min(...all) !== Math.max(...all);
+}
+const firstName = (name: string) => name.trim().split(/\s+/)[0];
 
 type SoloTab = "about" | "services" | "portfolio";
 const SOLO_TABS: { id: SoloTab; label: string }[] = [
@@ -173,7 +234,8 @@ interface GalleryPhoto {
   caption?: string | null;
 }
 
-type BookingStep = "date" | "details" | "card" | "payment" | "success";
+// place, date and time are steps of their own (owner, 2026-11-07): where, then the month, then the times.
+type BookingStep = "place" | "date" | "time" | "details" | "card" | "payment" | "success";
 
 interface BloomThemeProps {
   store: StoreData;
@@ -228,22 +290,6 @@ function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
-function getWeekStart(baseOffset: number): Date {
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const d = new Date(today);
-  d.setDate(today.getDate() + baseOffset * 7);
-  return d;
-}
-
-function getWeekDays(weekStart: Date): Date[] {
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(weekStart);
-    d.setDate(weekStart.getDate() + i);
-    return d;
-  });
-}
-
 function isToday(d: Date): boolean {
   const t = new Date();
   return d.getFullYear() === t.getFullYear() && d.getMonth() === t.getMonth() && d.getDate() === t.getDate();
@@ -267,8 +313,8 @@ function formatPrice(price: string | number): string {
 
 function formatTime12h(time: string): string {
   const [h, m] = time.split(":").map(Number);
-  const period = h >= 12 ? "PM" : "AM";
-  const hour   = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  const period = h >= 12 && h < 24 ? "PM" : "AM"; // 24:00 is the midnight a day ends on
+  const hour   = h === 24 ? 12 : h > 12 ? h - 12 : h === 0 ? 12 : h;
   return m === 0 ? `${hour} ${period}` : `${hour}:${String(m).padStart(2,"0")} ${period}`;
 }
 
@@ -298,7 +344,7 @@ function extractCity(address?: string): string {
   return "";
 }
 
-function formatBusinessHours(businessHours?: StoreData["businessHours"]): { day: string; time: string }[] {
+function formatBusinessHours(businessHours?: StoreData["serviceHours"]): { day: string; time: string }[] {
   if (!businessHours?.length) return [];
   return [...businessHours]
     .sort((a, b) => a.dayOfWeek - b.dayOfWeek)
@@ -306,8 +352,55 @@ function formatBusinessHours(businessHours?: StoreData["businessHours"]): { day:
       day: DAY_NAMES[h.dayOfWeek],
       time: h.isClosed
         ? "Closed"
-        : `${formatTime12h(h.openTime)} – ${formatTime12h(h.closeTime)}`,
+        : h.openTime === "00:00" && h.closeTime === "24:00" && (h.blocks?.length ?? 1) === 1
+          ? "Open 24 hours"
+          : (h.blocks?.length ? h.blocks : [{ open: h.openTime, close: h.closeTime }]).map((b) => `${formatTime12h(b.open)} – ${formatTime12h(b.close)}`).join(", "),
     }));
+}
+
+/** Which of a day's 24 hours are on, from the blocks the pro picked, or from the day's open and close times. */
+function dayHours(day: NonNullable<StoreData["serviceHours"]>[number] | undefined): boolean[] {
+  const on = Array.from({ length: 24 }, () => false);
+  if (!day || day.isClosed) return on;
+  for (const b of day.blocks?.length ? day.blocks : [{ open: day.openTime, close: day.closeTime }]) {
+    const hour = (t: string) => { const [h, m] = t.split(":").map(Number); return h + (m || 0) / 60; };
+    for (let h = Math.floor(hour(b.open)); h < Math.ceil(hour(b.close)) && h < 24; h++) on[h] = true;
+  }
+  return on;
+}
+
+/** The hours the grid shows (owner, 2026-11-05): 8 AM to 11 PM, 15 one-hour blocks, the same as the app. */
+const GRID_HOURS = Array.from({ length: 15 }, (_, i) => 8 + i);
+
+/** The week as seven rows of one-hour blocks, 8 AM to 11 PM, coloured where the pro can be booked. */
+function ServiceHoursGrid({ week }: { week: NonNullable<StoreData["serviceHours"]> }) {
+  const summary = formatBusinessHours(week).map((row) => `${row.day}: ${row.time}`).join(". ");
+  return (
+    <div className="mt-4" data-testid="solo-hours-grid">
+      <p className="sr-only">{summary}</p>
+      <div aria-hidden="true">
+        <div className="grid gap-[2px]" style={{ gridTemplateColumns: `2rem repeat(${GRID_HOURS.length}, minmax(0, 1fr))` }}>
+          <span />
+          {([["8a", 4], ["12p", 4], ["4p", 4], ["8p", 3]] as const).map(([label, span]) => (
+            <span key={label} className="text-left text-[10px]" style={{ gridColumn: `span ${span}`, color: C.ink600 }}>{label}</span>
+          ))}
+          {[0, 1, 2, 3, 4, 5, 6].map((d) => {
+            const on = dayHours(week.find((x) => x.dayOfWeek === d));
+            return [
+              <span key={`day-${d}`} className="self-center text-left text-[11px] leading-none" style={{ color: C.ink800 }}>{DAY_NAMES[d].slice(0, 3)}</span>,
+              ...GRID_HOURS.map((hour) => on[hour]).map((open, i) => (
+                <span key={`${d}-${GRID_HOURS[i]}`} data-testid="solo-hour-block" data-on={open ? "1" : "0"} className="aspect-square rounded-[2px]" style={{ background: open ? C.gold700 : "#E2E2E2" }} />
+              )),
+            ];
+          })}
+        </div>
+        <div className="mt-3 flex justify-center gap-5 text-xs" style={{ color: C.ink600 }}>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-[2px]" style={{ background: C.gold700 }} /> Available</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded-[2px]" style={{ background: "#E2E2E2" }} /> Not available</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function buildDirectionsUrl(address?: string): string {
@@ -343,6 +436,10 @@ interface BookingPanelProps {
   onBooked: () => void;
   preselectedStaffId?: number;
   timezone: string;
+  /** The professionals clients can book; with two or more, the client may choose one or leave it open. */
+  team: TeamMember[];
+  staffChoice: number | null;
+  onStaffChoice: (staffId: number | null) => void;
 }
 
 function BookingPanel({
@@ -355,22 +452,38 @@ function BookingPanel({
   onBooked,
   preselectedStaffId,
   timezone,
+  team,
+  staffChoice,
+  onStaffChoice,
 }: BookingPanelProps) {
   const [step, setStep]                 = useState<BookingStep>("date");
   // Up to two services on one visit (twoServices.ts); the first decides the visit's start.
   const selectedService = selected[0] ?? null;
   const picked = selected.map((x) => ({ id: x.id, duration: x.duration ?? 60 }));
   const totalMinutes = picked.reduce((sum, x) => sum + x.duration, 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.duration) || 0), 0);
-  const totalPrice = selected.reduce((sum, x) => sum + Number(x.price ?? 0), 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
-  const summary = [...selected.map((x) => x.name), ...chosenAddons.map((a) => a.name)].join(" + ");
+  // A barbershop or hair salon prices by professional: the one taking the time (or the one chosen), else the lowest.
+  const priced = team.some((m) => m.prices);
+  const [selectedSlotForPrice, setSelectedSlotForPrice] = useState<TimeSlot | null>(null);
+  const pricedBy = (index: number) => index === 1 ? (selectedSlotForPrice?.extraStaffId ?? selectedSlotForPrice?.staffId ?? staffChoice) : (selectedSlotForPrice?.staffId ?? staffChoice);
+  const totalPrice = selected.reduce((sum, x, i) => sum + (priced ? proPrice(x, team, pricedBy(i)) : Number(x.price ?? 0)), 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+  const priceIsFrom = priced && !selectedSlotForPrice && staffChoice == null && selected.some((x) => pricesVary(x, team));
+  // Who can be chosen: the professionals who do the first service (another may do the second, as before).
+  const choosable = selectedService ? team.filter((m) => m.serviceIds.includes(Number(selectedService.id))) : [];
+  const staffFilter = staffChoice ?? preselectedStaffId;
+  const addonCounts = chosenAddons.reduce((map, a) => map.set(a.name, (map.get(a.name) ?? 0) + 1), new Map<string, number>());
+  const summary = [...selected.map((x) => x.name), ...[...addonCounts].map(([label, n]) => (n > 1 ? `${label} × ${n}` : label))].join(" + ");
   const visitLength = totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)} hr${totalMinutes % 60 ? ` ${totalMinutes % 60} min` : ""}` : `${totalMinutes} min`;
   const hc = useHouseCall(store, slug, selected);
-  const [weekOffset, setWeekOffset]     = useState(0);
+  /** Months on from this one, for the Date step's calendar. */
+  const [monthOffset, setMonthOffset]   = useState(0);
+  // Where the visit is: a step of its own only when there is something to choose or an address to give.
+  const needsPlace = hc.offered && (hc.showChoice || hc.visitAt === "client");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [slots, setSlots]               = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [slotsError, setSlotsError]     = useState<string | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
+  const [selectedSlot, setSelectedSlotState] = useState<TimeSlot | null>(null);
+  const setSelectedSlot = (slot: TimeSlot | null) => { setSelectedSlotState(slot); setSelectedSlotForPrice(slot); };
   const [name, setName]   = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -386,7 +499,7 @@ function BookingPanel({
   const [cardAttempt, setCardAttempt] = useState(0);
   useEffect(() => {
     if (!isOpen || !slug) return;
-    fetch(`/api/public/booking-payment-policy/${slug}`).then((r) => (r.ok ? r.json() : null)).then(setPayPolicy).catch(() => setPayPolicy(null));
+    getPublicJson<typeof payPolicy>(`/api/public/booking-payment-policy/${slug}`).then(setPayPolicy).catch(() => setPayPolicy(null));
   }, [isOpen, slug]);
   // Shown to the client; the server works out the amount itself (lib/bookingPaymentLinks.ts depositFromRule).
   const depositBase = totalPrice + (payPolicy?.depositIncludeTravelFee ? hc.travelFee : 0);
@@ -394,6 +507,7 @@ function BookingPanel({
     : payPolicy.depositType === "full" ? depositBase
     : payPolicy.depositType === "percentage" ? (depositBase * (payPolicy.depositValue ?? 0)) / 100
     : Math.min(depositBase, payPolicy.depositValue ?? 0);
+  const visitPlace = [hc.address.line1.trim(), hc.address.city.trim()].filter(Boolean).join(", ");
   const paysInFull = depositDue > 0 && depositDue >= totalPrice + hc.travelFee;
   const payOnPage = !!payPolicy?.stripePublishableKey && !!payPolicy.stripeConnectedAccountId;
   const savesCard = payPolicy?.policy === "card_on_file";
@@ -401,28 +515,40 @@ function BookingPanel({
   const cancelAckNeeded = !!cancelPolicy.data?.required && !!cancelPolicy.data?.text;
 
 
+  // The days they work: their hours for services when they've set them, else business hours.
+  const week = store.serviceHours ?? store.businessHours ?? [];
+  const isDayOff = (day: Date) => !!week.find((d) => d.dayOfWeek === day.getDay())?.isClosed;
+  /** The first day from `from` that they work (at most a week on, in case nothing is set). */
+  const firstWorkingDay = (from?: Date) => {
+    const day = from ? new Date(from) : new Date();
+    day.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 7 && isDayOff(day); i++) day.setDate(day.getDate() + 1);
+    return day;
+  };
+  /** Moves the calendar along too, so the day picked is in the month shown. */
+  const goToDay = (day: Date) => {
+    setSelectedDate(day);
+    const today = new Date();
+    setMonthOffset((day.getFullYear() - today.getFullYear()) * 12 + day.getMonth() - today.getMonth());
+  };
+
   // Reset on open
   useEffect(() => {
     if (!isOpen) return;
-    setStep("date");
+    setStep(needsPlace ? "place" : "date");
     setHold(null);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    setSelectedDate(today);
+    setSelectedDate(firstWorkingDay());
     setSlots([]);
     setSelectedSlot(null);
-    setWeekOffset(0);
+    setMonthOffset(0);
     setName(""); setPhone(""); setEmail(""); setSmsConsent(false);
     setSubmitError(null); setSlotsError(null);
   }, [isOpen]);
 
-  // Auto-select today whenever we enter the date step and nothing is selected
+  // Auto-select the first day they work whenever we enter the date step and nothing is selected
   useEffect(() => {
-    if (step === "date" && selectedDate === null) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      setSelectedDate(today);
-    }
+    if (step === "date" && selectedDate === null) setSelectedDate(firstWorkingDay());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, selectedDate]);
 
   // Keyboard close
@@ -449,15 +575,19 @@ function BookingPanel({
       duration: String(totalMinutes),
       ...extraServiceQuery(picked),
     });
-    if (preselectedStaffId) params.set("staffId", String(preselectedStaffId));
+    if (staffFilter) params.set("staffId", String(staffFilter));
     hc.applyParams(params);
-    fetch(`/api/public/store/${slug}/availability?${params}`)
-      .then((r) => r.ok ? r.json() : Promise.reject("error"))
-      .then((d) => { setSlots(Array.isArray(d) ? d : []); })
-      .catch(() => setSlotsError("Could not load availability. Please try another date."))
-      .finally(() => setSlotsLoading(false));
+    let live = true;
+    getPublicJson<TimeSlot[]>(`/api/public/store/${slug}/availability?${params}`, { isLive: () => live })
+      .then((d) => { if (!live) return; if (d === null) throw new Error("error"); setSlots(Array.isArray(d) ? d : []); })
+      .catch((err) => {
+        if (!live) return;
+        setSlotsError(err instanceof BusyError ? "Lots of people are booking right now. Please try again in a moment." : "Could not load availability. Please try another date.");
+      })
+      .finally(() => { if (live) setSlotsLoading(false); });
+    return () => { live = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selected, slug, preselectedStaffId, hc.ready, hc.timesKey]);
+  }, [selectedDate, selected, slug, staffFilter, hc.ready, hc.timesKey]);
 
   const handleBook = useCallback(async (card?: { setupIntentId: string; paymentMethodId?: string; customerId: string }) => {
     if (!selectedService || !selectedSlot || !name.trim() || !phone.trim()) return;
@@ -473,6 +603,7 @@ function BookingPanel({
           date: selectedSlot.time,
           ...bookingServiceFields(picked),
           addonIds: chosenAddons.map((a) => a.id),
+          serviceQuantities: Object.fromEntries(selected.filter((x) => (x.quantity ?? 1) > 1).map((x) => [String(x.id), x.quantity])),
           payStep: payOnPage ? "page" : "link",
           ...(card ? { stripeSetupIntentId: card.setupIntentId, stripePaymentMethodId: card.paymentMethodId, stripeCustomerId: card.customerId } : {}),
           customerName: name.trim(),
@@ -502,8 +633,14 @@ function BookingPanel({
     }
   }, [selected, chosenAddons, onBooked, selectedService, selectedSlot, name, phone, email, slug, cancellationAccepted, smsConsent, hc.bookFields]);
 
-  const weekStart = getWeekStart(weekOffset);
-  const weekDays  = getWeekDays(weekStart);
+  // The Date step's month: leading blanks so the 1st sits under its weekday, then every day of the month.
+  const monthStart = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(1); d.setMonth(d.getMonth() + monthOffset); return d; })();
+  const monthCells: (Date | null)[] = [
+    ...Array.from({ length: monthStart.getDay() }, () => null),
+    ...Array.from({ length: new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate() }, (_, i) => new Date(monthStart.getFullYear(), monthStart.getMonth(), i + 1)),
+  ];
+  /** "12:15 PM - 1:00 PM": the time and when the visit ends (owner, 2026-11-07). */
+  const slotRange = (iso: string) => `${formatSlotTime(iso, timezone)} - ${formatSlotTime(new Date(new Date(iso).getTime() + totalMinutes * 60_000).toISOString(), timezone)}`;
 
   // By the business's clock, like the times shown: a visitor elsewhere still sees 9 AM under Morning.
   const slotGroups = useMemo(() => {
@@ -542,10 +679,17 @@ function BookingPanel({
           style={{ borderColor: C.cream200, background: "#fff" }}
         >
           <div className="flex items-center gap-3">
-            {(step === "details" || step === "date" || step === "card") && (
+            {(step === "place" || step === "date" || step === "time" || step === "details" || step === "card") && (
               <button
                 type="button"
-                onClick={() => { if (step === "card") setStep("details"); else if (step === "details") setStep("date"); else onClose(); }}
+                onClick={() => {
+                  if (step === "card") setStep("details");
+                  else if (step === "details") setStep("time");
+                  else if (step === "time") setStep("date");
+                  else if (step === "date" && needsPlace) setStep("place");
+                  else onClose();
+                }}
+                data-testid="solo-booking-back"
                 className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-gray-100"
                 aria-label="Go back"
               >
@@ -561,7 +705,7 @@ function BookingPanel({
               </h2>
               {selectedService && step !== "success" && (
                 <p className="mt-0.5 max-w-[240px] truncate text-xs" style={{ color: C.ink500 }}>
-                  {summary} · {formatPrice(totalPrice + hc.travelFee)}
+                  {summary} · {priceIsFrom ? "from " : ""}{formatPrice(totalPrice + hc.travelFee)}
                 </p>
               )}
             </div>
@@ -579,8 +723,11 @@ function BookingPanel({
         {/* Progress bar */}
         {step !== "success" && (
           <div className="flex gap-2 px-5 pt-3">
-            {([["service", "Service"], ["date", "Date & time"], ["details", "Your details"]] as [BookingStep, string][]).map(([key, label], i) => {
-              const reached = (["service", "date", "details", step === "card" ? "card" : "payment"] as BookingStep[]).indexOf(step) >= i;
+            {(() => {
+              const shown: [BookingStep | "service", string][] = [["service", "Service"], ...(needsPlace ? [["place", "Location"] as [BookingStep, string]] : []), ["date", "Date"], ["time", "Time"], ["details", "Your details"]];
+              const order = [...shown.map(([k]) => k), step === "card" ? "card" : "payment"];
+              return shown.map(([key, label], i) => ({ key, label, reached: order.indexOf(step) >= i }));
+            })().map(({ key, label, reached }) => {
               return (
                 <div key={key} className="flex-1">
                   <div className="h-1 rounded-full transition-colors duration-300" style={{ background: reached ? C.gold700 : C.cream200 }} />
@@ -594,9 +741,31 @@ function BookingPanel({
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
 
-          {/* STEP: date */}
+          {/* STEP: place — where the visit is (owner, 2026-11-07: a step of its own) */}
+          {step === "place" && (
+            <div className="px-5 py-5" data-testid="solo-step-place">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
+                <MapPin className="h-4 w-4" style={{ color: C.gold700 }} />
+                Where would you like your appointment?
+              </h3>
+              <HouseCallFields hc={hc} />
+              {hc.ready && (
+                <button
+                  type="button"
+                  onClick={() => setStep("date")}
+                  data-testid="solo-place-continue"
+                  className="mt-5 flex w-full items-center justify-center gap-1.5 rounded-full px-5 py-3 text-sm font-semibold text-white"
+                  style={{ background: C.gold700 }}
+                >
+                  Continue <ChevronRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* STEP: date — the month's calendar (owner, 2026-11-07: a step of its own) */}
           {step === "date" && (
-            <div className="px-5 py-5">
+            <div className="px-5 py-5" data-testid="solo-step-date">
               <h3
                 className="mb-4 flex items-center gap-2 text-base font-semibold"
                 style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
@@ -604,142 +773,173 @@ function BookingPanel({
                 <Calendar className="h-4 w-4" style={{ color: C.gold700 }} />
                 Pick a Date
               </h3>
-              <HouseCallFields hc={hc} className="mb-5" />
-              <div className={hc.ready ? "" : "hidden"}>
-              <div className="mb-2 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => setWeekOffset((w) => Math.max(0, w - 1))}
-                  disabled={weekOffset === 0}
-                  className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-gray-100 disabled:opacity-30"
-                  aria-label="Previous week"
-                >
-                  <ChevronLeft className="h-4 w-4" style={{ color: C.ink500 }} />
-                </button>
-                <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: C.ink600 }}>
-                  {MONTH_SHORT[weekStart.getMonth()]} {weekStart.getFullYear()}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setWeekOffset((w) => w + 1)}
-                  className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-gray-100"
-                  aria-label="Next week"
-                >
-                  <ChevronRight className="h-4 w-4" style={{ color: C.ink500 }} />
-                </button>
-              </div>
-              <div className="grid grid-cols-7 gap-1">
-                {weekDays.map((day) => {
-                  const past     = isPast(day);
-                  const today    = isToday(day);
-                  const selected = selectedDate && toDateKey(day) === toDateKey(selectedDate);
-                  return (
-                    <button
-                      key={day.toISOString()}
-                      type="button"
-                      disabled={past}
-                      onClick={() => setSelectedDate(day)}
-                      className="flex flex-col items-center rounded-xl py-2.5 text-center transition-all focus:outline-none"
-                      style={{
-                        background: selected ? C.gold700 : undefined,
-                        color: selected ? "#fff" : past ? C.cream300 : today ? C.gold700 : C.ink700,
-                        border: today && !selected ? `2px solid ${C.gold700}` : undefined,
-                        cursor: past ? "not-allowed" : "pointer",
-                      }}
-                    >
-                      <span className="text-[10px] font-semibold uppercase">{DAY_SHORT[day.getDay()]}</span>
-                      <span className="mt-0.5 text-base font-semibold leading-none">{day.getDate()}</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {selectedDate && (
-                <div className="mt-5 rounded-2xl border bg-white p-4" style={{ borderColor: C.cream200 }}>
-                  <div className="mb-4 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold" style={{ color: C.ink900 }}>
-                        {DAY_SHORT[selectedDate.getDay()]}, {MONTH_SHORT[selectedDate.getMonth()]} {selectedDate.getDate()}
-                      </p>
-                      <p className="mt-1 text-xs" style={{ color: C.ink500 }}>
-                        Select a time slot
-                      </p>
-                      <TimeZoneNote timezone={timezone} at={slots[0]?.time} className="mt-1 text-xs" style={{ color: C.ink500 }} />
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDate(null)}
-                      className="text-xs font-semibold hover:underline"
-                      style={{ color: C.gold700 }}
-                    >
-                      Change date
-                    </button>
+              {choosable.length >= 2 && (
+                <div className="mb-5" data-testid="solo-pro-choice">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: C.ink400 }}>Professional</p>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Choose a professional">
+                    {[{ id: null as number | null, label: "Any professional", price: null as number | null }, ...choosable.map((m) => ({
+                      id: m.id as number | null, label: firstName(m.name),
+                      price: priced ? selected.reduce((sum, x) => sum + proPrice(x, team, m.id), 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0) : null,
+                    }))].map((o) => {
+                      const on = (staffChoice ?? null) === o.id;
+                      return (
+                        <button
+                          key={o.id ?? "any"}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => onStaffChoice(o.id)}
+                          data-testid={`solo-pro-${o.id ?? "any"}`}
+                          className="rounded-full border px-3.5 py-1.5 text-sm font-semibold transition-colors"
+                          style={{ background: on ? C.gold700 : "#fff", borderColor: on ? C.gold700 : C.cream200, color: on ? "#fff" : C.ink800 }}
+                        >
+                          {o.label}{o.price != null ? ` · ${formatPrice(o.price + hc.travelFee)}` : ""}
+                        </button>
+                      );
+                    })}
                   </div>
-
-                  {slotsLoading ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-5 w-5 animate-spin" style={{ color: C.gold700 }} />
-                    </div>
-                  ) : slots.length === 0 ? (
-                    <div className="py-6 text-center">
-                      <p className="text-sm font-semibold" style={{ color: C.ink700 }}>No availability on this day</p>
-                      <p className="mt-1 text-xs" style={{ color: C.ink400 }}>Try a different date</p>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDate(null)}
-                        className="mt-4 inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-semibold text-white"
-                        style={{ background: C.gold700 }}
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" /> Pick another date
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-5">
-                      {(Object.entries(slotGroups) as [string, TimeSlot[]][]).map(([group, groupSlots]) => {
-                        if (groupSlots.length === 0) return null;
-                        return (
-                          <div key={group}>
-                            <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: C.ink400 }}>
-                              {group}
-                            </p>
-                            <div className="grid grid-cols-3 gap-2">
-                              {groupSlots.map((slot) => {
-                                const isSel = selectedSlot?.time === slot.time && selectedSlot?.staffId === slot.staffId;
-                                return (
-                                  <button
-                                    key={`${slot.time}-${slot.staffId}`}
-                                    type="button"
-                                    onClick={() => { setSelectedSlot(slot); setStep("details"); }}
-                                    className="rounded-xl border py-2.5 text-center text-sm font-semibold transition-all focus:outline-none"
-                                    style={{
-                                      background: isSel ? C.gold700 : "#fff",
-                                      borderColor: isSel ? C.gold700 : C.cream200,
-                                      color: isSel ? "#fff" : C.ink800,
-                                    }}
-                                  >
-                                    {formatSlotTime(slot.time, timezone)}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
                 </div>
               )}
+              <div className="rounded-2xl border bg-white p-4" style={{ borderColor: C.cream200 }} data-testid="solo-month">
+                <div className="mb-3 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setMonthOffset((m) => Math.max(0, m - 1))}
+                    disabled={monthOffset === 0}
+                    className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-gray-100 disabled:opacity-30"
+                    aria-label="Previous month"
+                    data-testid="solo-month-prev"
+                  >
+                    <ChevronLeft className="h-4 w-4" style={{ color: C.ink500 }} />
+                  </button>
+                  <span className="text-sm font-semibold" style={{ color: C.ink800 }} data-testid="solo-month-title">
+                    {monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setMonthOffset((m) => Math.min(11, m + 1))}
+                    disabled={monthOffset >= 11}
+                    className="grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-gray-100 disabled:opacity-30"
+                    aria-label="Next month"
+                    data-testid="solo-month-next"
+                  >
+                    <ChevronRight className="h-4 w-4" style={{ color: C.ink500 }} />
+                  </button>
+                </div>
+                <div className="grid grid-cols-7 text-center text-[11px] font-semibold uppercase" style={{ color: C.ink400 }}>
+                  {DAY_SHORT.map((d) => <span key={d} className="py-1">{d.slice(0, 2)}</span>)}
+                </div>
+                <div className="mt-1 grid grid-cols-7 gap-1">
+                  {monthCells.map((day, i) => {
+                    if (!day) return <span key={`blank-${i}`} aria-hidden="true" />;
+                    const off = isPast(day) || isDayOff(day);
+                    const today = isToday(day);
+                    const on = !!selectedDate && toDateKey(day) === toDateKey(selectedDate);
+                    return (
+                      <button
+                        key={toDateKey(day)}
+                        type="button"
+                        disabled={off}
+                        onClick={() => { setSelectedDate(day); setSelectedSlot(null); setStep("time"); }}
+                        data-testid={`solo-day-${toDateKey(day)}`}
+                        aria-label={day.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                        className="grid aspect-square place-items-center rounded-full text-sm font-semibold transition-colors focus:outline-none"
+                        style={{
+                          background: on ? C.gold700 : undefined,
+                          color: on ? "#fff" : off ? C.cream300 : today ? C.gold700 : C.ink800,
+                          border: today && !on ? `2px solid ${C.gold700}` : undefined,
+                          cursor: off ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {day.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
-              {slotsLoading && (
-                <div className="mt-6 flex items-center justify-center gap-2 text-sm" style={{ color: C.ink500 }}>
+          {/* STEP: time — the open times on the chosen day, start and end (owner, 2026-11-07) */}
+          {step === "time" && selectedDate && (
+            <div className="px-5 py-5" data-testid="solo-step-time">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
+                    <Clock className="h-4 w-4" style={{ color: C.gold700 }} />
+                    Pick a Time
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold" style={{ color: C.ink800 }} data-testid="solo-time-day">
+                    {selectedDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                  </p>
+                  <TimeZoneNote timezone={timezone} at={slots[0]?.time} className="mt-1 text-xs" style={{ color: C.ink500 }} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStep("date")}
+                  className="shrink-0 text-xs font-semibold hover:underline"
+                  style={{ color: C.gold700 }}
+                  data-testid="solo-change-date"
+                >
+                  Change date
+                </button>
+              </div>
+
+              {slotsLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm" style={{ color: C.ink500 }}>
                   <Loader2 className="h-4 w-4 animate-spin" style={{ color: C.gold700 }} />
                   Loading availability…
                 </div>
+              ) : slotsError ? (
+                <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{slotsError}</p>
+              ) : slots.length === 0 ? (
+                <div className="rounded-2xl border bg-white py-8 text-center" style={{ borderColor: C.cream200 }}>
+                  <p className="text-sm font-semibold" style={{ color: C.ink700 }}>No times left on this day</p>
+                  <p className="mt-1 text-xs" style={{ color: C.ink400 }}>Try the next day</p>
+                  <button
+                    type="button"
+                    data-testid="solo-next-day"
+                    onClick={() => { const next = new Date(selectedDate); next.setDate(next.getDate() + 1); goToDay(firstWorkingDay(next)); }}
+                    className="mt-4 inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-sm font-semibold text-white"
+                    style={{ background: C.gold700 }}
+                  >
+                    Next day <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5" data-testid="solo-time-slots">
+                  {(Object.entries(slotGroups) as [string, TimeSlot[]][]).map(([group, groupSlots]) => {
+                    if (groupSlots.length === 0) return null;
+                    return (
+                      <div key={group}>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: C.ink400 }}>
+                          {group}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {groupSlots.map((slot) => {
+                            const isSel = selectedSlot?.time === slot.time && selectedSlot?.staffId === slot.staffId;
+                            return (
+                              <button
+                                key={`${slot.time}-${slot.staffId}`}
+                                type="button"
+                                onClick={() => { setSelectedSlot(slot); setStep("details"); }}
+                                className="rounded-xl border px-2 py-3 text-center text-sm font-semibold transition-all focus:outline-none"
+                                style={{
+                                  background: isSel ? C.gold700 : "#fff",
+                                  borderColor: isSel ? C.gold700 : C.cream200,
+                                  color: isSel ? "#fff" : C.ink800,
+                                }}
+                              >
+                                {slotRange(slot.time)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-              {slotsError && (
-                <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{slotsError}</p>
-              )}
-              </div>
             </div>
           )}
 
@@ -761,10 +961,17 @@ function BookingPanel({
                     <span className="flex items-center gap-1">
                       <Clock className="h-3 w-3" style={{ color: C.gold700 }} />
                       {formatSlotTime(selectedSlot.time, timezone)}
-                      {selectedSlot.staffName && ` · with ${selectedSlot.staffName}`}
+                      {selectedSlot.staffName && ` · with ${selectedSlot.staffName.trim().split(/\s+/)[0]}`}
                       {` · ${visitLength}`}
                     </span>
                   </div>
+                  {/* Where the visit is, and the travel fee that's in the total. */}
+                  {hc.visitAt === "client" && visitPlace && (
+                    <p className="mt-1.5 flex items-start gap-1 text-xs" style={{ color: C.ink500 }} data-testid="solo-house-call-line">
+                      <MapPin className="mt-0.5 h-3 w-3 shrink-0" style={{ color: C.gold700 }} />
+                      <span>{visitPlace}{hc.travelFee > 0 ? ` · ${formatPrice(hc.travelFee)} travel fee` : ""}</span>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -917,10 +1124,17 @@ function BookingPanel({
                     <span className="flex items-center gap-2">
                       <Clock className="h-4 w-4 shrink-0" style={{ color: C.gold700 }} />
                       {formatSlotTime(selectedSlot.time, timezone)}
-                      {selectedSlot.staffName && ` · with ${selectedSlot.staffName}`}
+                      {selectedSlot.staffName && ` · with ${selectedSlot.staffName.trim().split(/\s+/)[0]}`}
                       {` · ${visitLength}`}
                     </span>
                   </div>
+                  {/* Where the visit is, and the travel fee that's in the total. */}
+                  {hc.visitAt === "client" && visitPlace && (
+                    <p className="mt-1.5 flex items-start gap-1 text-xs" style={{ color: C.ink500 }} data-testid="solo-house-call-line">
+                      <MapPin className="mt-0.5 h-3 w-3 shrink-0" style={{ color: C.gold700 }} />
+                      <span>{visitPlace}{hc.travelFee > 0 ? ` · ${formatPrice(hc.travelFee)} travel fee` : ""}</span>
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -963,7 +1177,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   const [shop, setShop] = useState<ShopData | null>(null);
   const [shopView, setShopView] = useState<ShopView | null>(null);
   useEffect(() => {
-    fetch(`/api/public/store/${slug}/shop`).then((r) => (r.ok ? r.json() : null)).then(setShop).catch(() => setShop(null));
+    getPublicJson<ShopData>(`/api/public/store/${slug}/shop`).then(setShop).catch(() => setShop(null));
   }, [slug]);
   const shopLinks = [
     ...(shop?.giftCards ? [{ label: "Gift Cards", href: "#gift-cards" }] : []),
@@ -1004,6 +1218,13 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   }, []);
   /** Backend AI-matched service reviews — keyed by service ID (string or number) */
   const [serviceReviews, setServiceReviews] = useState<Record<string, ServiceReviewEntry>>({});
+  // The professionals clients can book. With two or more: the team on the About tab, and a choice when booking.
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [staffChoice, setStaffChoice] = useState<number | null>(preselectedStaffId ?? null);
+  const teamShown = team.length >= 2;
+  const priced = team.some((m) => m.prices);
+  /** The business switched its booking system off: the website stays, its booking controls go. */
+  const bookingOff = store.bookingSystem === false;
   const [activeCategory, setActiveCategory] = useState("All");
 
   // Header state
@@ -1014,28 +1235,64 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   const [bookingOpen, setBookingOpen]                       = useState(false);
   // Services picked on the Services tab (up to two), booked together from the bar at the bottom.
   const [cart, setCart]                                     = useState<ServiceEntry[]>([]);
-  const barShown = tab === "services" || cart.length > 0;
+  const barShown = !bookingOff && (tab === "services" || cart.length > 0);
   const [cartAddons, setCartAddons]                         = useState<Record<number, number[]>>({});
   const [cartOpen, setCartOpen]                             = useState(false);
   /** The one service showing its add-ons. */
   const [expandedId, setExpandedId]                         = useState<number | null>(null);
   const [addons, setAddons]                                 = useState<AddonData[]>([]);
   const [serviceAddons, setServiceAddons]                   = useState<ServiceAddonData[]>([]);
+  // Only add-ons that reach the service through an Add-on Group are offered, in the group's order.
   const addonsFor = (serviceId: number) => {
-    const linked = new Set(serviceAddons.filter((x) => Number(x.serviceId) === Number(serviceId)).map((x) => Number(x.addonId)));
-    return addons.filter((a) => linked.has(Number(a.id)));
+    const byId = new Map(addons.map((a) => [Number(a.id), a]));
+    return serviceAddons
+      .filter((x) => Number(x.serviceId) === Number(serviceId))
+      .map((x) => byId.get(Number(x.addonId)))
+      .filter((a): a is AddonData => !!a);
   };
-  const chosenFor = (serviceId: number) => addons.filter((a) => (cartAddons[serviceId] ?? []).includes(a.id));
+  // An add-on chosen three times is in the list three times, which is how the booking carries a quantity.
+  const chosenFor = (serviceId: number) => (cartAddons[serviceId] ?? []).map((id) => addons.find((a) => a.id === id)).filter((a): a is AddonData => !!a);
+  const [serviceQty, setServiceQty] = useState<Record<number, number>>({});
+  const qtyOf = (x: ServiceEntry) => serviceQty[x.id] ?? 1;
+  /** A service as the visit sees it: its whole price and time for however many. */
+  const inVisit = (x: ServiceEntry): ServiceEntry => {
+    const quantity = qtyOf(x);
+    return quantity > 1 ? { ...x, name: `${x.name} × ${quantity}`, price: Number(x.price ?? 0) * quantity, duration: (x.duration ?? 60) * quantity, quantity } : x;
+  };
+  /** What the page shows for a service: at a barbershop or hair salon, the chosen professional's price (else "from"). */
+  const shownPrice = (x: ServiceEntry) => (priced ? proPrice(inVisit(x), team, staffChoice) : Number(inVisit(x).price ?? 0));
+  const fromPrice = (x: ServiceEntry) => priced && staffChoice == null && pricesVary(x, team);
   const chosenAddons = cart.flatMap((x) => chosenFor(x.id));
-  const cartTotal = cart.reduce((sum, x) => sum + Number(x.price ?? 0), 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+  const cartTotal = cart.reduce((sum, x) => sum + shownPrice(x), 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+  const cartFrom = cart.some(fromPrice);
   const cartCount = cart.length + chosenAddons.length;
-  const cartLines: CartLine[] = cart.map((x) => ({ id: x.id, name: x.name, price: Number(x.price ?? 0), addons: chosenFor(x.id) }));
+  const cartLines: CartLine[] = cart.map((x) => ({ id: x.id, name: inVisit(x).name, price: shownPrice(x), addons: chosenFor(x.id) }));
   /** A service with its add-ons, for the limit on two services together (twoServices.ts). */
-  const visitPart = (x: ServiceEntry) => ({ id: x.id, duration: (x.duration ?? 60) + chosenFor(x.id).reduce((sum, a) => sum + (Number(a.duration) || 0), 0) });
+  const visitPart = (x: ServiceEntry) => ({ id: x.id, duration: (x.duration ?? 60) * qtyOf(x) + chosenFor(x.id).reduce((sum, a) => sum + (Number(a.duration) || 0), 0) });
   const removeService = (id: number) => {
     setCart((list) => list.filter((x) => x.id !== id));
     setCartAddons((map) => { const { [id]: _gone, ...rest } = map; return rest; });
     setExpandedId((open) => (open === id ? null : open));
+    setServiceQty((map) => { const { [id]: _gone, ...rest } = map; return rest; });
+  };
+  /** Would these minutes more go past the limit on two services together? */
+  const tooLong = (more: number) => {
+    if (cart.length < 2 || cart.reduce((sum, x) => sum + visitPart(x).duration, 0) + more <= MAX_VISIT_MINUTES) return false;
+    toast({ title: "Two services can be booked together for up to 2½ hours. Remove something to add this." });
+    return true;
+  };
+  /** − 1 + on an add-on: taking the last one off removes it. */
+  const setAddonQty = (serviceId: number, addon: AddonData, quantity: number) => {
+    const others = (cartAddons[serviceId] ?? []).filter((id) => id !== addon.id);
+    const now = (cartAddons[serviceId] ?? []).length - others.length;
+    if (quantity > now && tooLong(Number(addon.duration) || 0)) return;
+    setCartAddons((map) => ({ ...map, [serviceId]: [...others, ...Array(Math.max(0, quantity)).fill(addon.id)] }));
+  };
+  /** − 1 + on a service: taking the last one off removes it. */
+  const setServiceQuantity = (svc: ServiceEntry, quantity: number) => {
+    if (quantity < 1) { removeService(svc.id); return; }
+    if (quantity > qtyOf(svc) && tooLong(svc.duration ?? 60)) return;
+    setServiceQty((map) => ({ ...map, [svc.id]: quantity }));
   };
   /** Open this service's add-ons and close the other's; the card that was tapped stays in view as that one closes. */
   const expandService = (id: number) => {
@@ -1045,17 +1302,17 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   };
   /** Not chosen: choose it. Chosen with its add-ons closed: open them. Otherwise: remove it. */
   const tapService = (svc: ServiceEntry) => {
+    if (bookingOff) return;
     if (!cart.some((x) => x.id === svc.id)) {
+      const clash = cart.find((x) => (x.offeredAt === "place" && svc.offeredAt === "client") || (x.offeredAt === "client" && svc.offeredAt === "place"));
+      if (clash) { toast({ title: `${clash.name} and ${svc.name} can't be done on the same visit. Please book them separately.` }); return; }
       if (canAddService(cart.map(visitPart), { id: svc.id, duration: svc.duration ?? 60 })) { setCart([...cart, svc]); expandService(svc.id); }
     } else if (expandedId === svc.id || addonsFor(svc.id).length === 0) removeService(svc.id);
     else expandService(svc.id);
   };
   const toggleAddon = (serviceId: number, addon: AddonData) => {
     const on = (cartAddons[serviceId] ?? []).includes(addon.id);
-    if (!on && cart.length > 1 && cart.reduce((sum, x) => sum + visitPart(x).duration, 0) + (Number(addon.duration) || 0) > MAX_VISIT_MINUTES) {
-      toast({ title: "Two services can be booked together for up to 2½ hours. Remove something to add this." });
-      return;
-    }
+    if (!on && tooLong(Number(addon.duration) || 0)) return;
     setCartAddons((map) => ({ ...map, [serviceId]: on ? (map[serviceId] ?? []).filter((id) => id !== addon.id) : [...(map[serviceId] ?? []), addon.id] }));
   };
 
@@ -1072,14 +1329,20 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   const phoneDigits    = (store.phone ?? "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
   const phoneLabel     = phoneDigits.length === 10 ? `(${phoneDigits.slice(0, 3)}) ${phoneDigits.slice(3, 6)}-${phoneDigits.slice(6)}` : store.phone;
   const directionsUrl  = buildDirectionsUrl(store.address);
-  const reviewCount    = store.displayReviewCount ?? store.googleReviewCount ?? reviews.length;
+  // Google's reviews are named as Google's, with Google's own count and average (owner, 2026-11-05).
+  const isGoogleSourced = reviews.length > 0 && reviews.every((r) => r.source === "google");
+  const reviewCount    = isGoogleSourced ? (store.googleReviews?.count || reviews.length) : store.displayReviewCount ?? store.googleReviewCount ?? reviews.length;
   // Certxa Pro accounts have Certxa's own reviews only, never Google (owner, 2026-10-30). The stored rating can be empty
   // for them, so it falls back to the reviews themselves.
   const ratedReviews   = reviews.filter((r) => Number(r.rating) > 0);
-  const avgRating      = typeof store.displayRating === "number" && store.displayRating > 0 ? store.displayRating
+  const avgRating      = isGoogleSourced && store.googleReviews?.rating ? store.googleReviews.rating
+                        : typeof store.displayRating === "number" && store.displayRating > 0 ? store.displayRating
                         : ratedReviews.length ? ratedReviews.reduce((sum, r) => sum + Number(r.rating), 0) / ratedReviews.length : 0;
-  const isGoogleSourced = false;
-  const hours          = formatBusinessHours(store.businessHours);
+  // What can really be booked, when the pro has set it.
+  // The pro picks one in the app's Hours screen (owner, 2026-11-05): the Available for services grid, or business hours.
+  // The grid is on when serviceHours comes back; the page then shows only the grid, otherwise only business hours.
+  const serviceWeek    = store.serviceHours ?? [];
+  const hours          = serviceWeek.length > 0 ? [] : formatBusinessHours(store.businessHours);
   const cancelPolicyText = useCancellationPolicy(slug).data?.text?.trim() ?? "";
 
   // Scroll detection
@@ -1103,30 +1366,52 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
     return () => { if (!bookingOpen) document.body.style.overflow = ""; };
   }, [menuOpen, bookingOpen]);
 
-  // Fetch services
+  // Fetch services. Busy (429): the menu says so and tries again when the server allows, never an empty menu.
+  const [servicesBusy, setServicesBusy] = useState<"waiting" | "failed" | null>(null);
+  const [servicesTry, setServicesTry] = useState(0);
   useEffect(() => {
     if (!slug) return;
+    let live = true;
     setServicesLoading(true);
-    fetch(`/api/public/store/${slug}/services`)
-      .then((r) => r.ok ? r.json() : null)
+    setServicesBusy(null);
+    getPublicJson<any>(`/api/public/store/${slug}/services`, { onWait: () => { if (live) setServicesBusy("waiting"); }, isLive: () => live })
       .then((d) => {
+        if (!live) return;
+        setServicesBusy(null);
         if (Array.isArray(d?.addons)) setAddons(d.addons);
-        if (Array.isArray(d?.serviceAddons)) setServiceAddons(d.serviceAddons);
+        if (Array.isArray(d?.serviceGroupAddons)) setServiceAddons(d.serviceGroupAddons);
         if (d?.services) setServices(d.services);
         const incoming = Array.isArray(d?.categories) ? d.categories : [];
         // Defensive: only keep categories that belong to this store
         const filtered = incoming.filter((c: any) => Number(c.storeId) === Number(store.id));
         setServiceCategories(filtered);
       })
-      .catch(() => {})
-      .finally(() => setServicesLoading(false));
+      .catch((err) => { if (live && err instanceof BusyError) setServicesBusy("failed"); })
+      .finally(() => { if (live) setServicesLoading(false); });
+    return () => { live = false; };
+  }, [slug, servicesTry]);
+
+  // The website's service category pages (api-server lib/soloCategoryPages.ts): links under the service list.
+  const [servicePages, setServicePages] = useState<{ name: string; url: string }[]>([]);
+  useEffect(() => {
+    if (!slug) return;
+    getPublicJson<any>(`/api/public/store/${slug}/service-pages`)
+      .then((d) => setServicePages(Array.isArray(d) ? d : []))
+      .catch(() => setServicePages([]));
+  }, [slug]);
+
+  // Fetch the team
+  useEffect(() => {
+    if (!slug) return;
+    getPublicJson<any>(`/api/public/store/${slug}/team`)
+      .then((d) => setTeam(Array.isArray(d) ? d : []))
+      .catch(() => setTeam([]));
   }, [slug]);
 
   // Fetch reviews
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/public/store/${slug}/reviews`)
-      .then((r) => r.ok ? r.json() : [])
+    getPublicJson<any>(`/api/public/store/${slug}/reviews`)
       .then((d) => setReviews(Array.isArray(d) ? d : []))
       .catch(() => setReviews([]));
   }, [slug]);
@@ -1134,8 +1419,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   // Fetch gallery (optional — gracefully skipped if endpoint doesn't exist)
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/public/store/${slug}/gallery`)
-      .then((r) => r.ok ? r.json() : [])
+    getPublicJson<any>(`/api/public/store/${slug}/gallery`)
       .then((d) => setGallery(Array.isArray(d) ? d : []))
       .catch(() => setGallery([]));
   }, [slug]);
@@ -1143,8 +1427,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   // Fetch backend AI-matched service reviews (one best review per service, keyed by service ID)
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/public/store/${slug}/service-reviews`)
-      .then((r) => r.ok ? r.json() : {})
+    getPublicJson<unknown>(`/api/public/store/${slug}/service-reviews`)
       .then((d: unknown) => {
         if (!d || typeof d !== "object" || Array.isArray(d)) {
           setServiceReviews({});
@@ -1181,9 +1464,10 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   /** One service from a link or a portfolio photo: its add-ons are offered first when it has any. */
   const chooseService = (id: number) => {
     const svc = services.find((x) => Number(x.id) === id);
-    if (!svc) return;
+    if (!svc || bookingOff) return;
     setCart([svc]);
     setCartAddons({});
+    setServiceQty({});
     setExpandedId(svc.id);
     if (addonsFor(svc.id).length === 0) { setBookingOpen(true); return; }
     setActiveCategory("All");
@@ -1191,6 +1475,12 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
     requestAnimationFrame(() => document.getElementById(`service-${svc.id}`)?.scrollIntoView({ block: "center" }));
   };
   const finishedBooking = useRef(false);
+  /** Only with both a place of their own and house calls does a service need to say where it's done. */
+  const whereLabel = (svc: ServiceEntry) => {
+    const own = (store as any).ownPlace;
+    if (!(store as any).houseCalls || !own || own === "none") return null;
+    return svc.offeredAt === "place" ? `${own === "home" ? "Home studio" : "In the salon"} only` : svc.offeredAt === "client" ? "House calls only" : null;
+  };
 
   // Lightbox keyboard nav
   useEffect(() => {
@@ -1228,9 +1518,12 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   const filteredServices = useMemo(() => {
     const categoryName = (service: ServiceEntry) =>
       serviceCategoryNameById.get(service.categoryId ?? -1) ?? service.category ?? "";
+    // Nowhere to do it: a studio-only service with no studio, a house-call-only one with no house calls.
+    const offered = services.filter((service) => !(service.offeredAt === "place" && (store as any).ownPlace === "none")
+      && !(service.offeredAt === "client" && !(store as any).houseCalls));
     const visible = activeCategory === "All"
-      ? services
-      : services.filter((service) => categoryName(service) === activeCategory);
+      ? offered
+      : offered.filter((service) => categoryName(service) === activeCategory);
     const categoryOrder = new Map(serviceCategories.map((category, index) => [category.name, index]));
 
     return [...visible].sort((a, b) => {
@@ -1258,15 +1551,18 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
         isOpen={bookingOpen}
         onClose={() => {
           setBookingOpen(false);
-          if (finishedBooking.current) { finishedBooking.current = false; setCart([]); setCartAddons({}); }
+          if (finishedBooking.current) { finishedBooking.current = false; setCart([]); setCartAddons({}); setServiceQty({}); }
         }}
         store={store}
         slug={slug}
-        chosen={cart}
+        chosen={cart.map(inVisit)}
         chosenAddons={chosenAddons}
         onBooked={() => { finishedBooking.current = true; }}
         preselectedStaffId={preselectedStaffId}
         timezone={store.timezone || "UTC"}
+        team={team}
+        staffChoice={staffChoice}
+        onStaffChoice={setStaffChoice}
       />
 
       {cartOpen && (
@@ -1349,6 +1645,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                 {phoneLabel}
               </a>
             )}
+            {!bookingOff && (<>
             <button
               type="button"
               onClick={() => { setMenuOpen(false); setCartOpen(true); }}
@@ -1372,6 +1669,18 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
               Book Now
               <ArrowRight className="hidden h-3.5 w-3.5 sm:block" aria-hidden="true" />
             </button>
+            </>)}
+            {bookingOff && store.phone && (
+              <a
+                href={phoneHref}
+                data-testid="solo-header-call"
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm lg:hidden"
+                style={{ background: C.gold700 }}
+              >
+                <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+                Call
+              </a>
+            )}
           </div>
         </nav>
 
@@ -1463,6 +1772,13 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
         </div>
       </div>
 
+      {bookingOff && (
+        <div className="border-b px-5 py-3 text-center text-sm" style={{ background: C.cream50, borderColor: C.cream200, color: C.ink700 }} role="status" data-testid="solo-booking-off">
+          Online booking isn't available right now.
+          {store.phone ? <> Please call <a href={phoneHref} className="font-semibold underline underline-offset-2" style={{ color: C.ink900 }}>{phoneLabel}</a> to book.</> : " Please contact us to book."}
+        </div>
+      )}
+
       {/* ── SERVICES ──────────────────────────────────────────────────────── */}
       <section
         id="services"
@@ -1480,9 +1796,11 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
             >
               Services
             </h2>
-            <p className="mt-1 text-[14px]" style={{ color: C.ink600 }}>
-              Pick up to two services, then choose your time.
-            </p>
+            {!bookingOff && (
+              <p className="mt-1 text-[14px]" style={{ color: C.ink600 }}>
+                Pick up to two services, then choose your time.
+              </p>
+            )}
           </div>
 
           {/* Categories: one row that scrolls sideways */}
@@ -1507,9 +1825,20 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
           )}
 
           {/* Service cards */}
-        {servicesLoading ? (
-          <div className="flex justify-center py-12">
+        {servicesBusy === "failed" ? (
+          <div className="py-12 text-center" role="status" data-testid="solo-services-busy">
+            <p className="text-[15px] font-semibold" style={{ color: C.ink800 }}>We couldn't load the services just now.</p>
+            <p className="mt-1 text-[14px]" style={{ color: C.ink600 }}>Lots of people are looking at the moment. Please try again in a minute.</p>
+            <button type="button" onClick={() => setServicesTry((n) => n + 1)} className="mt-4 rounded-full px-5 py-2 text-sm font-semibold text-white" style={{ background: C.gold700 }} data-testid="solo-services-retry">
+              Try again
+            </button>
+          </div>
+        ) : servicesLoading ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12">
             <Loader2 className="h-6 w-6 animate-spin" style={{ color: C.gold700 }} />
+            {servicesBusy === "waiting" && (
+              <p className="text-center text-[14px]" style={{ color: C.ink600 }} role="status" data-testid="solo-services-waiting">Lots of people are looking right now. Loading the services again in a moment…</p>
+            )}
           </div>
         ) : (
           <div className="bloom-service-grid grid grid-cols-1 gap-4">
@@ -1529,6 +1858,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                   <button
                     type="button"
                     onClick={() => tapService(svc)}
+                    disabled={bookingOff}
                     aria-pressed={on}
                     aria-expanded={offers.length > 0}
                     aria-label={`${on ? (open || addonsFor(svc.id).length === 0 ? "Remove" : "Show add-ons for") : "Select"} ${svc.name}`}
@@ -1538,37 +1868,50 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                     {photo && <img src={photo} alt="" loading="lazy" className="h-16 w-16 shrink-0 rounded-lg object-cover" />}
                     <span className="min-w-0 flex-1">
                       <span className="block text-[16px] font-semibold leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>{svc.name}</span>
-                      <span className="mt-0.5 block text-[14px] font-bold" style={{ color: C.ink800 }}>{formatPrice(svc.price)}</span>
+                      <span className="mt-0.5 block text-[14px] font-bold" style={{ color: C.ink800 }}>{fromPrice(svc) ? "from " : ""}{formatPrice(priced ? proPrice(svc, team, staffChoice) : svc.price)}</span>
+                      {whereLabel(svc) && <span className="mt-0.5 block text-[12px] font-semibold" style={{ color: C.ink600 }} data-testid={`solo-where-${svc.id}`}>{whereLabel(svc)}</span>}
                       {svc.description && <span className={`mt-1 block text-[13px] leading-snug ${open ? "" : "line-clamp-2"}`} style={{ color: C.ink600 }}>{svc.description}</span>}
                       {on && !open && chosen.length > 0 && <span className="mt-1 block text-[13px] font-semibold leading-snug" style={{ color: C.ink800 }}>+ {chosenFor(svc.id).map((a) => a.name).join(", ")}</span>}
                     </span>
-                    <CheckDot on={on} />
+                    {!bookingOff && <CheckDot on={on} />}
                   </button>
+                  {on && svc.allowQuantity && (
+                    <div className="flex items-center justify-between px-3.5 pb-3.5">
+                      <span className="text-[14px] font-bold" style={{ color: C.ink800 }}>{formatPrice(shownPrice(svc))}</span>
+                      <QtyStepper value={qtyOf(svc)} max={svc.maxQuantity ?? 10} name={svc.name} onChange={(n) => setServiceQuantity(svc, n)} />
+                    </div>
+                  )}
                   {offers.length > 0 && (
                     <div data-testid={`solo-addons-${svc.id}`}>
                       {/* The question stands out: a solid band in the business's colour, edge to edge. */}
                       <p className="px-3.5 py-3 text-center text-[16px] font-bold leading-snug text-white" style={{ background: C.gold700 }}>Would you like to add to your<span className="block">{svc.name}?</span></p>
                       <div className="divide-y divide-gray-100">
                         {offers.map((addon) => {
-                          const added = chosen.includes(addon.id);
+                          const count = chosen.filter((id) => id === addon.id).length;
+                          const added = count > 0;
                           return (
-                            <button
-                              key={addon.id}
-                              type="button"
-                              onClick={() => toggleAddon(svc.id, addon)}
-                              aria-pressed={added}
-                              aria-label={`${added ? "Remove" : "Add"} ${addon.name}`}
-                              data-testid={`solo-addon-${addon.id}`}
-                              className="flex w-full items-start gap-3 px-3.5 py-3 text-left"
-                              style={{ background: added ? TINT : "#fff" }}
-                            >
-                              <span className="min-w-0 flex-1">
-                                <span className="block text-[14px] font-semibold leading-snug" style={{ color: C.ink900 }}>{addon.name}</span>
-                                {addon.description && <span className="mt-0.5 block text-[12px] leading-snug" style={{ color: C.ink600 }}>{addon.description}</span>}
-                              </span>
-                              <span className="shrink-0 text-[14px] font-bold" style={{ color: C.ink800 }}>{Number(addon.price) > 0 ? `+${formatPrice(addon.price)}` : "Included"}</span>
-                              <CheckDot on={added} small />
-                            </button>
+                            <div key={addon.id} style={{ background: added ? TINT : "#fff" }}>
+                              <button
+                                type="button"
+                                onClick={() => toggleAddon(svc.id, addon)}
+                                aria-pressed={added}
+                                aria-label={`${added ? "Remove" : "Add"} ${addon.name}`}
+                                data-testid={`solo-addon-${addon.id}`}
+                                className="flex w-full items-start gap-3 px-3.5 py-3 text-left"
+                              >
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-[14px] font-semibold leading-snug" style={{ color: C.ink900 }}>{addon.name}</span>
+                                  {addon.description && <span className="mt-0.5 block text-[12px] leading-snug" style={{ color: C.ink600 }}>{addon.description}</span>}
+                                </span>
+                                <span className="shrink-0 text-[14px] font-bold" style={{ color: C.ink800 }}>{Number(addon.price) > 0 ? `+${formatPrice(Number(addon.price) * Math.max(1, count))}` : "Included"}</span>
+                                <CheckDot on={added} small />
+                              </button>
+                              {added && addon.allowQuantity && (
+                                <div className="flex justify-end px-3.5 pb-3">
+                                  <QtyStepper value={count} max={addon.maxQuantity ?? 10} name={addon.name} onChange={(n) => setAddonQty(svc.id, addon, n)} />
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -1586,60 +1929,21 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
           </div>
         )}
 
-        {/* Review cards — real review text with the service/staff the client
-            actually received, when known (only ever present on Certxa's own
-            native reviews; synced Google reviews never carry this). */}
-        {reviews.length > 0 && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {reviews.slice(0, 2).map((r) => (
-              <div key={r.id} className="rounded-2xl bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[13px] font-semibold" style={{ color: C.ink900 }}>{r.customerName || "Certxa customer"}</p>
-                  {typeof r.rating === "number" && (
-                    <span className="flex shrink-0 items-center gap-1 text-[12px] font-semibold" style={{ color: "#F59E0B" }}>
-                      <Star className="h-3 w-3 fill-current" aria-hidden="true" /> {r.rating}
-                    </span>
-                  )}
-                </div>
-                {(r.serviceName || r.staffName) && (
-                  <p className="mt-0.5 text-[11px]" style={{ color: C.ink500 }}>
-                    {[r.serviceName, r.staffName ? `with ${r.staffName}` : null].filter(Boolean).join(" · ")}
-                  </p>
-                )}
-                {r.reviewText && (
-                  <p className="mt-2 text-[13px] leading-5" style={{ color: C.ink700 }}>{r.reviewText}</p>
-                )}
-                <ReviewPhotos urls={r.reviewImageUrls} />
-                {r.ownerResponse && (
-                  <div className="mt-3 border-l-2 pl-3" style={{ borderColor: C.ink500 }}>
-                    <p className="text-[11px] font-semibold" style={{ color: C.ink500 }}>Reply from {store.name}</p>
-                    <p className="mt-1 text-[13px] leading-5" style={{ color: C.ink700 }}>{r.ownerResponse}</p>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+        {servicePages.length > 0 && (
+          <nav aria-labelledby="solo-service-pages-heading" className="mt-10 border-t pt-7" style={{ borderColor: C.cream200 }} data-testid="solo-service-pages">
+            <h3 id="solo-service-pages-heading" className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Explore by category</h3>
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {servicePages.map((page) => (
+                <li key={page.url}>
+                  <a href={page.url} className="inline-block rounded-lg border bg-white px-4 py-2 text-sm font-semibold" style={{ borderColor: C.cream300, color: C.ink700 }}>
+                    {page.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
         )}
 
-        {/* "See more reviews" banner */}
-        {reviewCount > 0 && (
-          <a
-            href="#about"
-            className="mt-5 flex items-center justify-between rounded-2xl bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none"
-            aria-label={isGoogleSourced ? "View all Google reviews" : "View all reviews"}
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full" style={{ background: C.rose50 }}>
-                <Users className="h-5 w-5" style={{ color: C.rose600 }} aria-hidden="true" />
-              </div>
-              <div>
-                <p className="text-[13px] font-semibold" style={{ color: C.ink900 }}>See what my clients say</p>
-                <p className="text-[12px]" style={{ color: C.ink500 }}>{isGoogleSourced ? "View all reviews on Google" : "View all reviews"}</p>
-              </div>
-            </div>
-            <ChevronDown className="h-4 w-4 -rotate-90" style={{ color: C.ink400 }} aria-hidden="true" />
-          </a>
-        )}
         </div>
       </section>
 
@@ -1753,7 +2057,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                 <p className="text-xs text-white/40">{lightboxIndex + 1} / {gallery.length}</p>
                 {(() => {
                   const look = services.find((x) => x.id === gallery[lightboxIndex].service_id);
-                  return look ? (
+                  return look && !bookingOff ? (
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setLightboxIndex(null); chooseService(look.id); }}
@@ -1791,11 +2095,11 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
 
           {reviewCount > 0 && (
             <div className="mt-4">
-              <div className="flex items-center justify-center gap-1" role="img" aria-label={`${Number(avgRating.toFixed(1))} stars from ${reviewCount} reviews`}>
+              <div className="flex items-center justify-center gap-1" role="img" aria-label={`${Number(avgRating.toFixed(1))} stars from ${reviewCount} ${isGoogleSourced ? "Google " : ""}reviews`}>
                 {[1, 2, 3, 4, 5].map((n) => (
                   <Star key={n} className="h-5 w-5" aria-hidden="true" style={{ color: "#F59E0B", fill: n <= Math.round(avgRating) ? "#F59E0B" : "none" }} />
                 ))}
-                <span className="ml-1.5 text-sm" style={{ color: C.ink600 }}>({reviewCount.toLocaleString()} {reviewCount === 1 ? "Review" : "Reviews"})</span>
+                <span className="ml-1.5 text-sm" style={{ color: C.ink600 }}>({reviewCount.toLocaleString()} {isGoogleSourced ? "Google " : ""}{reviewCount === 1 ? "Review" : "Reviews"})</span>
               </div>
               {reviews.length > 0 && (
                 <button
@@ -1816,6 +2120,35 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
             </p>
           )}
 
+          {teamShown && (
+            <div className="mt-8 border-t pt-7" style={{ borderColor: C.cream200 }} data-testid="solo-team">
+              <h3 className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Our Team</h3>
+              <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3">
+                {team.map((m) => (
+                  <div key={m.id} className="flex flex-col items-center text-center" data-testid={`solo-team-${m.id}`}>
+                    {m.avatarUrl
+                      ? <img src={m.avatarUrl} alt={m.name} loading="lazy" className="h-20 w-20 rounded-full object-cover" />
+                      : <span className="grid h-20 w-20 place-items-center rounded-full text-2xl font-semibold" style={{ background: C.cream100, color: C.ink700 }} aria-hidden="true">{m.name.trim().charAt(0).toUpperCase()}</span>}
+                    <p className="mt-2 text-[15px] font-semibold" style={{ color: C.ink900 }}>{m.name}</p>
+                    {m.role && <p className="text-xs" style={{ color: C.ink500 }}>{m.role}</p>}
+                    {m.bio && <p className="mt-1.5 line-clamp-3 text-[13px] leading-snug" style={{ color: C.ink600 }}>{m.bio}</p>}
+                    {!bookingOff && (
+                      <button
+                        type="button"
+                        onClick={() => { setStaffChoice(m.id); bookNow(); }}
+                        data-testid={`solo-book-with-${m.id}`}
+                        className="mt-2.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold"
+                        style={{ borderColor: C.gold700, color: C.gold700 }}
+                      >
+                        Book with {firstName(m.name)}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {hours.length > 0 && (
             <div className="mt-8 border-t pt-7" style={{ borderColor: C.cream200 }}>
               <h3 className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Business Hours</h3>
@@ -1827,6 +2160,13 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                   </div>
                 ))}
               </dl>
+            </div>
+          )}
+
+          {serviceWeek.length > 0 && (
+            <div className="mt-8 border-t pt-7" style={{ borderColor: C.cream200 }}>
+              <h3 className="text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Available for Services</h3>
+              <ServiceHoursGrid week={serviceWeek} />
             </div>
           )}
 
@@ -1857,7 +2197,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
 
           {reviews.length > 0 && (
             <div id="about-reviews" className="mt-8 scroll-mt-32 border-t pt-7 text-left" style={{ borderColor: C.cream200 }}>
-              <h3 className="text-center text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Ratings &amp; Reviews</h3>
+              <h3 className="text-center text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>{isGoogleSourced ? "Reviews from Google" : <>Ratings &amp; Reviews</>}</h3>
               <div className="mt-2 divide-y" style={{ borderColor: C.cream200 }}>
                 {reviews.map((r) => {
                   const rating = Number(r.rating ?? 5);
@@ -1868,7 +2208,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                   return (
                     <article key={r.id} className="py-5" data-testid="solo-review">
                       <div className="flex items-center gap-3">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-base font-semibold text-white" style={{ background: C.gold700 }} aria-hidden="true">{who.charAt(0).toUpperCase()}</span>
+                        <ReviewerAvatar name={who} photoUrl={r.reviewerPhotoUrl} />
                         <div className="min-w-0">
                           <p className="truncate text-[15px] font-semibold" style={{ color: C.ink900 }}>{who}</p>
                           {r.serviceName && <p className="truncate text-[13px]" style={{ color: C.ink600 }}>{r.serviceName}</p>}
@@ -1882,6 +2222,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                         </span>
                         <span className="font-semibold" style={{ color: C.ink900 }}>{rating.toFixed(1)}</span>
                         {when && <span>· {when}</span>}
+                        {r.source === "google" && <span data-testid="solo-review-google">· Posted on Google</span>}
                       </div>
                       {r.reviewText && <p className="mt-2 whitespace-pre-line text-[15px] leading-relaxed" style={{ color: C.ink800 }}>{r.reviewText}</p>}
                       <ReviewPhotos urls={r.reviewImageUrls} large />
@@ -1905,7 +2246,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
         <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white px-4 py-3 shadow-[0_-4px_16px_rgba(0,0,0,0.08)]" style={{ borderColor: C.cream200 }} data-testid="solo-cart-bar">
           <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
             <button type="button" onClick={() => setCartOpen(true)} className="min-w-0 flex-1 text-left" data-testid="solo-bar-summary">
-              <span className="block truncate text-sm font-semibold" style={{ color: C.ink900 }}>{cart.length === 0 ? "Choose a service" : formatPrice(cartTotal)}</span>
+              <span className="block truncate text-sm font-semibold" style={{ color: C.ink900 }}>{cart.length === 0 ? "Choose a service" : `${cartFrom ? "from " : ""}${formatPrice(cartTotal)}`}</span>
               {cart.length > 0 && <span className="block text-xs" style={{ color: C.ink500 }}>{cartCount} {cartCount === 1 ? "item" : "items"} · View</span>}
             </button>
             <button
@@ -1957,6 +2298,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                     </a>
                   </li>
                 ))}
+                {!bookingOff && (
                 <li>
                   <button
                     type="button"
@@ -1967,6 +2309,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                     Book Now
                   </button>
                 </li>
+                )}
               </ul>
             </nav>
 
