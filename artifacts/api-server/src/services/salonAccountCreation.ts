@@ -121,6 +121,28 @@ function googleHoursPeriods(detail: PlacesDetails): Array<{ dayOfWeek: number; o
 }
 
 async function chooseAvailableSlug(client: import("pg").PoolClient, name: string, sourceId: number): Promise<string> {
+  const vanity = String(name ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 30);
+  if (vanity.length >= 4) {
+    const found = await client.query(
+      `SELECT 1 FROM locations WHERE booking_slug = $1
+       UNION ALL SELECT 1 FROM wb_websites WHERE slug = $1
+       UNION ALL SELECT 1 FROM nail_salons WHERE slug = $1
+       UNION ALL SELECT 1 FROM directory_listings WHERE slug = $1
+       UNION ALL SELECT 1 FROM booking_slug_history WHERE old_slug = $1 LIMIT 1`, [vanity],
+    );
+    if (found.rowCount === 0) return vanity;
+    for (let i = 2; i <= 99; i++) {
+      const candidate = `${vanity.slice(0, Math.max(1, 30 - String(i).length - 1))}-${i}`;
+      const collision = await client.query(
+        `SELECT 1 FROM locations WHERE booking_slug = $1
+         UNION ALL SELECT 1 FROM wb_websites WHERE slug = $1
+         UNION ALL SELECT 1 FROM nail_salons WHERE slug = $1
+         UNION ALL SELECT 1 FROM directory_listings WHERE slug = $1
+         UNION ALL SELECT 1 FROM booking_slug_history WHERE old_slug = $1 LIMIT 1`, [candidate],
+      );
+      if (collision.rowCount === 0) return candidate;
+    }
+  }
   for (let attempt = 0; attempt < 4096; attempt++) {
     const slug = uniqueSlugCandidate(name, sourceId, attempt);
     const found = await client.query(
@@ -232,24 +254,97 @@ async function createSoloShell(source: SourceSalon, detail: PlacesDetails, match
       );
     }
 
-    const categoryIds = new Map<string, number>();
-    for (const category of [...new Set(DRAFT_NAIL_CATALOG.map((item) => item.category))]) {
-      const inserted = await client.query<{ id: number }>(
-        `INSERT INTO service_categories (name, store_id, sort_order, hidden_from_public)
-         VALUES ($1,$2,$3,true) RETURNING id`,
-        [category, storeId, categoryIds.size],
-      );
-      categoryIds.set(category, inserted.rows[0].id);
-    }
-    for (const [index, service] of DRAFT_NAIL_CATALOG.entries()) {
-      await client.query(
-        `INSERT INTO services
-           (name, description, duration, price, category, category_id, store_id, is_active,
-            hidden_from_public, is_unpriced_placeholder, deposit_required, auto_assigned, offered_at)
-         VALUES ($1,'Draft catalog entry — review the service and set a price before activation.',$2,0,$3,$4,$5,false,true,true,false,false,'any')`,
-        [service.name, service.duration, service.category, categoryIds.get(service.category), storeId],
-      );
-      void index;
+    const sourceCatalog = await client.query<{
+      service_name: string;
+      service_description: string | null;
+      service_duration: number | null;
+      service_price: string | null;
+      service_active: boolean | null;
+      service_hidden: boolean | null;
+      service_unpriced: boolean | null;
+      service_deposit_required: boolean | null;
+      service_auto_assigned: boolean | null;
+      service_offered_at: string | null;
+      category_name: string | null;
+      category_hidden: boolean | null;
+    }>(
+      `SELECT
+         s.name AS service_name,
+         s.description AS service_description,
+         s.duration AS service_duration,
+         s.price::text AS service_price,
+         s.is_active AS service_active,
+         s.hidden_from_public AS service_hidden,
+         s.is_unpriced_placeholder AS service_unpriced,
+         s.deposit_required AS service_deposit_required,
+         s.auto_assigned AS service_auto_assigned,
+         s.offered_at AS service_offered_at,
+         COALESCE(sc.name, NULLIF(s.category, ''), 'General') AS category_name,
+         COALESCE(sc.hidden_from_public, false) AS category_hidden
+       FROM services s
+       LEFT JOIN service_categories sc ON sc.id = s.category_id
+       WHERE s.store_id = 2
+       ORDER BY COALESCE(sc.sort_order, 0), s.id`,
+    );
+
+    let seededServiceCount = 0;
+    if (sourceCatalog.rows.length > 0) {
+      const categoryIds = new Map<string, number>();
+      for (const row of sourceCatalog.rows) {
+        const categoryName = String(row.category_name ?? "General").trim() || "General";
+        if (categoryIds.has(categoryName)) continue;
+        const inserted = await client.query<{ id: number }>(
+          `INSERT INTO service_categories (name, store_id, sort_order, hidden_from_public)
+           VALUES ($1,$2,$3,$4) RETURNING id`,
+          [categoryName, storeId, categoryIds.size, Boolean(row.category_hidden)],
+        );
+        categoryIds.set(categoryName, inserted.rows[0].id);
+      }
+      for (const row of sourceCatalog.rows) {
+        const categoryName = String(row.category_name ?? "General").trim() || "General";
+        await client.query(
+          `INSERT INTO services
+             (name, description, duration, price, category, category_id, store_id, is_active,
+              hidden_from_public, is_unpriced_placeholder, deposit_required, auto_assigned, offered_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+          [
+            row.service_name,
+            row.service_description,
+            Number(row.service_duration ?? 30),
+            Number(row.service_price ?? 0),
+            categoryName,
+            categoryIds.get(categoryName),
+            storeId,
+            Boolean(row.service_active),
+            Boolean(row.service_hidden),
+            Boolean(row.service_unpriced),
+            Boolean(row.service_deposit_required),
+            Boolean(row.service_auto_assigned),
+            row.service_offered_at ?? "any",
+          ],
+        );
+        seededServiceCount++;
+      }
+    } else {
+      const categoryIds = new Map<string, number>();
+      for (const category of [...new Set(DRAFT_NAIL_CATALOG.map((item) => item.category))]) {
+        const inserted = await client.query<{ id: number }>(
+          `INSERT INTO service_categories (name, store_id, sort_order, hidden_from_public)
+           VALUES ($1,$2,$3,true) RETURNING id`,
+          [category, storeId, categoryIds.size],
+        );
+        categoryIds.set(category, inserted.rows[0].id);
+      }
+      for (const service of DRAFT_NAIL_CATALOG) {
+        await client.query(
+          `INSERT INTO services
+             (name, description, duration, price, category, category_id, store_id, is_active,
+              hidden_from_public, is_unpriced_placeholder, deposit_required, auto_assigned, offered_at)
+           VALUES ($1,'Draft catalog entry — review the service and set a price before activation.',$2,0,$3,$4,$5,false,true,true,false,false,'any')`,
+          [service.name, service.duration, service.category, categoryIds.get(service.category), storeId],
+        );
+        seededServiceCount++;
+      }
     }
 
     // Solo accounts require a single calendar. The neutral system label is not a person or an owner claim.
@@ -285,7 +380,7 @@ async function createSoloShell(source: SourceSalon, detail: PlacesDetails, match
     );
     await client.query("COMMIT");
     await writeLog(source.id, "account_created", "Unclaimed Solo account and Bloom website published.", {
-      storeId, websiteId: website.rows[0].id, slug, servicesDrafted: DRAFT_NAIL_CATALOG.length,
+      storeId, websiteId: website.rows[0].id, slug, servicesDrafted: seededServiceCount,
       onlineBookingMode: SALON_CREATION_DEFAULTS.onlineBookingMode, accountType: SALON_CREATION_DEFAULTS.userAccountType, ownerEmailAvailable: false,
       googleDataExpiresAt: expiresAt.toISOString(), photosAdded: 0,
     }, jobId);
