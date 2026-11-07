@@ -8,6 +8,12 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import type { StoreData } from "./types";
 
+/** "(602) 555-0111" for a US number, else as saved. */
+const phoneText = (p?: string | null) => {
+  const d = String(p ?? "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(p ?? "").trim();
+};
+
 const isOpenHash = () => typeof window !== "undefined" && window.location.hash === "#message";
 
 export default function SiteMessage({ store, slug }: { store: StoreData; slug: string }) {
@@ -34,7 +40,7 @@ export default function SiteMessage({ store, slug }: { store: StoreData; slug: s
 
 function MessageForm({ store, slug, onDone }: { store: StoreData; slug: string; onDone: () => void }) {
   const startedAt = useRef(Date.now());
-  const [form, setForm] = useState({ name: "", email: "", phone: "", subject: "", message: "", website: "" });
+  const [form, setForm] = useState({ name: "", email: "", message: "", website: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
@@ -70,22 +76,21 @@ function MessageForm({ store, slug, onDone }: { store: StoreData; slug: string; 
     );
   }
 
-  const input = "w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-[15px] outline-none focus:border-gray-900";
+  const input = "w-full rounded-xl border border-gray-300 px-4 py-3.5 text-[15px] outline-none placeholder:text-gray-500 focus:border-gray-900";
   return (
     <form onSubmit={send} noValidate>
       <h1 className="text-2xl font-semibold">Send a message</h1>
       <p className="mt-1 text-sm text-gray-500">to {store.name}. You'll get the answer by e-mail.</p>
+      {phoneText(store.phone) && (
+        <p className="mt-3 text-[15px] text-gray-700" data-testid="site-message-phone-number">
+          Or call <a href={`tel:${store.phone}`} className="font-semibold text-gray-900 underline underline-offset-2">{phoneText(store.phone)}</a>
+        </p>
+      )}
       <div className="mt-6 space-y-4">
-        <label className="block"><span className="mb-1 block text-sm font-medium">Your name</span>
-          <input value={form.name} onChange={set("name")} maxLength={100} autoComplete="name" className={input} data-testid="site-message-name" /></label>
-        <label className="block"><span className="mb-1 block text-sm font-medium">E-mail</span>
-          <input type="email" value={form.email} onChange={set("email")} maxLength={254} autoComplete="email" className={input} data-testid="site-message-email" /></label>
-        <label className="block"><span className="mb-1 block text-sm font-medium">Phone <span className="font-normal text-gray-400">(optional)</span></span>
-          <input type="tel" value={form.phone} onChange={set("phone")} maxLength={30} autoComplete="tel" className={input} data-testid="site-message-phone" /></label>
-        <label className="block"><span className="mb-1 block text-sm font-medium">Subject <span className="font-normal text-gray-400">(optional)</span></span>
-          <input value={form.subject} onChange={set("subject")} maxLength={150} className={input} data-testid="site-message-subject" /></label>
-        <label className="block"><span className="mb-1 block text-sm font-medium">Message</span>
-          <textarea value={form.message} onChange={set("message")} maxLength={5000} rows={6} className={input} data-testid="site-message-text" /></label>
+        {/* Three fields, the name inside each (owner, 2026-11-07). The subject is the start of the message (server). */}
+        <input aria-label="Name" placeholder="Name" value={form.name} onChange={set("name")} maxLength={100} autoComplete="name" className={input} data-testid="site-message-name" />
+        <input aria-label="Email" placeholder="Email" type="email" value={form.email} onChange={set("email")} maxLength={254} autoComplete="email" className={input} data-testid="site-message-email" />
+        <textarea aria-label="Message" placeholder="Message" value={form.message} onChange={set("message")} maxLength={5000} rows={6} className={input} data-testid="site-message-text" />
         {/* Spam trap: hidden from people (and screen readers); a bot fills it in. */}
         <div aria-hidden="true" style={{ position: "absolute", left: "-10000px", width: 1, height: 1, overflow: "hidden" }}>
           <label>Website<input tabIndex={-1} autoComplete="off" value={form.website} onChange={set("website")} name="website" /></label>
