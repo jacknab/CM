@@ -47,7 +47,9 @@ export async function getSalonOperationsOverview(storeId: number, timezone: stri
     try { return JSON.parse(settingsRows.rows[0]?.preferences ?? "{}"); } catch { return {}; }
   })() as Record<string, unknown>;
   const walkInsAccepted = settingsRows.rows[0]?.walk_ins_enabled !== false && prefs.queueEnabled !== false;
-  const appointmentsAccepted = (store as any)?.onlineBookingMode !== "off";
+  // "Who can book online" is the public booking page only (owner, 2026-11-07); Autumn still books by phone unless
+  // the Booking System is switched off.
+  const appointmentsAccepted = (prefs.features as { bookingSystem?: unknown } | undefined)?.bookingSystem !== false;
   const clockedIds = new Set<number>(clocked.rows.map((row: any) => Number(row.staff_id)));
   const started = board.tickets.filter((ticket) => ticket.status === "started");
   const waitingTickets = board.tickets.filter((ticket) => ticket.status === "confirmed");

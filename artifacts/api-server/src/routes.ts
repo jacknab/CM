@@ -9581,8 +9581,11 @@ If you have any questions, please contact your administrator.
       // Salon staff signed in to this salon (booking from /nail) are not held to the rules for clients
       // booking themselves online: online booking switched off, the minimum notice, the advance cap.
       const staffView = req.query.staff === "1" && await sessionCoversStore(req, store.id);
-      // Booking Controls: online booking turned off for this store.
-      if (!staffView && ((store as any).onlineBookingMode ?? "all") === "off") return res.json([]);
+      // Booking Controls: "Who can book online: Nobody" closes the public booking page only (owner, 2026-11-07). The
+      // business's own screens still get open times: /nail (staff=1) and the Pro app / Solo dashboard (their sign-in
+      // token; public pages never send one).
+      const ownScreen = staffView || (!!req.headers.authorization && await sessionCoversStore(req, store.id));
+      if (!ownScreen && ((store as any).onlineBookingMode ?? "all") === "off") return res.json([]);
 
       const serviceId = Number(req.query.serviceId);
       const date = String(req.query.date);
@@ -9952,9 +9955,10 @@ If you have any questions, please contact your administrator.
       if (storeStatus1 === "suspended" || storeStatus1 === "canceled") {
         return res.status(403).json({ message: "This business is not currently accepting bookings." });
       }
-      // Booking Controls: online booking mode.
+      // Booking Controls: online booking mode. A booking request the pro approved (or a time they offered) books
+      // through here too; that is the pro's own decision, so "Nobody" doesn't stop it (owner, 2026-11-07).
       const bookingMode = (store as any).onlineBookingMode ?? "all";
-      if (bookingMode === "off") {
+      if (bookingMode === "off" && !req.__bookingRequestId) {
         return res.status(403).json({ message: "This salon isn't accepting online bookings right now. Please call the salon directly." });
       }
 
