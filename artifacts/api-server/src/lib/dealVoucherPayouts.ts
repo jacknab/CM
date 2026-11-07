@@ -1,7 +1,7 @@
 /**
  * Redeemed-voucher payouts — the "step 4" of the deals feature. Certxa
  * collects the full purchase amount into its own platform Stripe account at
- * checkout (see routes/marketplaceDealsApi.ts + the deal_purchase webhook
+ * checkout (the marketplace checkout, removed 2026-11-07, + the deal_purchase webhook
  * branch); this module runs when a voucher is actually redeemed (triggered
  * from storage.updateAppointment() the moment its linked appointment's
  * status becomes "started") and settles up with the salon: Certxa keeps a

@@ -22259,7 +22259,7 @@ or
       if (!existing || existing.storeId !== storeId) return res.status(404).json({ message: "Gift card not found" });
       // Whitelist: balance/originalAmount/storeId/code must never be settable here —
       // balance changes go through the ledgered redeem flow (giftCardTransactions) so
-      // the ledger and the card stay consistent; see routes/salonApi.ts's redeemGiftCard.
+      // the ledger and the card stay consistent.
       const allowedFields = ["issuedToName", "issuedToEmail", "isActive", "expiresAt", "notes"] as const;
       const updates: Record<string, any> = {};
       for (const field of allowedFields) {

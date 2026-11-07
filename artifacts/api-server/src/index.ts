@@ -192,10 +192,7 @@ const _cjsDirname: string | undefined = (globalThis as any).__dirname;
 // Replace with your actual DB functions
 import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
-import salonDirectoryRouter, { salonSlugFallbackRouter } from "./routes/salonDirectory";
 import { salonsHostGate } from "./lib/salonsHostGate";
-import salonApiRouter from "./routes/salonApi";
-import marketplaceDealsApiRouter from "./routes/marketplaceDealsApi";
 import { SEO_CONFIG, injectSeoMetadata, injectNoindex, isKnownAppFirstSegment, isRentalsHost, NOT_FOUND_HTML } from "./static";
 import { isRequestFromTrustedNetwork, resolveStoreIdBySlug } from "./lib/salonNetworkGuard";
 import { logBodySuffix, shouldSkipBodyLog } from "./lib/logRedaction";
@@ -375,8 +372,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// salons.certxa.com is the salon directory only; the old website's pages there go to certxa.com (lib/salonsHostGate.ts).
-app.use(salonsHostGate);
+// salons.certxa.com and the marketplace are retired (2026-11-07): the subdomain goes to certxa.com, the old
+// marketplace addresses answer 410 (lib/salonsHostGate.ts).
+app.use(salonsHostGate(NOT_FOUND_HTML));
 
 // --- Middleware ---
 // Skip compression for PHP-proxied routes — the PHP built-in server streams
@@ -831,15 +829,6 @@ app.get("/app", (req: Request, res: Response) => {
 </html>`);
 });
 
-// --- Salon marketplace: /listings/*, /deals, /wallet, sitemaps, legacy redirects ---
-// Certxa.com's homepage ("/") went back to PHP on 2026-09-22 — salonDirectoryRouter no longer
-// registers a "/" handler, so isPhpRoute()'s hardcoded "/" falls through to phpMiddleware below.
-// Still mounted before phpMiddleware so the marketplace's other Node-rendered pages aren't
-// accidentally proxied to PHP.
-app.use(salonDirectoryRouter);
-app.use(salonApiRouter);
-app.use(marketplaceDealsApiRouter);
-
 // --- /.well-known/* ---
 // Nothing is published there (no plugin manifest, no app-link files), but the app's page fallback answered
 // every such address with a 200 and the app shell — a "soft 404" to anything probing for
@@ -880,14 +869,6 @@ for (const path of RETIRED_GONE) {
     res.status(410).set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=86400" }).send(NOT_FOUND_HTML);
   });
 }
-
-// --- Salon marketplace: flat individual listing page ("/:slug") ---
-// Deliberately mounted AFTER phpMiddleware (and the two redirects above) so
-// every real marketing page, PHP directory, and named app route always gets
-// first refusal — this only ever fires for a single-segment path nothing
-// else claimed. Calls next() for anything that isn't a known salon slug, so
-// behavior for every other path is completely unchanged from before.
-app.use(salonSlugFallbackRouter);
 
 // --- Logging Helper ---
 export function log(message: string, source = "express") {
@@ -1160,18 +1141,6 @@ async function repairTwilioMessagingServiceInboundWebhook() {
     app.use("/lib", express.static(libRoot, {
       maxAge: "7d",
       immutable: false,
-    }));
-  }
-
-  // Marketplace client bundle (artifacts/marketplace's `build` output) —
-  // hashed JS/CSS the SSR-rendered shell references via <script>/<link>.
-  const mpAssetsRoot = _cjsDirname
-    ? path.resolve(_cjsDirname, "public", "mp-assets")
-    : path.resolve(process.cwd(), "dist/public/mp-assets");
-  if (fs.existsSync(mpAssetsRoot)) {
-    app.use("/mp-assets", express.static(mpAssetsRoot, {
-      maxAge: "7d",
-      immutable: true,
     }));
   }
 
