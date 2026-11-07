@@ -7,7 +7,9 @@ export default function Contact() {
   const { address, city, phone, phoneHref, hours, salonName } = useSite();
   const { ref, visible } = useReveal<HTMLDivElement>();
 
-  const mapsQuery = encodeURIComponent(`${address}, ${city}`);
+  // An address saved on one line already holds the city: don't repeat it.
+  const cityLine = city && !address.includes(city) ? city : '';
+  const mapsQuery = encodeURIComponent([address, cityLine].filter(Boolean).join(', '));
   const mapSrc = `https://www.google.com/maps?q=${mapsQuery}&z=15&hl=en&output=embed`;
 
   return (
@@ -16,7 +18,7 @@ export default function Contact() {
         <SectionHeading
           eyebrow="Visit Us"
           title="Find the Studio"
-          description={`Conveniently located in ${city}. Walk-ins welcome based on availability, but booking ahead guarantees your spot.`}
+          description={`${city ? `Conveniently located in ${city}. ` : ''}Walk-ins welcome based on availability, but booking ahead guarantees your spot.`}
         />
 
         <div
@@ -34,7 +36,7 @@ export default function Contact() {
                   <h3 className="font-serif text-lg font-semibold text-taupe-900">Address</h3>
                   <p className="mt-1 text-sm leading-relaxed text-taupe-600">
                     {address}
-                    {city && <><br />{city}</>}
+                    {cityLine && <><br />{cityLine}</>}
                   </p>
                 </div>
               </div>

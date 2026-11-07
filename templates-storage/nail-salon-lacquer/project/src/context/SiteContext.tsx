@@ -104,6 +104,18 @@ const PLACEHOLDER_AVATAR = 'https://images.pexels.com/photos/1858175/pexels-phot
 
 const SiteContext = createContext<SiteContextValue | null>(null);
 
+/**
+ * The business's city line (owner, 2026-11-07): its own city, state and ZIP; else read from an address saved on one line
+ * ("840 The City Dr S, Orange, CA 92868, USA" → "Orange, CA 92868"). Never the template's sample city.
+ */
+function liveCity(biz: { address?: string; city?: string; state?: string; postcode?: string } | null | undefined): string {
+  const own = [biz?.city, biz?.state, biz?.postcode].filter(Boolean).join(', ');
+  if (own) return own;
+  const parts = String(biz?.address ?? '').split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length && /^(usa|us|united states( of america)?)$/i.test(parts[parts.length - 1])) parts.pop();
+  return parts.length >= 3 ? parts.slice(-2).join(', ') : '';
+}
+
 export function SiteProvider({ children }: { children: ReactNode }) {
   const { data, loading, blocked } = useSiteData();
 
@@ -214,8 +226,9 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       phoneHref,
       email: rawEmail,
       emailHref: `mailto:${rawEmail}`,
-      address: biz?.address ?? staticSalon.address,
-      city: [biz?.city, biz?.state, biz?.postcode].filter(Boolean).join(', ') || staticSalon.city,
+      // The business's own address only, never the template's sample one.
+      address: biz?.address ?? '',
+      city: liveCity(biz),
       hours,
       services: liveServices.length > 0 ? liveServices : (staticServices as LiveService[]),
       categories: liveCategories.length > 0 ? liveCategories : [...staticCategories],
