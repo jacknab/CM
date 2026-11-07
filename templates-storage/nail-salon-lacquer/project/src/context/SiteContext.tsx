@@ -49,6 +49,8 @@ export interface SiteContextValue {
   services: LiveService[];
   categories: string[];
   team: LiveTeamMember[];
+  /** The About Us section's text (owner, 2026-11-07): the salon's own, from the database. */
+  aboutText: string;
   galleryPhotos: GalleryPhotoEntry[];
   testimonials: LiveTestimonial[];
   reviewCount: number;
@@ -104,6 +106,9 @@ const PLACEHOLDER_AVATAR = 'https://images.pexels.com/photos/1858175/pexels-phot
 
 const SiteContext = createContext<SiteContextValue | null>(null);
 
+/** Shown only when a salon has no about text of its own (and in the template's preview). */
+const DEFAULT_ABOUT_TEXT = 'We are committed to clean technique, thoughtful service, and beautiful results tailored to every guest.';
+
 /**
  * The business's city line (owner, 2026-11-07): its own city, state and ZIP; else read from an address saved on one line
  * ("840 The City Dr S, Orange, CA 92868, USA" → "Orange, CA 92868"). Never the template's sample city.
@@ -148,6 +153,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
           specialty: m.specialty,
           image: m.image,
         })),
+        aboutText: DEFAULT_ABOUT_TEXT,
         galleryPhotos: [],
         testimonials: staticTestimonials,
         reviewCount: 327,
@@ -233,6 +239,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       services: liveServices.length > 0 ? liveServices : (staticServices as LiveService[]),
       categories: liveCategories.length > 0 ? liveCategories : [...staticCategories],
       team: liveTeam.length > 0 ? liveTeam : staticTeam,
+      aboutText: String(biz?.about ?? '').trim() || DEFAULT_ABOUT_TEXT,
       galleryPhotos: data.galleryPhotos ?? [],
       testimonials: liveTestimonials.length > 0 ? liveTestimonials : staticTestimonials,
       reviewCount: reviewCount > 0 ? reviewCount : 327,

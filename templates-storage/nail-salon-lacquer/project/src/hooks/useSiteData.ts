@@ -18,6 +18,8 @@ export interface BusinessData {
   postcode?: string;
   booking_slug?: string;
   category?: string;
+  /** The salon's about text (its website's own, else the text its account was prepared from). */
+  about?: string | null;
 }
 
 export interface HoursEntry {

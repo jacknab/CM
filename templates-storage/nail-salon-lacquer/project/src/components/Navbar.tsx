@@ -4,7 +4,7 @@ import { useSite } from '@/context/SiteContext';
 
 const links = [
   { label: 'Services', href: '#services' },
-  { label: 'Team', href: '#team' },
+  { label: 'About', href: '#about' },
   { label: 'Gallery', href: '#gallery' },
   { label: 'Visit', href: '#contact' },
 ];
