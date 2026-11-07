@@ -193,6 +193,7 @@ const _cjsDirname: string | undefined = (globalThis as any).__dirname;
 import { storage } from "./storage";
 import { seoPageMiddleware } from "./seo-pages";
 import salonDirectoryRouter, { salonSlugFallbackRouter } from "./routes/salonDirectory";
+import { salonsHostGate } from "./lib/salonsHostGate";
 import salonApiRouter from "./routes/salonApi";
 import marketplaceDealsApiRouter from "./routes/marketplaceDealsApi";
 import { SEO_CONFIG, injectSeoMetadata, injectNoindex, isKnownAppFirstSegment, isRentalsHost, NOT_FOUND_HTML } from "./static";
@@ -373,6 +374,9 @@ app.use((req, res, next) => {
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   next();
 });
+
+// salons.certxa.com is the salon directory only; the old website's pages there go to certxa.com (lib/salonsHostGate.ts).
+app.use(salonsHostGate);
 
 // --- Middleware ---
 // Skip compression for PHP-proxied routes — the PHP built-in server streams
