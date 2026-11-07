@@ -485,6 +485,19 @@ ${cards}
                   <div className="text-sm text-muted-foreground mt-1">A full website: services, portfolio, reviews and booking.</div>
                 </div>
               </div>
+              <div 
+                className={`border rounded-lg p-4 cursor-pointer hover:border-primary transition-colors flex items-start gap-3 ${theme === 'aspen' ? 'border-primary bg-primary/5 ring-1 ring-primary' : ''}`}
+                onClick={() => setTheme('aspen')}
+                data-testid="theme-aspen"
+              >
+                <div className={`p-2 rounded-full ${theme === 'aspen' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="font-semibold">Aspen Theme</div>
+                  <div className="text-sm text-muted-foreground mt-1">The Solo website, with clients choosing a professional first.</div>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end mt-4">
               <Button 

@@ -17,7 +17,8 @@ import { bookingSlugAvailable, changeBookingSlug, slugFormatProblem, slugFromTex
 const router = Router();
 
 // "solo": the Certxa Pro app's copy of Bloom (booking SoloTheme.tsx, owner 2026-11-04).
-export const BOOKING_THEMES = ["bloom", "solo", "simple", "classic", "mobile"] as const;
+// "aspen": Solo with a Staff step first (booking AspenTheme.tsx, owner 2026-11-07).
+export const BOOKING_THEMES = ["bloom", "solo", "aspen", "simple", "classic", "mobile"] as const;
 
 /** A photo the business uploaded through Certxa (POST /api/uploads/image), never an outside address. */
 const uploadedImage = z.string().trim().max(500).refine(

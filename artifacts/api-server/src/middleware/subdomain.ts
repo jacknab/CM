@@ -1,6 +1,6 @@
 import { isBookingSystemOff } from "../lib/bookingSystem";
 import { salonFacts, salonLlmsTxt, salonRobotsTxt, salonSitemapXml } from "../lib/salonSeo";
-import { serveSoloServicesPath, soloCategoryLinks } from "../lib/soloCategoryPages";
+import { isSoloDesign, serveSoloServicesPath, soloCategoryLinks } from "../lib/soloCategoryPages";
 import { type Request, type Response, type NextFunction } from 'express';
 import { isAccountStopped } from "../lib/accountSuspension";
 import { db } from '../db';
@@ -381,7 +381,7 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
 
         // The salon switched its booking system off (lib/bookingSystem.ts): its booking page is closed. The Solo design
         // is the business's whole website, so it stays up with its booking controls hidden (owner, 2026-11-05).
-        if ((store as any).bookingTheme !== "solo" && await isBookingSystemOff(store.id)) {
+        if (!isSoloDesign((store as any).bookingTheme) && await isBookingSystemOff(store.id)) {
           const storeName = String((store as any).name ?? "This business").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
           return res.status(200).send(`<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${storeName}</title>
             <style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#fafafa;color:#1a1a1a;}
@@ -410,7 +410,7 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
 
         // A Solo website's service category pages (/services/<category>/), built on the server; any other /services
         // address there is a real 404, never the homepage (lib/soloCategoryPages.ts).
-        if ((store as any).bookingTheme === "solo" && /^\/services(\/|$)/i.test(req.path || "")) {
+        if (isSoloDesign((store as any).bookingTheme) && /^\/services(\/|$)/i.test(req.path || "")) {
           return serveSoloServicesPath(req, res, store as any);
         }
 

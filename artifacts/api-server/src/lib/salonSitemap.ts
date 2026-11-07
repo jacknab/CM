@@ -17,7 +17,7 @@ import { isAccountStopped } from "./accountSuspension";
 import { isBookingSystemOff } from "./bookingSystem";
 import { buildTenantData } from "./tenant-data";
 import { CATEGORY_PAGE_STORE_IDS, categoryPagesFor, categoryPageUrl } from "./categoryPages";
-import { soloCategoryPages } from "./soloCategoryPages";
+import { isSoloDesign, soloCategoryPages } from "./soloCategoryPages";
 
 // Salons that exist only for testing (lib/testStores.ts); re-exported for existing imports.
 import { TEST_STORE_IDS } from "./testStores";
@@ -70,7 +70,7 @@ export async function salonSitemapEntries(): Promise<SalonSitemapEntry[]> {
       } catch { /* the homepage stays listed */ }
     }
     // A Solo website's service category pages (lib/soloCategoryPages.ts), at the same address as its pages give.
-    if (!r.slug && r.booking_theme === "solo") {
+    if (!r.slug && isSoloDesign(r.booking_theme)) {
       try {
         for (const page of await soloCategoryPages(r.store_id, r.category)) out.push({ storeId: r.store_id, loc: `${loc}services/${page.slug}/` });
       } catch { /* the homepage stays listed */ }

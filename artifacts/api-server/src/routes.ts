@@ -9559,10 +9559,10 @@ If you have any questions, please contact your administrator.
   app.get("/api/public/store/:slug/service-pages", async (req, res) => {
     try {
       const store = await storage.getStoreBySlug(req.params.slug);
-      if (!store || (store as any).bookingTheme !== "solo" || !(store as any).bookingSlug) return res.json([]);
+      const { isSoloDesign, soloCategoryLinks } = await import("./lib/soloCategoryPages");
+      if (!store || !isSoloDesign((store as any).bookingTheme) || !(store as any).bookingSlug) return res.json([]);
       const facts = await salonFacts(String((store as any).bookingSlug));
       if (!facts) return res.json([]);
-      const { soloCategoryLinks } = await import("./lib/soloCategoryPages");
       return res.json(await soloCategoryLinks({ id: store.id, category: (store as any).category ?? null, bookingTheme: "solo" }, facts));
     } catch (error) {
       console.error("[service-pages]", error);

@@ -101,9 +101,12 @@ export async function soloCategoryPages(storeId: number, businessCategory: strin
 /** The page's address: always the business's own subdomain (its canonical), with a closing slash. */
 export const soloCategoryUrl = (f: Pick<SalonFacts, "canonical">, page: { slug: string }) => `${f.canonical}services/${page.slug}/`;
 
+/** The Solo design or its copy Aspen (owner, 2026-11-07): the server treats both the same. */
+export const isSoloDesign = (theme: string | null | undefined): boolean => theme === "solo" || theme === "aspen";
+
 /** Links to the category pages of a business on the Solo design (empty for any other design): sitemap, summary, llms.txt. */
 export async function soloCategoryLinks(store: { id: number; category?: string | null; bookingTheme?: string | null }, f: SalonFacts): Promise<{ name: string; url: string }[]> {
-  if (store.bookingTheme !== "solo") return [];
+  if (!isSoloDesign(store.bookingTheme)) return [];
   return (await soloCategoryPages(store.id, store.category ?? null)).map((p) => ({ name: p.name, url: soloCategoryUrl(f, p) }));
 }
 
