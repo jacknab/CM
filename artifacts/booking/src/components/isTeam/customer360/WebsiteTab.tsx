@@ -13,39 +13,63 @@ const DESIGN_NAMES: Record<string, string> = {
   bloom: "Bloom", solo: "Solo", aspen: "Aspen (choose a professional first)", simple: "Simple", classic: "Classic", mobile: "Mobile",
 };
 
-/** The booking website's design (owner, 2026-11-07): support can switch it for the account. Logged on the account. */
-function BookingDesignCard({ accountId, design }: { accountId: number; design: NonNullable<WebsiteData["bookingDesign"]> }) {
+/**
+ * What the account's website shows (owner, 2026-11-07): a Website Builder template, or the booking site in one of its
+ * designs. A published builder site wins on the subdomain, so picking a booking design unpublishes it (it's kept).
+ */
+function SiteDesignCard({ accountId, design }: { accountId: number; design: NonNullable<WebsiteData["siteDesign"]> }) {
   const qc = useQueryClient();
-  const [theme, setTheme] = useState(design.theme);
+  const [choice, setChoice] = useState(design.current);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
-  useEffect(() => { setTheme(design.theme); }, [design.theme]);
+  useEffect(() => { setChoice(design.current); }, [design.current]);
+  const label = (c: string) => {
+    const [kind, value] = c.split(":");
+    return kind === "template" ? (design.templates.find((t) => String(t.id) === value)?.name ?? `Template ${value}`) : `Booking site: ${DESIGN_NAMES[value] ?? value}`;
+  };
+  const toBooking = choice.startsWith("booking:");
+  const previewUrl = design.url && toBooking ? `${design.url}/?previewTheme=${choice.slice(8)}` : null;
   const save = async () => {
-    if (!window.confirm(`Change this account's booking website to ${DESIGN_NAMES[theme] ?? theme}? Clients see it at once.`)) return;
+    const warn = toBooking && design.current.startsWith("template:")
+      ? `\n\nThe Website Builder site is unpublished (kept), so the booking site shows instead.${design.customDomain ? ` ${design.customDomain} will stop showing it too.` : ""}`
+      : "";
+    if (!window.confirm(`Change this account's website to "${label(choice)}"? Clients see it at once.${warn}`)) return;
     setBusy(true); setMessage(null);
     try {
-      await supportApi.accounts.setBookingTheme(accountId, theme);
+      await supportApi.accounts.setSiteDesign(accountId, choice);
       setMessage({ ok: true, text: "Saved. The website uses it now." });
       await qc.invalidateQueries({ queryKey: ["support-website", accountId] });
-    } catch (e: any) { setMessage({ ok: false, text: e?.message || "Could not change the design." }); }
+    } catch (e: any) { setMessage({ ok: false, text: e?.message || "Could not change the website." }); }
     finally { setBusy(false); }
   };
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 max-w-lg space-y-3" data-testid="support-booking-design">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 max-w-lg space-y-3" data-testid="support-site-design">
       <div className="flex items-center gap-2">
         <Palette size={14} className="text-slate-400" />
-        <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Booking website design</h3>
+        <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Website design</h3>
       </div>
+      <p className="text-xs text-slate-500">Now showing: <span className="font-medium text-slate-700">{label(design.current)}</span></p>
       <div className="flex flex-wrap items-center gap-2">
-        <select value={theme} onChange={(e) => { setTheme(e.target.value); setMessage(null); }} disabled={busy}
-          className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800" data-testid="support-booking-design-select">
-          {design.choices.map((c) => <option key={c} value={c}>{DESIGN_NAMES[c] ?? c}{c === design.theme ? " (current)" : ""}</option>)}
+        <select value={choice} onChange={(e) => { setChoice(e.target.value); setMessage(null); }} disabled={busy}
+          className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800" data-testid="support-site-design-select">
+          {design.hasBuilderSite && (
+            <optgroup label="Website Builder template">
+              {design.templates.map((t) => <option key={t.id} value={`template:${t.id}`}>{t.name}</option>)}
+            </optgroup>
+          )}
+          {design.hasBookingSite && (
+            <optgroup label="Booking site design">
+              {design.bookingThemes.map((t) => <option key={t} value={`booking:${t}`}>Booking site: {DESIGN_NAMES[t] ?? t}</option>)}
+            </optgroup>
+          )}
         </select>
-        <a href={`${design.url}/?previewTheme=${theme}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
-          Preview<ExternalLink size={11} />
-        </a>
-        <button type="button" onClick={save} disabled={busy || theme === design.theme}
-          className="h-9 rounded-lg bg-indigo-600 px-3.5 text-sm font-medium text-white disabled:opacity-40" data-testid="support-booking-design-save">
+        {previewUrl && (
+          <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
+            Preview<ExternalLink size={11} />
+          </a>
+        )}
+        <button type="button" onClick={save} disabled={busy || choice === design.current}
+          className="h-9 rounded-lg bg-indigo-600 px-3.5 text-sm font-medium text-white disabled:opacity-40" data-testid="support-site-design-save">
           {busy ? "Saving…" : "Save"}
         </button>
       </div>
@@ -73,8 +97,8 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
     </div>
   );
 
-  const { website, pageViews, bookingSite, bookingDesign } = data;
-  const designCard = bookingDesign ? <BookingDesignCard accountId={accountId} design={bookingDesign} /> : null;
+  const { website, pageViews, bookingSite, siteDesign } = data;
+  const designCard = siteDesign ? <SiteDesignCard accountId={accountId} design={siteDesign} /> : null;
 
   // A Certxa Pro app account has no Website Builder site: its website is the booking site.
   if (!website && bookingSite) return (

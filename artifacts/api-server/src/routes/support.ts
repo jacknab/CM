@@ -3803,7 +3803,7 @@ router.get("/api/support/accounts/:id/website", requireSupportAuth, async (req: 
     const [websiteR, viewsR, storeR] = await Promise.all([
       pool.query(`
         SELECT w.id, w.name, w.published, w.published_at, w.custom_domain, w.assigned_subdomain,
-          w.created_at, w.updated_at, w.publisher_type
+          w.created_at, w.updated_at, w.publisher_type, w.template_id
         FROM wb_websites w WHERE w.storeid = $1::text ORDER BY w.id ASC LIMIT 1
       `, [storeId]),
       pool.query(`
@@ -3821,12 +3821,9 @@ router.get("/api/support/accounts/:id/website", requireSupportAuth, async (req: 
       pageViews: viewsR.rows[0]   ?? { total_views:0, views_30d:0, views_7d:0 },
       // A Certxa Pro app account's website is its booking site (the app's Website screen), not the Website Builder.
       bookingSite: store.account_type === "certxa_pro" && store.booking_slug ? { slug: store.booking_slug, url: `https://${store.booking_slug}.certxa.com` } : null,
-      // The booking website's design, which support can change (owner, 2026-11-07). Null without a booking link.
-      bookingDesign: store.booking_slug ? {
-        url: `https://${store.booking_slug}.certxa.com`,
-        theme: (BOOKING_THEMES as readonly string[]).includes(store.booking_theme) ? store.booking_theme : "bloom",
-        choices: BOOKING_THEMES,
-      } : null,
+      // What the account's website shows, which support can change (owner, 2026-11-07): a published Website Builder
+      // site's template wins on the subdomain; otherwise it's the booking site in its design.
+      siteDesign: await siteDesignFor(websiteR.rows[0] ?? null, store),
     });
   } catch (e) {
     console.error("[website tab]", e);
@@ -3834,23 +3831,56 @@ router.get("/api/support/accounts/:id/website", requireSupportAuth, async (req: 
   }
 });
 
-// POST /api/support/accounts/:id/booking-theme { theme } — support sets the booking website's design (owner, 2026-11-07),
-// the same choice the owner makes in the app's Website screen or Online Booking. Any agent; logged on the account.
-router.post("/api/support/accounts/:id/booking-theme", requireSupportAuth, async (req: Request, res: Response) => {
+// ── Website design (owner, 2026-11-07) ──────────────────────────────────────────────────────────────────────────
+// The subdomain shows the account's Website Builder site when one is published (its template), else the booking site in
+// its design (locations.booking_theme). Support picks either: "template:<id>" publishes the builder site with that
+// template; "booking:<theme>" sets the design and unpublishes the builder site (kept, so a template can be picked again).
+async function siteDesignFor(website: any | null, store: any) {
+  if (!store.booking_slug && !website) return null;
+  const templates = (await pool.query(`SELECT id, name FROM wb_templates ORDER BY id`)).rows.map((t: any) => ({ id: Number(t.id), name: String(t.name) }));
+  const theme = (BOOKING_THEMES as readonly string[]).includes(store.booking_theme) ? store.booking_theme : "bloom";
+  return {
+    url: store.booking_slug ? `https://${store.booking_slug}.certxa.com` : null,
+    current: website?.published && website?.template_id ? `template:${website.template_id}` : `booking:${theme}`,
+    hasBuilderSite: !!website,
+    hasBookingSite: !!store.booking_slug,
+    customDomain: website?.custom_domain ?? null,
+    templates,
+    bookingThemes: BOOKING_THEMES,
+  };
+}
+
+// POST /api/support/accounts/:id/site-design { choice: "template:<id>" | "booking:<theme>" } — any agent; logged.
+router.post("/api/support/accounts/:id/site-design", requireSupportAuth, async (req: Request, res: Response) => {
   const storeId = paramInt(req.params.id);
   if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });
-  const theme = String(req.body?.theme ?? "");
-  if (!(BOOKING_THEMES as readonly string[]).includes(theme)) return res.status(400).json({ error: "Choose one of the designs." });
+  const m = /^(template|booking):([a-z0-9]+)$/.exec(String(req.body?.choice ?? ""));
+  if (!m) return res.status(400).json({ error: "Choose a design." });
   try {
-    const before = await pool.query(`SELECT booking_theme, booking_slug FROM locations WHERE id = $1`, [storeId]);
-    if (!before.rows[0]) return res.status(404).json({ error: "Account not found" });
-    if (!before.rows[0].booking_slug) return res.status(409).json({ error: "This account has no booking website yet." });
-    await pool.query(`UPDATE locations SET booking_theme = $2 WHERE id = $1`, [storeId, theme]);
-    await logActivity(req.session.supportAgentId!, storeId, "website_design_changed", req.session.supportAgentName!, { from: before.rows[0].booking_theme ?? null, to: theme });
-    res.json({ ok: true, theme });
+    const store = (await pool.query(`SELECT booking_slug, booking_theme FROM locations WHERE id = $1`, [storeId])).rows[0];
+    if (!store) return res.status(404).json({ error: "Account not found" });
+    const site = (await pool.query(`SELECT id, template_id, published FROM wb_websites WHERE storeid = $1::text ORDER BY id ASC LIMIT 1`, [storeId])).rows[0] ?? null;
+    const from = site?.published && site?.template_id ? `template:${site.template_id}` : `booking:${store.booking_theme ?? "bloom"}`;
+    if (m[1] === "template") {
+      const templateId = Number(m[2]);
+      if (!site) return res.status(409).json({ error: "This account has no Website Builder site, so it can only use a booking-site design." });
+      const t = (await pool.query(`SELECT id FROM wb_templates WHERE id = $1`, [templateId])).rows[0];
+      if (!t) return res.status(400).json({ error: "That template doesn't exist." });
+      await pool.query(`UPDATE wb_websites SET template_id = $2, published = true, published_at = COALESCE(published_at, now()), updated_at = now() WHERE id = $1`, [site.id, templateId]);
+    } else {
+      const theme = m[2];
+      if (!(BOOKING_THEMES as readonly string[]).includes(theme)) return res.status(400).json({ error: "Choose one of the designs." });
+      if (!store.booking_slug) return res.status(409).json({ error: "This account has no booking website yet." });
+      await pool.query(`UPDATE locations SET booking_theme = $2 WHERE id = $1`, [storeId, theme]);
+      // The booking site only shows when no builder site is published on the subdomain.
+      if (site?.published) await pool.query(`UPDATE wb_websites SET published = false, updated_at = now() WHERE id = $1`, [site.id]);
+    }
+    const to = `${m[1]}:${m[2]}`;
+    await logActivity(req.session.supportAgentId!, storeId, "website_design_changed", req.session.supportAgentName!, { from, to });
+    res.json({ ok: true, current: to });
   } catch (e) {
-    console.error("[booking-theme]", e);
-    res.status(500).json({ error: "Failed to change the design" });
+    console.error("[site-design]", e);
+    res.status(500).json({ error: "Failed to change the website design" });
   }
 });
 
