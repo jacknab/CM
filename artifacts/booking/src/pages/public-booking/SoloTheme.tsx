@@ -337,6 +337,90 @@ function extractMediaPhotoUrl(media?: Array<Record<string, unknown>> | null): st
   return null;
 }
 
+/**
+ * Visit Us (owner, 2026-11-07: copied from the Lacquer website template, placed right before the footer). The city
+ * line: the business's own city, state and ZIP; else read from an address saved on one line
+ * ("840 The City Dr S, Orange, CA 92868, USA" → "Orange, CA 92868").
+ */
+function visitCityLine(store: StoreData): string {
+  const own = [(store as any).city, (store as any).state, (store as any).postcode].filter(Boolean).join(", ");
+  if (own) return own;
+  const parts = String(store.address ?? "").split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length && /^(usa|us|united states( of america)?)$/i.test(parts[parts.length - 1])) parts.pop();
+  return parts.length >= 3 ? parts.slice(-2).join(", ") : "";
+}
+
+function VisitUs({ store, phoneHref, phoneLabel, hours }: { store: StoreData; phoneHref?: string; phoneLabel?: string | null; hours: { day: string; time: string }[] }) {
+  const address = String(store.address ?? "").trim();
+  const city = visitCityLine(store);
+  // An address saved on one line already holds the city: don't repeat it.
+  const cityLine = city && !address.includes(city) ? city : "";
+  const mapSrc = address ? `https://www.google.com/maps?q=${encodeURIComponent([address, cityLine].filter(Boolean).join(", "))}&z=15&hl=en&output=embed` : null;
+  const heading = "'Playfair Display', Georgia, serif";
+  const iconBox = "grid h-12 w-12 shrink-0 place-items-center rounded-xl";
+  return (
+    <section id="visit" className="px-4 py-12 sm:px-6 sm:py-16 lg:py-24" style={{ background: C.cream100 }} data-testid="solo-visit-us">
+      <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-2xl text-center">
+          <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.25em]" style={{ color: C.gold700 }}>
+            <span className="h-px w-6" style={{ background: C.gold700 }} />Visit Us<span className="h-px w-6" style={{ background: C.gold700 }} />
+          </span>
+          <h2 className="mt-3 text-3xl font-medium leading-tight sm:mt-4 sm:text-5xl" style={{ fontFamily: heading, color: C.ink900 }}>Find the Studio</h2>
+          <p className="mt-4 text-base leading-relaxed" style={{ color: C.ink600 }}>
+            {city ? `Conveniently located in ${city}. ` : ""}Walk-ins welcome based on availability, but booking ahead guarantees your spot.
+          </p>
+        </div>
+        <div className={`mt-8 grid gap-5 sm:mt-12 sm:gap-8 ${mapSrc ? "lg:grid-cols-2" : "mx-auto max-w-xl"}`}>
+          <div className="flex flex-col gap-5 rounded-3xl border bg-white p-5 shadow-sm sm:gap-6 sm:p-8" style={{ borderColor: C.cream200 }}>
+            {(address || city) && (
+              <div className="flex gap-4">
+                <span className={iconBox} style={{ background: C.cream100 }}><MapPin className="h-6 w-6" style={{ color: C.gold700 }} aria-hidden="true" /></span>
+                <div>
+                  <h3 className="text-lg font-semibold" style={{ fontFamily: heading, color: C.ink900 }}>Address</h3>
+                  <p className="mt-1 text-sm leading-relaxed" style={{ color: C.ink600 }}>
+                    {address || city}
+                    {address && cityLine && <><br />{cityLine}</>}
+                  </p>
+                </div>
+              </div>
+            )}
+            {phoneLabel && (
+              <div className="flex gap-4">
+                <span className={iconBox} style={{ background: C.cream100 }}><Phone className="h-6 w-6" style={{ color: C.gold700 }} aria-hidden="true" /></span>
+                <div>
+                  <h3 className="text-lg font-semibold" style={{ fontFamily: heading, color: C.ink900 }}>Phone</h3>
+                  <a href={phoneHref} className="mt-1 block text-sm" style={{ color: C.ink600 }}>{phoneLabel}</a>
+                </div>
+              </div>
+            )}
+            {hours.length > 0 && (
+              <div className="flex gap-4">
+                <span className={iconBox} style={{ background: C.cream100 }}><Clock className="h-6 w-6" style={{ color: C.gold700 }} aria-hidden="true" /></span>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold" style={{ fontFamily: heading, color: C.ink900 }}>Opening Hours</h3>
+                  <dl className="mt-2 divide-y" style={{ borderColor: C.cream200 }}>
+                    {hours.map((row) => (
+                      <div key={row.day} className="flex justify-between py-1.5 text-sm" style={{ borderColor: C.cream200 }}>
+                        <dt style={{ color: C.ink600 }}>{row.day}</dt>
+                        <dd className="font-medium" style={{ color: row.time === "Closed" ? C.ink400 : C.ink800 }}>{row.time}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </div>
+            )}
+          </div>
+          {mapSrc && (
+            <div className="min-h-[280px] overflow-hidden rounded-3xl border shadow-sm sm:min-h-[400px] lg:min-h-0" style={{ borderColor: C.cream200 }}>
+              <iframe title={`Map to ${store.name}`} src={mapSrc} className="h-full min-h-[280px] w-full border-0 sm:min-h-[400px]" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function extractCity(address?: string): string {
   if (!address) return "";
   const parts = address.split(",").map((p) => p.trim());
@@ -2206,6 +2290,9 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
           </div>
         </div>
       )}
+
+      {/* ── VISIT US (copied from the Lacquer template, owner 2026-11-07) ──── */}
+      <VisitUs store={store} phoneHref={phoneHref} phoneLabel={phoneLabel} hours={hours} />
 
       {/* ── FOOTER ────────────────────────────────────────────────────────── */}
       <footer className="mt-auto" style={{ background: C.ink900, color: C.ink400, paddingBottom: barShown ? 76 : 0 }} role="contentinfo">
