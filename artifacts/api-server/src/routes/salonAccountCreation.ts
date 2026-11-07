@@ -68,7 +68,6 @@ router.post("/start", async (req: any, res) => {
   }
   try {
     const eligible = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM salon_account_creation_jobs WHERE status='eligible'`);
-    if (Number(eligible.rows[0]?.count ?? 0) < 1) return res.status(409).json({ message: "No eligible records are ready. Scan and review source records first." });
     const userId = String(req.session?.userId ?? "");
     // Queue jobs while the queue remains paused. If Redis is down, fail before recording approval.
     const queued = await queueEligibleSalonJobs();
@@ -82,7 +81,7 @@ router.post("/start", async (req: any, res) => {
        VALUES (0,'production_run_started','Platform administrator approved and started a production run.',$1::jsonb)`,
       [JSON.stringify({ adminUserId: userId, eligible: Number(eligible.rows[0].count), queued, googleDataPolicyApproved: true })],
     );
-    return res.json({ started: true, queued, message: `Production run started. ${queued} eligible record(s) queued at a maximum of 10 account creations per hour.` });
+    return res.json({ started: true, queued, message: `Production run started. ${queued} currently eligible record(s) were queued; additional records will be scanned/processed automatically at a maximum of 10 account creations per hour.` });
   } catch (error) {
     return res.status(503).json({ message: error instanceof Error ? error.message : "Could not start the account queue" });
   }

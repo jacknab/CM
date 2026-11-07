@@ -95,10 +95,6 @@ export default function SalonAccountCreationManager() {
           const resumed = await api<{ message?: string }>("/api/admin/salon-account-creation/resume", { method: "POST", body: "{}" });
           setNotice(resumed.message ?? "The approved salon account queue was automatically resumed on page load.");
         } else {
-          if (current.counts.eligible < 1) {
-            setError("Automatic start is waiting: no eligible source records are ready.");
-            return;
-          }
           setBusy("auto-start");
           const started = await api<{ message?: string }>("/api/admin/salon-account-creation/start", {
             method: "POST",
