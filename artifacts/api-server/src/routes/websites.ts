@@ -834,6 +834,9 @@ router.get("/websites/:id/auto-preview", isAuthenticated, async (req, res): Prom
         serviceReviews: {},
         galleryPhotos: [],
         staffServiceLinks: [],
+        isUnclaimedAutoCreated: false,
+        isCertxaPreparedSite: false,
+        googlePlaceId: null,
       };
     }
 
@@ -902,14 +905,26 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
   let staff: Record<string, unknown>[] = [];
   let reviews: Record<string, unknown>[] = [];
   let serviceReviews: Record<number, unknown> = {};
+  let isUnclaimedAutoCreated = false;
+  let isCertxaPreparedSite = false;
+  let googlePlaceId: string | null = null;
 
   if (storeid) {
     try {
       const r = await db.execute(sql`
-        SELECT id, name, address, phone, email, city, state, postcode, booking_slug, category
+        SELECT id, name, address, phone, email, website, online_booking_mode, city, state, postcode, booking_slug, category
         FROM locations WHERE id = ${storeid} LIMIT 1`);
       if (r.rows.length > 0) business = r.rows[0] as Record<string, unknown>;
     } catch { /* platform table may not exist in this environment */ }
+    try {
+      const r = await db.execute(sql`SELECT EXISTS(SELECT 1 FROM salon_account_creation_jobs WHERE store_id=${storeid} AND status='created' AND claimed_at IS NULL) AS unclaimed,
+        EXISTS(SELECT 1 FROM salon_account_creation_jobs WHERE store_id=${storeid} AND status IN ('created','claimed','expired')) AS prepared,
+        (SELECT place_id FROM salon_account_creation_jobs WHERE store_id=${storeid} LIMIT 1) AS place_id`);
+      const account = (r.rows as any[])[0];
+      isUnclaimedAutoCreated = account?.unclaimed === true;
+      isCertxaPreparedSite = account?.prepared === true;
+      googlePlaceId = account?.place_id ?? null;
+    } catch { /* account-creation feature migration may not yet be installed */ }
 
     try {
       const r = await db.execute(sql`
@@ -933,6 +948,7 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
          WHERE store_id = ${storeid}
            AND is_active = true
           AND (hidden_from_public IS NULL OR hidden_from_public = false)
+           AND (is_unpriced_placeholder IS NULL OR is_unpriced_placeholder = false)
         ORDER BY category_id NULLS LAST, id`);
       services = r.rows as Record<string, unknown>[];
     } catch { /* platform table may not exist */ }
@@ -984,7 +1000,7 @@ router.get("/tenant/:slug/data", async (req, res): Promise<void> => {
   }
 
   logger.info({ slug, storeid, hasData: !!business }, "Tenant data fetched");
-  res.json({ website: { id: website.id, name: website.name, slug: website.slug }, business, hours, services, serviceCategories, staff, reviews, serviceReviews });
+  res.json({ website: { id: website.id, name: website.name, slug: website.slug }, business, hours, services, serviceCategories, staff, reviews, serviceReviews, isUnclaimedAutoCreated, isCertxaPreparedSite, googlePlaceId });
 });
 
 // ── Salon real-time status (public, no auth) ─────────────────────────────────

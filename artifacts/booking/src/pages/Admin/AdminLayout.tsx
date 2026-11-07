@@ -20,6 +20,7 @@ import {
   UserCog,
   Newspaper,
   BellRing,
+  Radar,
 } from 'lucide-react';
 
 interface AdminLayoutProps {
@@ -34,6 +35,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const menuItems = [
     { path: '/isadmin/', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/isadmin/stock-items', label: 'ACCOUNTS', icon: ShoppingBag },
+    { path: '/isadmin/salon-account-creation', label: 'SALON CREATION', icon: Radar },
     { path: '/isadmin/wallets', label: 'WALLETS', icon: Wallet },
     { path: '/isadmin/billing', label: 'BILLING', icon: CreditCard },
     { path: '/isadmin/billing/plans', label: 'PLANS', icon: Tag },

@@ -9,6 +9,12 @@ import VisitUs from '@/components/VisitUs';
 import Footer from '@/components/Footer';
 import MobileBookingBar from '@/components/MobileBookingBar';
 import BookingPanel from '@/components/BookingPanel';
+import UnclaimedBanner from '@/components/UnclaimedBanner';
+
+function SalonWebsite() {
+  const { isUnclaimedAutoCreated, isCertxaPreparedSite, canBookOnline, services } = useSite();
+  return <><Header /><UnclaimedBanner /><main><Hero />{(!isCertxaPreparedSite || services.length > 0) && <FeaturedServices />}{!isUnclaimedAutoCreated && <Gallery />}<VisitUs /></main><Footer />{canBookOnline && <MobileBookingBar />}{canBookOnline && <BookingPanel />}</>;
+}
 
 /**
  * Sets the document <title> to:
@@ -46,18 +52,7 @@ export default function App() {
     <BookingProvider>
       <SiteProvider>
         <TitleManager />
-        <Header />
-        <main>
-          <Hero />
-          <FeaturedServices />
-          <Gallery />
-          <VisitUs />
-        </main>
-        <Footer />
-        {/* Sticky booking bar — mobile only */}
-        <MobileBookingBar />
-        {/* Booking panel — slides in when any Book button is clicked */}
-        <BookingPanel />
+        <SalonWebsite />
       </SiteProvider>
     </BookingProvider>
   );

@@ -8,7 +8,7 @@ const NAV_LINKS = [
 ];
 
 export default function Footer() {
-  const { salonName } = useSite();
+  const { salonName, isUnclaimedAutoCreated, isCertxaPreparedSite, services, galleryPhotos } = useSite();
   const year = new Date().getFullYear();
 
   return (
@@ -21,13 +21,13 @@ export default function Footer() {
           {/* Brand */}
           <div>
             <p className="font-serif text-xl font-semibold text-white">{salonName}</p>
-            <p className="mt-1 text-sm text-ink-500">Nail Studio</p>
+            <p className="mt-1 text-sm text-ink-500">{isUnclaimedAutoCreated ? 'Draft website prepared by Certxa' : isCertxaPreparedSite ? 'Salon website' : 'Nail Studio'}</p>
           </div>
 
           {/* Nav links */}
           <nav aria-label="Footer navigation">
             <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2" role="list">
-              {NAV_LINKS.map((link) => (
+              {NAV_LINKS.filter((link) => (!isUnclaimedAutoCreated || link.href === '#visit') && (link.href !== '#services' || services.length > 0) && (link.href !== '#gallery' || galleryPhotos.length > 0)).map((link) => (
                 <li key={link.href}>
                   <a
                     href={link.href}
@@ -41,7 +41,7 @@ export default function Footer() {
           </nav>
 
           {/* Social */}
-          <div className="flex gap-3" aria-label="Social media links">
+          {!isCertxaPreparedSite && <div className="flex gap-3" aria-label="Social media links">
             {[
               { Icon: Instagram, label: 'Instagram', href: '#' },
               { Icon: Facebook, label: 'Facebook', href: '#' },
@@ -55,7 +55,7 @@ export default function Footer() {
                 <Icon className="h-4 w-4" aria-hidden="true" />
               </a>
             ))}
-          </div>
+          </div>}
 
           {/* Divider */}
           <div className="w-full border-t border-ink-800" />

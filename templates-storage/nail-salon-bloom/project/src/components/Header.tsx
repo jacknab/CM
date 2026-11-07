@@ -9,7 +9,7 @@ const NAV_LINKS = [
 ];
 
 export default function Header() {
-  const { salonName, phone, phoneHref } = useSite();
+  const { salonName, phone, phoneHref, isUnclaimedAutoCreated, services, galleryPhotos } = useSite();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -83,7 +83,7 @@ export default function Header() {
               style={{ maxHeight: 'calc(100vh - 3.5rem)', overflowY: 'auto' }}
               role="list"
             >
-              {NAV_LINKS.map((link) => (
+              {NAV_LINKS.filter((link) => (!isUnclaimedAutoCreated || link.href === '#visit') && (link.href !== '#services' || services.length > 0) && (link.href !== '#gallery' || galleryPhotos.length > 0)).map((link) => (
                 <li key={link.href}>
                   <a
                     href={link.href}

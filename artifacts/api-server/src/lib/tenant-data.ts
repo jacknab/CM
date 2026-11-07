@@ -26,6 +26,7 @@ export interface BusinessData {
   state: string | null;
   postcode: string | null;
   booking_slug: string | null;
+  online_booking_mode: string | null;
   category: string | null;
   yelp_alias: string | null;
   facebook_page_id: string | null;
@@ -34,6 +35,7 @@ export interface BusinessData {
   accessibility_features: string[] | null;
   latitude: string | null;
   longitude: string | null;
+  website: string | null;
 }
 
 export interface HoursEntry {
@@ -128,6 +130,9 @@ export interface TenantData {
   galleryPhotos: GalleryPhotoEntry[];
   /** staff_id <-> service_id pairs, scoped to this store via the staff join */
   staffServiceLinks: StaffServiceLink[];
+  isUnclaimedAutoCreated: boolean;
+  isCertxaPreparedSite: boolean;
+  googlePlaceId: string | null;
   /** A Solo-plan professional and where they work (lib/proCraft.ts): described by their craft, not as a salon. */
   solo?: (SoloPlaces & { byLabel?: string | null }) | null;
 }
@@ -173,9 +178,9 @@ export async function buildTenantData(
   const businessRows = await safeQuery<BusinessData>(
     // A business that keeps its address private shows its city and state only: no street, ZIP or map
     // position on its website or in its search data (lib/publicStore.ts has the same rule).
-    sql`SELECT id, name, phone, email, city, state, booking_slug, category,
+    sql`SELECT id, name, phone, email, city, state, booking_slug, online_booking_mode, category,
                yelp_alias, facebook_page_id, timezone,
-               parking_options, accessibility_features,
+               parking_options, accessibility_features, website,
                CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE address END AS address,
                CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE postcode END AS postcode,
                CASE WHEN address_private OR own_place = 'none' THEN NULL ELSE store_latitude END AS latitude,
@@ -183,6 +188,12 @@ export async function buildTenantData(
         FROM locations WHERE id = ${storeIdNum} LIMIT 1`
   );
   const business = businessRows.length > 0 ? businessRows[0] : null;
+  const unclaimedRows = await safeQuery<{ unclaimed: boolean; prepared: boolean; place_id: string | null }>(sql`
+    SELECT EXISTS(SELECT 1 FROM salon_account_creation_jobs WHERE store_id=${storeIdNum} AND status='created' AND claimed_at IS NULL) AS unclaimed,
+           EXISTS(SELECT 1 FROM salon_account_creation_jobs WHERE store_id=${storeIdNum} AND status IN ('created','claimed','expired')) AS prepared,
+           (SELECT place_id FROM salon_account_creation_jobs WHERE store_id=${storeIdNum} LIMIT 1) AS place_id`);
+  const isUnclaimedAutoCreated = unclaimedRows[0]?.unclaimed === true;
+  const isCertxaPreparedSite = unclaimedRows[0]?.prepared === true;
 
   // Business hours
   const hours = await safeQuery<HoursEntry>(
@@ -206,6 +217,7 @@ export async function buildTenantData(
         WHERE store_id = ${storeIdNum}
           AND (is_active IS NULL OR is_active = true)
           AND (hidden_from_public IS NULL OR hidden_from_public = false)
+          AND (is_unpriced_placeholder IS NULL OR is_unpriced_placeholder = false)
         ORDER BY category_id NULLS LAST, id`
   );
 
@@ -338,6 +350,9 @@ export async function buildTenantData(
     serviceReviews,
     galleryPhotos,
     staffServiceLinks,
+    isUnclaimedAutoCreated,
+    isCertxaPreparedSite,
+    googlePlaceId: unclaimedRows[0]?.place_id ?? null,
     solo,
   };
 }

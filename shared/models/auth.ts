@@ -35,6 +35,8 @@ export const users = pgTable("users", {
   trialEndsAt: timestamp("trial_ends_at"),
   // Account type — "tester" for temporary demo sessions, null/undefined = regular account
   accountType: varchar("account_type", { length: 32 }),
+  /** System-created Solo shell; auth remains blocked until verified owner claim. */
+  unclaimedAt: timestamp("unclaimed_at", { withTimezone: true }),
 });
 
 export type UpsertUser = typeof users.$inferInsert;

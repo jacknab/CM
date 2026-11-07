@@ -57,6 +57,11 @@ export interface SiteContextValue {
   avgRating: number;
   bookingUrl: string;
   bookingSlug: string | null;
+  originalWebsiteUrl: string;
+  isUnclaimedAutoCreated: boolean;
+  isCertxaPreparedSite: boolean;
+  googleMapsUrl: string;
+  canBookOnline: boolean;
   loading: boolean;
   blocked: boolean;
   /** AI-matched Google review for each service, keyed by service ID */
@@ -89,6 +94,7 @@ function buildHoursRows(entries: HoursEntry[]): LiveHoursRow[] {
 }
 
 const PLACEHOLDER_AVATAR = 'https://images.pexels.com/photos/1858175/pexels-photo-1858175.jpeg?auto=compress&cs=tinysrgb&w=600';
+const NO_SALON_DETAILS = { name: '', tagline: '', phone: '', phoneHref: '', email: '', emailHref: '', address: '', city: '', hours: [] };
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
@@ -103,16 +109,17 @@ export function SiteProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SiteContextValue>(() => {
     if (!data) {
+      const details = isLiveTenant ? NO_SALON_DETAILS : staticSalon;
       return {
-        salonName: staticSalon.name,
-        tagline: staticSalon.tagline,
-        phone: staticSalon.phone,
-        phoneHref: staticSalon.phoneHref,
-        email: staticSalon.email,
-        emailHref: staticSalon.emailHref,
-        address: staticSalon.address,
-        city: staticSalon.city,
-        hours: staticSalon.hours,
+        salonName: details.name,
+        tagline: details.tagline,
+        phone: details.phone,
+        phoneHref: details.phoneHref,
+        email: details.email,
+        emailHref: details.emailHref,
+        address: details.address,
+        city: details.city,
+        hours: details.hours,
         services: (isLiveTenant ? [] : staticServices).map((s) => ({
           id: s.id,
           name: s.name,
@@ -124,18 +131,19 @@ export function SiteProvider({ children }: { children: ReactNode }) {
           imageUrl: null,
         })),
         categories: isLiveTenant ? [] : [...staticCategories],
-        team: staticTeam.map((m) => ({
+        team: (isLiveTenant ? [] : staticTeam).map((m) => ({
           name: m.name,
           role: m.role,
           specialty: m.specialty,
           image: m.image,
         })),
         galleryPhotos: [],
-        testimonials: staticTestimonials,
-        reviewCount: 248,
-        avgRating: 4.9,
+        testimonials: isLiveTenant ? [] : staticTestimonials,
+        reviewCount: isLiveTenant ? 0 : 248,
+        avgRating: isLiveTenant ? 0 : 4.9,
         bookingUrl: '#book',
         bookingSlug: null,
+        originalWebsiteUrl: '', isUnclaimedAutoCreated: false, isCertxaPreparedSite: false, googleMapsUrl: '', canBookOnline: !isLiveTenant,
         loading,
         blocked,
         serviceReviews: {},
@@ -146,18 +154,18 @@ export function SiteProvider({ children }: { children: ReactNode }) {
 
     const biz = data.business;
 
-    const rawPhone = biz?.phone ?? staticSalon.phone;
+    const rawPhone = biz?.phone ?? (data.isCertxaPreparedSite ? '' : staticSalon.phone);
     const displayPhone = toPhone(rawPhone);
     const phoneDigits = rawPhone.replace(/\D/g, '');
     const phoneHref =
       phoneDigits.length >= 10
         ? `tel:+${phoneDigits.startsWith('1') ? phoneDigits : '1' + phoneDigits}`
-        : staticSalon.phoneHref;
+        : (data.isCertxaPreparedSite ? '' : staticSalon.phoneHref);
 
     const rawEmail = biz?.email ?? staticSalon.email;
 
     // Hours
-    const hours = data.hours.length > 0 ? buildHoursRows(data.hours) : staticSalon.hours;
+    const hours = data.hours.length > 0 ? buildHoursRows(data.hours) : (data.isCertxaPreparedSite ? [] : staticSalon.hours);
 
     // Services
     const catMap = new Map(data.serviceCategories.map((c) => [c.id, c.name]));
@@ -178,7 +186,7 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       name: m.name,
       role: m.role ?? 'Nail Technician',
       specialty: m.bio ?? m.role ?? 'Nail care specialist',
-      image: m.avatar_url ?? staticTeam[i % staticTeam.length]?.image ?? PLACEHOLDER_AVATAR,
+      image: m.avatar_url ?? (data.isCertxaPreparedSite ? '' : staticTeam[i % staticTeam.length]?.image ?? PLACEHOLDER_AVATAR),
     }));
 
     // Reviews → Testimonials
@@ -211,33 +219,38 @@ export function SiteProvider({ children }: { children: ReactNode }) {
         ? (data as any).googleAvgRating
         : reviewCount > 0
           ? Math.round((data.reviews.reduce((s, r) => s + r.rating, 0) / data.reviews.length) * 10) / 10
-          : 5;
+          : (data.isCertxaPreparedSite ? 0 : 5);
 
     // Booking URL
     const slug = biz?.booking_slug ?? null;
     const bookingUrl = '#book';
 
     return {
-      salonName: biz?.name ?? staticSalon.name,
-      tagline: staticSalon.tagline,
+      salonName: biz?.name ?? (data.isCertxaPreparedSite ? data.website.name : staticSalon.name),
+      tagline: data.isCertxaPreparedSite ? '' : staticSalon.tagline,
       phone: displayPhone,
       phoneHref,
       email: rawEmail,
       emailHref: `mailto:${rawEmail}`,
-      address: biz?.address ?? staticSalon.address,
-      city: [biz?.city, biz?.state, biz?.postcode].filter(Boolean).join(', ') || staticSalon.city,
+      address: biz?.address ?? (data.isCertxaPreparedSite ? '' : staticSalon.address),
+      city: [biz?.city, biz?.state, biz?.postcode].filter(Boolean).join(', ') || (data.isCertxaPreparedSite ? '' : staticSalon.city),
       hours,
       // The tenant API is authoritative. An empty service array means the
       // owner has no services and must render an empty section—not demo data.
       services: liveServices,
       categories: liveCategories,
-      team: liveTeam.length > 0 ? liveTeam : staticTeam,
+      team: data.isCertxaPreparedSite ? liveTeam : (liveTeam.length > 0 ? liveTeam : staticTeam),
       galleryPhotos: data.galleryPhotos ?? [],
-      testimonials: liveTestimonials.length > 0 ? liveTestimonials : staticTestimonials,
-      reviewCount: reviewCount > 0 ? reviewCount : 248,
+      testimonials: data.isCertxaPreparedSite ? liveTestimonials : (liveTestimonials.length > 0 ? liveTestimonials : staticTestimonials),
+      reviewCount: data.isCertxaPreparedSite ? reviewCount : (reviewCount > 0 ? reviewCount : 248),
       avgRating,
       bookingUrl,
       bookingSlug: slug,
+      originalWebsiteUrl: biz?.website ?? '',
+      isUnclaimedAutoCreated: data.isUnclaimedAutoCreated === true,
+      isCertxaPreparedSite: data.isCertxaPreparedSite === true,
+      googleMapsUrl: data.googlePlaceId ? `https://www.google.com/maps/search/?api=1&query_place_id=${encodeURIComponent(data.googlePlaceId)}` : '',
+      canBookOnline: !data.isUnclaimedAutoCreated && biz?.online_booking_mode !== 'off',
       loading,
       blocked,
       serviceReviews: (data.serviceReviews ?? {}) as Record<string | number, ServiceReviewEntry>,

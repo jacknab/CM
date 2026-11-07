@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { SegmentResult } from "../types";
+import type { CheckResult, SegmentResult } from "../types";
 import { pass, warn, fail, rollup } from "../types";
 
 /**
@@ -8,7 +8,7 @@ import { pass, warn, fail, rollup } from "../types";
  * Tech IDs, the turn line, customer screens and the tablets' offline health. Only real problems are flagged.
  */
 export async function frontDesk(accountId: number, pool: Pool): Promise<SegmentResult> {
-  const checks = [];
+  const checks: CheckResult[] = [];
   const tables: Record<string, unknown[]> = {};
   const done = (): SegmentResult => ({
     segmentId: "front_desk", label: "Front Desk (POS)", status: rollup(checks), runAt: new Date().toISOString(), checks,

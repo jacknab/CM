@@ -22,6 +22,7 @@ import { kioskGate, claimMissedYouText, verifyKioskSelection, sessionCoversStore
 import supportAccountListRouter from "./routes/supportAccountList";
 import liveChatAccountRouter from "./routes/liveChatAccount";
 import supportFeedRouter from "./routes/supportFeed";
+import salonAccountCreationRouter from "./routes/salonAccountCreation";
 import { resolveSessionStoreId } from "./lib/sessionStore";
 import { AT_RISK_DAYS } from "@shared/clientStatus";
 import { servicedCancelReasonProblem } from "@shared/servicedCancel";
@@ -1506,6 +1507,7 @@ export async function registerRoutes(
   onlineLine.startOnlineLineJob(onlineLineDeps);
   // Support Home feed: admins write posts on /isadmin, support agents read them on /isTeam (routes/supportFeed.ts)
   app.use(supportFeedRouter);
+  app.use("/api/admin/salon-account-creation", salonAccountCreationRouter);
 
   setupNotificationServer(httpServer);
   setupSupportAgentRoutes(httpServer, app);
@@ -4497,7 +4499,11 @@ export async function registerRoutes(
       if (!existing) return res.status(404).json({ message: "Service not found" });
       if (existing.storeId !== sessionStoreId) return res.status(403).json({ message: "Forbidden" });
       const input = insertServiceSchema.partial().parse(req.body);
-      const service = await storage.updateService(Number(req.params.id), input);
+      if ((existing as any).isUnpricedPlaceholder && input.isActive === true && Number(input.price ?? existing.price) <= 0) return res.status(400).json({ message: "Set a real price before activating this draft service." });
+      const safeInput = (existing as any).isUnpricedPlaceholder && input.price !== undefined && Number(input.price) > 0
+        ? { ...input, isUnpricedPlaceholder: false, ...(input.description === undefined && String(existing.description ?? "").startsWith("Draft catalog entry —") ? { description: null } : {}) }
+        : input;
+      const service = await storage.updateService(Number(req.params.id), safeInput);
       if (!service) return res.status(404).json({ message: "Service not found" });
       // Log service update to activity feed (fire-and-forget)
       void pool.query(

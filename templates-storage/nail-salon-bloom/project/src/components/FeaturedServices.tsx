@@ -36,8 +36,9 @@ function ServiceCard({
   review?: ServiceReviewEntry | null;
 }) {
   const { openBooking } = useBooking();
-  const imageUrl = getBestServiceImage(service, review);
-  const showCustomerBadge = isCustomerImage(review);
+  const { canBookOnline, isCertxaPreparedSite } = useSite();
+  const imageUrl = isCertxaPreparedSite ? (service.imageUrl ?? null) : getBestServiceImage(service, review);
+  const showCustomerBadge = !isCertxaPreparedSite && isCustomerImage(review);
   const hasReview = Boolean(review?.comment);
   const displayName = formatDisplayName(review?.customerName);
   const quote = trimReviewText(review?.comment ?? '', 120);
@@ -50,7 +51,7 @@ function ServiceCard({
       <div className="bloom-service-body flex min-h-[180px] sm:flex-col">
         {/* Image */}
         <div className="bloom-service-image relative w-[44%] flex-shrink-0 overflow-hidden bg-cream-100 sm:h-auto sm:w-full">
-          <img
+          {imageUrl ? <img
             src={imageUrl}
             alt={
               showCustomerBadge
@@ -59,7 +60,7 @@ function ServiceCard({
             }
             loading="lazy"
             className="h-full w-full object-cover sm:h-auto sm:w-full"
-          />
+          /> : <div className="grid h-full min-h-[150px] place-items-center bg-[#f3f1ec] px-4 text-center text-xs text-[#786f62]">No salon photo supplied</div>}
           {showCustomerBadge && (
             <div className="absolute bottom-2 left-2 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-semibold text-gray-800 backdrop-blur-sm shadow-sm">
               ✨ Client photo
@@ -123,7 +124,7 @@ function ServiceCard({
       </div>
 
       {/* ── Book button ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3">
+      {canBookOnline && <div className="flex items-center justify-end border-t border-gray-100 px-4 py-3">
         <button
           type="button"
           onClick={() => openBooking(service.id, service.name)}
@@ -133,14 +134,14 @@ function ServiceCard({
           Book Now
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
-      </div>
+      </div>}
     </article>
   );
 }
 
 // ── Section ───────────────────────────────────────────────────────────────────
 export default function FeaturedServices() {
-  const { services, categories, serviceReviews, avgRating, reviewCount } = useSite();
+  const { services, categories, serviceReviews, avgRating, reviewCount, isCertxaPreparedSite } = useSite();
   const [activeCategory, setActiveCategory] = useState<string>('All');
 
   const allCategories = ['All', ...categories];
@@ -163,11 +164,10 @@ export default function FeaturedServices() {
           id="services-heading"
           className="font-serif text-[28px] font-bold leading-tight text-gray-900"
         >
-          Our Services
+          {isCertxaPreparedSite ? 'Services' : 'Our Services'}
         </h2>
         <p className="mt-1 text-[14px] text-gray-600">
-          Real results from real clients{' '}
-          <span aria-hidden="true" className="text-rose-500">♥</span>
+          {isCertxaPreparedSite ? 'Service details provided for the salon’s review.' : 'Real results from real clients ♥'}
         </p>
       </div>
 
@@ -221,7 +221,7 @@ export default function FeaturedServices() {
       </div>
 
       {/* "View all reviews" banner */}
-      {reviewCount > 0 && (
+      {reviewCount > 0 && !isCertxaPreparedSite && (
         <a
           href="#visit"
           className="mt-5 flex items-center justify-between rounded-2xl bg-white px-4 py-3.5 shadow-sm transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-rose-300"

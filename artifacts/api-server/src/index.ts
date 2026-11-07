@@ -1478,6 +1478,8 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Start the 60-day free trial expiration scheduler (runs every hour)
   const { startTrialExpirationScheduler } = await import("./services/trial-expiration");
   startTrialExpirationScheduler();
+  const { startSalonAccountDataExpiry } = await import("./services/salonAccountCreation");
+  startSalonAccountDataExpiry();
 
   // Start weekly revenue digest email scheduler (runs every Monday at 9am)
   const { startWeeklyDigestScheduler } = await import("./intelligence/weekly-digest-email");
@@ -1594,6 +1596,14 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Precomputed slot cache worker — builds store:{storeId}:slots:{date} keys
   const { startSlotBuilderWorker } = await import("./workers/slotBuilder");
   startSlotBuilderWorker();
+  const { startSalonAccountWorker } = await import("./services/salonAccountCreation");
+  const startAccountWorker = (): void => {
+    startSalonAccountWorker().catch((err) => {
+      console.warn("[SalonAccountCreation] worker start failed; retrying in 60s:", err?.message ?? err);
+      setTimeout(startAccountWorker, 60_000).unref();
+    });
+  };
+  startAccountWorker();
 
 
   // Warm up precomputed slot cache for all stores on startup (fire-and-forget)

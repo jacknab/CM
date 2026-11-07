@@ -32,7 +32,7 @@ router.post("/login", async (req, res) => {
 
     const normalizedEmail = String(email).toLowerCase().trim();
     const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail));
-    if (!user) {
+    if (!user || user.unclaimedAt) {
       res.status(401).json({ message: "Invalid email or password" });
       return;
     }

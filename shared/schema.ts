@@ -356,6 +356,8 @@ export const services = pgTable("services", {
   autoAssigned: boolean("auto_assigned").default(false),
   isActive: boolean("is_active").notNull().default(true),
   hiddenFromPublic: boolean("hidden_from_public").default(false),
+  /** Draft service with no verified price; do not expose until owner review. */
+  isUnpricedPlaceholder: boolean("is_unpriced_placeholder").notNull().default(false),
   /** Solo plan: where the service is offered — at the professional's place, at the client's, or either. */
   offeredAt: text("offered_at").notNull().default("any"),
 });
@@ -394,6 +396,8 @@ export const serviceAddons = pgTable("service_addons", {
   id: serial("id").primaryKey(),
   serviceId: integer("service_id").references(() => services.id).notNull(),
   addonId: integer("addon_id").references(() => addons.id).notNull(),
+  // false: linked only because one of the service's add-on groups holds the add-on (migration 0320).
+  manual: boolean("manual").notNull().default(true),
 });
 
 export const appointmentAddons = pgTable("appointment_addons", {
@@ -404,8 +408,6 @@ export const appointmentAddons = pgTable("appointment_addons", {
   lineNo: integer("line_no"),
 });
 
-  // false: linked only because one of the service's add-on groups holds the add-on (migration 0320).
-  manual: boolean("manual").notNull().default(true),
 // ── Packages ────────────────────────────────────────────────────────────────
 // A package bundles existing services + add-ons into one named item. Duration
 // ── Add-on Groups (migration 0320) ──────────────────────────────────────────

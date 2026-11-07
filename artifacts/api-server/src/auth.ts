@@ -301,7 +301,7 @@ export function setupAuth(app: Express) {
       // --- Check users table first ---
       const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail));
 
-      if (user) {
+      if (user && !user.unclaimedAt) {
         const valid = await bcrypt.compare(password, user.password ?? "");
         if (valid) {
           const { password: _, ...safeUser } = user;

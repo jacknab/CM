@@ -1396,6 +1396,9 @@ async function serveAutoPage(website: Record<string, unknown>, routePath: string
         serviceReviews: {},
         galleryPhotos: [],
         staffServiceLinks: [],
+        isUnclaimedAutoCreated: false,
+        isCertxaPreparedSite: false,
+        googlePlaceId: null,
       };
     }
 

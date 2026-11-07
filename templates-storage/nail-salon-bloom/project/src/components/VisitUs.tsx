@@ -4,7 +4,7 @@ import { useReveal } from '@/hooks/useReveal';
 import { buildDirectionsUrl } from '@/utils/contentHelpers';
 
 export default function VisitUs() {
-  const { salonName, address, city, phone, phoneHref, hours } = useSite();
+  const { salonName, address, city, phone, phoneHref, hours, originalWebsiteUrl, isCertxaPreparedSite, canBookOnline } = useSite();
   const { ref, visible } = useReveal<HTMLDivElement>();
 
   const directionsUrl = buildDirectionsUrl(address, city);
@@ -31,7 +31,7 @@ export default function VisitUs() {
             Find {salonName}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed text-ink-600">
-            Walk-ins welcome based on availability. Book ahead to guarantee your spot.
+            {isCertxaPreparedSite ? (canBookOnline ? 'Contact the salon to confirm service details and availability.' : 'Online booking is not available. Please contact the salon to confirm details before visiting.') : 'Walk-ins welcome based on availability. Book ahead to guarantee your spot.'}
           </p>
         </div>
 

@@ -1,5 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -91,6 +91,8 @@ export function ServicesList() {
   const [editServiceId, setEditServiceId] = useState<number | null>(null);
 
   const all: ServiceWithOptions[] = services || [];
+  const unpricedDraftCount = all.filter((s) => (s as any).isUnpricedPlaceholder === true).length;
+  useEffect(() => { if (unpricedDraftCount > 0) setShowInactive(true); }, [unpricedDraftCount]);
   const inactiveCount = all.filter((s) => (s as any).isActive === false).length;
   const totalCount = all.length;
 
@@ -147,7 +149,7 @@ export function ServicesList() {
         initial[s.id] = {
           name:     s.name,
           duration: String(s.duration),
-          price:    Number(s.price).toFixed(2),
+          price:    (s as any).isUnpricedPlaceholder ? "" : Number(s.price).toFixed(2),
         };
       }
       setDrafts(initial);
@@ -218,7 +220,7 @@ export function ServicesList() {
       const origVal =
         field === "name"     ? original.name :
         field === "duration" ? String(original.duration) :
-        Number(original.price).toFixed(2);
+        (original as any).isUnpricedPlaceholder ? "" : Number(original.price).toFixed(2);
 
       // Validation
       if (field === "name") {
@@ -276,6 +278,7 @@ export function ServicesList() {
 
   // ── Status toggle ───────────────────────────────────────────────────────────
   function handleToggleActive(service: ServiceWithOptions) {
+    if ((service as any).isUnpricedPlaceholder) { toast({ title: "Set a real price before activating this draft service", variant: "destructive" }); return; }
     updateService(
       { id: service.id, isActive: !(service as any).isActive } as any,
       {
@@ -399,6 +402,7 @@ export function ServicesList() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
+      {unpricedDraftCount > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><strong>{unpricedDraftCount} draft services need owner review.</strong> No prices are set. Enter the salon’s actual price before activation.</div>}
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -687,6 +691,8 @@ export function ServicesList() {
                                     step={0.01}
                                     className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm text-right outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition"
                                     value={draft.price}
+                                    placeholder={(service as any).isUnpricedPlaceholder ? "Set price" : undefined}
+                                    aria-label={(service as any).isUnpricedPlaceholder ? `Set price for ${service.name}` : `Price for ${service.name}`}
                                     onChange={(e) =>
                                       setDrafts((p) => ({ ...p, [service.id]: { ...p[service.id], price: e.target.value } }))
                                     }
@@ -695,8 +701,8 @@ export function ServicesList() {
                                   />
                                 </div>
                               ) : (
-                                <span className="font-medium">
-                                  {opts.length > 0
+                                <span className={`font-medium ${(service as any).isUnpricedPlaceholder ? "text-amber-700" : ""}`}>
+                                  {(service as any).isUnpricedPlaceholder ? "Not set" : opts.length > 0
                                     ? `from ${fmtPrice(Math.min(...opts.map((o) => Number(o.price))))}`
                                     : fmtPrice(service.price)}
                                 </span>

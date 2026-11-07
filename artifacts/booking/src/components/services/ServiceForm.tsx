@@ -84,7 +84,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       name: initialData.name,
       category: initialData.category,
       duration: initialData.duration,
-      price: initialData.price,
+      price: initialData.isUnpricedPlaceholder ? "" as any : initialData.price,
       description: initialData.description || "",
       longevity: initialData.longevity || "",
       imageUrl: initialData.imageUrl || null,
@@ -147,7 +147,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
         name: initialData.name,
         category: initialData.category,
         duration: initialData.duration,
-        price: initialData.price,
+        price: initialData.isUnpricedPlaceholder ? "" as any : initialData.price,
         description: initialData.description || "",
         longevity: initialData.longevity || "",
         imageUrl: initialData.imageUrl || null,
@@ -301,6 +301,10 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
   }
 
   const onSubmit = async (data: z.infer<typeof formSchema>) => {
+    if (initialData?.isUnpricedPlaceholder && Number(data.price) <= 0) {
+      toast({ title: "Set the salon’s actual price before saving or activating this service.", variant: "destructive" });
+      return;
+    }
     // Resolve categoryId from the selected category name so the list re-groups correctly
     const matchedCat = categories.find((c: any) => c.name === data.category);
     const categoryId = matchedCat?.id ?? null;
@@ -308,6 +312,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
     const submissionData = {
       ...data,
       price: String(data.price),
+      ...(initialData?.isUnpricedPlaceholder ? { isUnpricedPlaceholder: false } : {}),
       depositAmount: data.depositRequired && data.depositAmount != null ? String(data.depositAmount) : null,
       // Store null rather than an empty string when no longevity is given.
       longevity: typeof data.longevity === "string" && data.longevity.trim() ? data.longevity.trim() : null,
@@ -416,8 +421,8 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
           {errors.duration && <span className="text-xs text-destructive">{errors.duration.message}</span>}
         </div>
         <div className="space-y-2">
-          <Label htmlFor="price">Base Price ($)</Label>
-          <Input id="price" type="number" step="0.01" {...register("price")} placeholder="80.00" data-testid="input-service-price" />
+          <Label htmlFor="price">{initialData?.isUnpricedPlaceholder ? "Set salon price before activation ($)" : "Base Price ($)"}</Label>
+          <Input id="price" type="number" step="0.01" min={initialData?.isUnpricedPlaceholder ? 0.01 : 0} {...register("price")} placeholder={initialData?.isUnpricedPlaceholder ? "Not set" : "80.00"} data-testid="input-service-price" />
           {errors.price && <span className="text-xs text-destructive">{errors.price.message}</span>}
         </div>
       </div>

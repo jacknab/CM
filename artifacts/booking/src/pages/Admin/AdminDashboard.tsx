@@ -24,6 +24,7 @@ import BlogManager from './BlogManager';
 import PlatformEmailCampaigns from './PlatformEmailCampaigns';
 import AgentAccountsManager from './AgentAccountsManager';
 import SupportFeedManager from './SupportFeedManager';
+import SalonAccountCreationManager from './SalonAccountCreationManager';
 import { getStoreId } from '../../config.js';
 import { apiRequest } from '../../services/api.js';
 import { useAuth } from '@/hooks/use-auth';
@@ -276,6 +277,7 @@ function AdminDashboardContent({
         <Route path="/platform-emails"      element={<PlatformEmailCampaigns />} />
         <Route path="/agents"                element={<AgentAccountsManager />} />
         <Route path="/support-feed"          element={<SupportFeedManager />} />
+        <Route path="/salon-account-creation" element={<SalonAccountCreationManager />} />
       </Routes>
     </AdminLayout>
   );

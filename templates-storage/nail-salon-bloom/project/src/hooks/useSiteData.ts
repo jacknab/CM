@@ -18,6 +18,8 @@ export interface BusinessData {
   postcode?: string;
   booking_slug?: string;
   category?: string;
+  website?: string | null;
+  online_booking_mode?: string | null;
 }
 
 export interface HoursEntry {
@@ -96,6 +98,9 @@ export interface SiteData {
   galleryPhotos: GalleryPhotoEntry[];
   /** Keyed by service ID — best AI-matched Google review per service */
   serviceReviews?: Record<string | number, ServiceReviewEntry>;
+  isUnclaimedAutoCreated?: boolean;
+  isCertxaPreparedSite?: boolean;
+  googlePlaceId?: string | null;
 }
 
 export function useSiteData() {

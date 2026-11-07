@@ -6,7 +6,7 @@ const HERO_IMAGE =
   'https://images.pexels.com/photos/3997389/pexels-photo-3997389.jpeg?auto=compress&cs=tinysrgb&w=1600';
 
 export default function Hero() {
-  const { salonName, reviewCount, avgRating, phone, phoneHref, address, city, bookingUrl } = useSite();
+  const { salonName, reviewCount, avgRating, phone, phoneHref, address, city, isUnclaimedAutoCreated, isCertxaPreparedSite } = useSite();
 
   const directionsUrl = buildDirectionsUrl(address, city);
   const filledStars = Math.round(avgRating);
@@ -15,10 +15,10 @@ export default function Hero() {
     <section
       id="top"
       aria-label="Welcome"
-      className="relative overflow-hidden pt-16 sm:pt-20"
+      className={`relative overflow-hidden pt-16 sm:pt-20 ${isCertxaPreparedSite ? 'bg-[#f6f4ef]' : ''}`}
     >
       {/* Full-bleed background image with gradient overlay */}
-      <div className="absolute inset-0 -z-10">
+      {!isCertxaPreparedSite && <div className="absolute inset-0 -z-10">
         <img
           src={HERO_IMAGE}
           alt={`A professional nail technician performing a luxury manicure at ${salonName}`}
@@ -29,7 +29,7 @@ export default function Hero() {
         />
         <div className="absolute inset-0 bg-gradient-to-r from-cream-50/95 via-cream-50/80 to-cream-50/40" />
         <div className="absolute inset-0 bg-gradient-to-t from-cream-50 via-transparent to-transparent" />
-      </div>
+      </div>}
 
       {/* Subtle gold top accent */}
       <div className="absolute inset-x-0 top-0 h-1 bg-gold-700" aria-hidden="true" />
@@ -67,9 +67,7 @@ export default function Hero() {
           </h1>
 
           <p className="mt-4 max-w-xl text-base leading-relaxed text-ink-700 sm:mt-6 sm:text-lg">
-            From flawless gel manicures to show-stopping custom nail art, our master technicians
-            deliver a pampering experience you will not find anywhere else. Book your appointment
-            in seconds — no account required.
+            {isCertxaPreparedSite ? (isUnclaimedAutoCreated ? 'This Certxa website is a draft prepared for the salon owner to review.' : 'The salon owner can add an approved introduction to this website.') : 'From flawless gel manicures to show-stopping custom nail art, our master technicians deliver a pampering experience you will not find anywhere else.'}
           </p>
 
           {/* CTA row */}
@@ -99,7 +97,7 @@ export default function Hero() {
           </div>
 
           {/* Quick stats */}
-          <dl className="mt-8 grid max-w-lg grid-cols-3 gap-3 border-t border-ink-300/40 pt-5 sm:mt-12 sm:gap-6 sm:pt-8">
+          {!isCertxaPreparedSite && <dl className="mt-8 grid max-w-lg grid-cols-3 gap-3 border-t border-ink-300/40 pt-5 sm:mt-12 sm:gap-6 sm:pt-8">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-widest text-gold-700">
                 Same-Day
@@ -124,7 +122,7 @@ export default function Hero() {
                 {avgRating > 0 ? `${Number(avgRating).toFixed(1)} / 5` : '5.0 / 5'}
               </dd>
             </div>
-          </dl>
+          </dl>}
         </div>
       </div>
 
