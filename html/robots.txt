@@ -1,5 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /signup.html
-
-Sitemap: https://www.certxa.com/sitemap.xml

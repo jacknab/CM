@@ -1,3 +1,0 @@
-User-agent: *
-Allow: /
-Sitemap: https://lps.certxa.com/pages/sitemap.xml
