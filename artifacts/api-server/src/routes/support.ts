@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { BOOKING_THEMES } from "./bookingSite";
 import { liftTrialSuspension } from "../services/trial-expiration";
 import { emailButton, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import type { Request, Response } from "express";
@@ -3812,7 +3813,7 @@ router.get("/api/support/accounts/:id/website", requireSupportAuth, async (req: 
           COUNT(*) FILTER (WHERE v.created_at >= now() - interval '7 days')::int  AS views_7d
         FROM wb_page_views v JOIN wb_websites w ON w.id = v.website_id WHERE w.storeid = $1::text
       `, [storeId]),
-      pool.query(`SELECT l.booking_slug, u.account_type FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1`, [storeId]),
+      pool.query(`SELECT l.booking_slug, l.booking_theme, u.account_type FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1`, [storeId]),
     ]);
     const store = storeR.rows[0] ?? {};
     res.json({
@@ -3820,10 +3821,36 @@ router.get("/api/support/accounts/:id/website", requireSupportAuth, async (req: 
       pageViews: viewsR.rows[0]   ?? { total_views:0, views_30d:0, views_7d:0 },
       // A Certxa Pro app account's website is its booking site (the app's Website screen), not the Website Builder.
       bookingSite: store.account_type === "certxa_pro" && store.booking_slug ? { slug: store.booking_slug, url: `https://${store.booking_slug}.certxa.com` } : null,
+      // The booking website's design, which support can change (owner, 2026-11-07). Null without a booking link.
+      bookingDesign: store.booking_slug ? {
+        url: `https://${store.booking_slug}.certxa.com`,
+        theme: (BOOKING_THEMES as readonly string[]).includes(store.booking_theme) ? store.booking_theme : "bloom",
+        choices: BOOKING_THEMES,
+      } : null,
     });
   } catch (e) {
     console.error("[website tab]", e);
     res.status(500).json({ error: "Failed to load website data" });
+  }
+});
+
+// POST /api/support/accounts/:id/booking-theme { theme } — support sets the booking website's design (owner, 2026-11-07),
+// the same choice the owner makes in the app's Website screen or Online Booking. Any agent; logged on the account.
+router.post("/api/support/accounts/:id/booking-theme", requireSupportAuth, async (req: Request, res: Response) => {
+  const storeId = paramInt(req.params.id);
+  if (isNaN(storeId)) return res.status(400).json({ error: "Invalid account ID" });
+  const theme = String(req.body?.theme ?? "");
+  if (!(BOOKING_THEMES as readonly string[]).includes(theme)) return res.status(400).json({ error: "Choose one of the designs." });
+  try {
+    const before = await pool.query(`SELECT booking_theme, booking_slug FROM locations WHERE id = $1`, [storeId]);
+    if (!before.rows[0]) return res.status(404).json({ error: "Account not found" });
+    if (!before.rows[0].booking_slug) return res.status(409).json({ error: "This account has no booking website yet." });
+    await pool.query(`UPDATE locations SET booking_theme = $2 WHERE id = $1`, [storeId, theme]);
+    await logActivity(req.session.supportAgentId!, storeId, "website_design_changed", req.session.supportAgentName!, { from: before.rows[0].booking_theme ?? null, to: theme });
+    res.json({ ok: true, theme });
+  } catch (e) {
+    console.error("[booking-theme]", e);
+    res.status(500).json({ error: "Failed to change the design" });
   }
 });
 

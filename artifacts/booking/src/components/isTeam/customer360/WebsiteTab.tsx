@@ -1,11 +1,57 @@
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supportApi, type WebsiteData } from "@/lib/support-api";
 import { format, parseISO } from "date-fns";
-import { Globe, Eye, CheckCircle2, XCircle, ExternalLink, Layout } from "lucide-react";
+import { Globe, Eye, CheckCircle2, XCircle, ExternalLink, Layout, Palette } from "lucide-react";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
   try { return format(parseISO(d), "MMM d, yyyy"); } catch { return d; }
+}
+
+const DESIGN_NAMES: Record<string, string> = {
+  bloom: "Bloom", solo: "Solo", aspen: "Aspen (choose a professional first)", simple: "Simple", classic: "Classic", mobile: "Mobile",
+};
+
+/** The booking website's design (owner, 2026-11-07): support can switch it for the account. Logged on the account. */
+function BookingDesignCard({ accountId, design }: { accountId: number; design: NonNullable<WebsiteData["bookingDesign"]> }) {
+  const qc = useQueryClient();
+  const [theme, setTheme] = useState(design.theme);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { setTheme(design.theme); }, [design.theme]);
+  const save = async () => {
+    if (!window.confirm(`Change this account's booking website to ${DESIGN_NAMES[theme] ?? theme}? Clients see it at once.`)) return;
+    setBusy(true); setMessage(null);
+    try {
+      await supportApi.accounts.setBookingTheme(accountId, theme);
+      setMessage({ ok: true, text: "Saved. The website uses it now." });
+      await qc.invalidateQueries({ queryKey: ["support-website", accountId] });
+    } catch (e: any) { setMessage({ ok: false, text: e?.message || "Could not change the design." }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-4 max-w-lg space-y-3" data-testid="support-booking-design">
+      <div className="flex items-center gap-2">
+        <Palette size={14} className="text-slate-400" />
+        <h3 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">Booking website design</h3>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={theme} onChange={(e) => { setTheme(e.target.value); setMessage(null); }} disabled={busy}
+          className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-800" data-testid="support-booking-design-select">
+          {design.choices.map((c) => <option key={c} value={c}>{DESIGN_NAMES[c] ?? c}{c === design.theme ? " (current)" : ""}</option>)}
+        </select>
+        <a href={`${design.url}/?previewTheme=${theme}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
+          Preview<ExternalLink size={11} />
+        </a>
+        <button type="button" onClick={save} disabled={busy || theme === design.theme}
+          className="h-9 rounded-lg bg-indigo-600 px-3.5 text-sm font-medium text-white disabled:opacity-40" data-testid="support-booking-design-save">
+          {busy ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {message && <p className={`text-xs ${message.ok ? "text-emerald-700" : "text-red-600"}`} role="status">{message.text}</p>}
+    </div>
+  );
 }
 
 export default function WebsiteTab({ accountId }: { accountId: number }) {
@@ -27,11 +73,13 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
     </div>
   );
 
-  const { website, pageViews, bookingSite } = data;
+  const { website, pageViews, bookingSite, bookingDesign } = data;
+  const designCard = bookingDesign ? <BookingDesignCard accountId={accountId} design={bookingDesign} /> : null;
 
   // A Certxa Pro app account has no Website Builder site: its website is the booking site.
   if (!website && bookingSite) return (
-    <div className="p-6">
+    <div className="p-6 space-y-5">
+      {designCard}
       <div className="bg-white rounded-xl border border-slate-200 p-4 max-w-lg space-y-2">
         <div className="flex items-center gap-2">
           <Globe size={14} className="text-slate-400" />
@@ -46,10 +94,13 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
   );
 
   if (!website) return (
-    <div className="flex flex-col items-center justify-center h-64 gap-2">
-      <Globe size={32} className="text-slate-300" />
-      <p className="text-slate-500 text-sm font-medium">No website set up</p>
-      <p className="text-slate-400 text-xs">This account hasn't created a website yet.</p>
+    <div className="p-6 space-y-5">
+      {designCard}
+      <div className="flex flex-col items-center justify-center h-48 gap-2">
+        <Globe size={32} className="text-slate-300" />
+        <p className="text-slate-500 text-sm font-medium">No website set up</p>
+        <p className="text-slate-400 text-xs">This account hasn't created a website yet.</p>
+      </div>
     </div>
   );
 
@@ -67,6 +118,8 @@ export default function WebsiteTab({ accountId }: { accountId: number }) {
 
   return (
     <div className="p-6 space-y-5">
+
+      {designCard}
 
       {/* Live URL */}
       {liveUrl && (

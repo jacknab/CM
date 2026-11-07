@@ -73,6 +73,9 @@ export const supportApi = {
       request<{ ok: boolean; id: number; status: string }>(`/accounts/${id}/offline-fix`, { method: "POST", body: JSON.stringify(fix) }),
     communications:(id: number) => request<CommunicationsData>(`/accounts/${id}/communications`),
     website:     (id: number) => request<WebsiteData>(`/accounts/${id}/website`),
+    /** Set the booking website's design (bloom, solo, aspen, simple, classic, mobile). */
+    setBookingTheme: (id: number, theme: string) =>
+      request<{ ok: boolean; theme: string }>(`/accounts/${id}/booking-theme`, { method: "POST", body: JSON.stringify({ theme }) }),
     healthCheck: {
       run: (id: number, segments?: string[]) =>
         request<any>(`/accounts/${id}/health-check${segments?.length ? `?segments=${segments.join(",")}` : ""}`, { method: "POST" }),
@@ -462,6 +465,8 @@ export interface WebsiteData {
   pageViews: { total_views: number; views_30d: number; views_7d: number };
   /** A Certxa Pro app account's website: its booking site. */
   bookingSite?: { slug: string; url: string } | null;
+  /** The booking website's design, which support can change. Null without a booking link. */
+  bookingDesign?: { url: string; theme: string; choices: string[] } | null;
 }
 
 /** Back office POS tab: a salon's POS set-up and devices (GET /api/support/accounts/:id/pos). */
