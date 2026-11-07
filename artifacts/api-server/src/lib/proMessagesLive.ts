@@ -30,7 +30,8 @@ type LiveMessage = { id: number; sender: "client" | "pro"; body: string; created
 type BusEvent =
   | { type: "message"; storeId: number; threadId: number; message: LiveMessage; clientName?: string; subject?: string }
   | { type: "typing"; storeId: number; threadId: number; from: "client" | "pro"; on: boolean }
-  | { type: "presence"; storeId: number; online: boolean }
+  // switched: the pro flipped the switch (not a connection coming or going), so it goes to every page as is.
+  | { type: "presence"; storeId: number; online: boolean; switched?: boolean }
   | { type: "read"; storeId: number; threadId: number };
 
 const hash = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
@@ -44,8 +45,17 @@ async function setKey(key: string) { try { await getRedisClient()?.set(key, "1",
 async function delKey(key: string) { try { await getRedisClient()?.del(key); } catch { /* expires anyway */ } }
 async function hasKey(key: string) { try { return (await getRedisClient()?.exists(key)) === 1; } catch { return false; } }
 
-/** The pro has the Certxa Pro app open right now. */
-export const proOnline = (storeId: number) => hasKey(`pm:online:${storeId}`);
+/** The pro's switch at the top of the Inbox (locations.live_chat_available, migration 0323). */
+export async function liveChatAvailable(storeId: number): Promise<boolean> {
+  const r = await pool.query(`SELECT live_chat_available FROM locations WHERE id = $1`, [storeId]);
+  return r.rows[0]?.live_chat_available !== false;
+}
+/** The pro has the Certxa Pro app open right now and is available for live chat. */
+export const proOnline = async (storeId: number) => (await hasKey(`pm:online:${storeId}`)) && (await liveChatAvailable(storeId));
+/** The switch changed: every client page of the business learns whether the pro is online now. */
+export async function liveAvailabilityChanged(storeId: number) {
+  publishCrossProcess(CHANNEL, { type: "presence", storeId, online: await proOnline(storeId), switched: true } satisfies BusEvent);
+}
 /** The client is looking at the conversation page right now. */
 export const clientViewing = (threadId: number) => hasKey(`pm:viewer:${threadId}`);
 
@@ -67,8 +77,10 @@ export function liveRead(storeId: number, threadId: number) {
 subscribeCrossProcess(CHANNEL, (e: BusEvent) => {
   if (e.type === "presence") {
     // "Away" from a process whose last app connection closed, while this one still holds one: online after all.
-    if (!e.online && pros.has(e.storeId)) {
-      void setKey(`pm:online:${e.storeId}`).then(() => publishCrossProcess(CHANNEL, { type: "presence", storeId: e.storeId, online: true } satisfies BusEvent));
+    if (!e.online && !e.switched && pros.has(e.storeId)) {
+      void setKey(`pm:online:${e.storeId}`).then(() => liveChatAvailable(e.storeId)).then((available) => {
+        if (available) publishCrossProcess(CHANNEL, { type: "presence", storeId: e.storeId, online: true } satisfies BusEvent);
+      }).catch(() => {});
       return;
     }
     // Every client page of that business learns the pro came or went.
@@ -130,8 +142,9 @@ export function setupProMessagesWS(httpServer: Server): void {
         const first = !pros.has(storeId);
         add(pros, storeId, ws);
         await setKey(`pm:online:${storeId}`);
-        if (first) publishCrossProcess(CHANNEL, { type: "presence", storeId, online: true } satisfies BusEvent);
-        send(ws, { type: "ready" });
+        const available = await liveChatAvailable(storeId);
+        if (first && available) publishCrossProcess(CHANNEL, { type: "presence", storeId, online: true } satisfies BusEvent);
+        send(ws, { type: "ready", available });
       } else {
         const t = await clientThread(url.searchParams.get("link"));
         if (!t) { ws.close(4004, "Conversation not found"); return; }

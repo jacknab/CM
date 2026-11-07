@@ -30,7 +30,7 @@ import { pushOwnerMessage } from "../lib/ownerPush";
 import { sendEmail } from "../mail";
 import { emailButton, emailText, escapeEmailHtml } from "../lib/emailLayout";
 import { checkRecaptcha, recaptchaSiteKey } from "../lib/recaptcha";
-import { clientViewing, liveMessage, liveRead, proOnline } from "../lib/proMessagesLive";
+import { clientViewing, liveAvailabilityChanged, liveChatAvailable, liveMessage, liveRead, proOnline } from "../lib/proMessagesLive";
 
 const router = Router();
 
@@ -220,6 +220,24 @@ async function storeOf(req: Request, res: Response): Promise<number | null> {
   return storeId;
 }
 const threadId = (raw: string) => (/^\d{1,9}$/.test(raw) ? Number(raw) : null);
+
+// The switch at the top of the Inbox: available for live chat (owner, 2026-11-07). Before /:id, which takes digits only.
+router.get("/api/pro/messages/live-chat", isAuthenticated, async (req, res) => {
+  try {
+    const storeId = await storeOf(req, res); if (!storeId) return;
+    return res.json({ available: await liveChatAvailable(storeId) });
+  } catch (err: any) { console.error("[pro-messages] live-chat", err?.message ?? err); return res.status(500).json({ error: "Could not load the setting." }); }
+});
+router.put("/api/pro/messages/live-chat", isAuthenticated, async (req, res) => {
+  const parsed = z.object({ available: z.boolean() }).strict().safeParse(req.body ?? {});
+  if (!parsed.success) return invalid(res, parsed.error);
+  try {
+    const storeId = await storeOf(req, res); if (!storeId) return;
+    await pool.query(`UPDATE locations SET live_chat_available = $2 WHERE id = $1`, [storeId, parsed.data.available]);
+    await liveAvailabilityChanged(storeId);
+    return res.json({ available: parsed.data.available });
+  } catch (err: any) { console.error("[pro-messages] live-chat save", err?.message ?? err); return res.status(500).json({ error: "Could not save the setting." }); }
+});
 
 router.get("/api/pro/messages/unread", isAuthenticated, async (req, res) => {
   try {

@@ -34,6 +34,9 @@ dropped; a per-process rate limit in front.
 - Pro online: client messages arrive live and the app chimes (local notification with `soft_chime.wav`), no push.
   Pro away: a push for the first unread message of a conversation only, again after the pro reads it.
 - Client page open: the pro's answer appears live, no e-mail. Page closed: the e-mail with the link, as before.
+- "Available for live chat" switch at the top of the app's Inbox (`locations.live_chat_available`, migration 0323,
+  GET/PUT `/api/pro/messages/live-chat`): off = away for clients even with the app open, pushes instead of the in-app
+  chime; the inbox still updates live. Inbox rows swipe left to Delete (no confirm, like a mail app).
 - Client page shows "Online now" (green dot) or "Away · you'll get the answer by e-mail", and "<Business> is typing…".
 
 ## Status
