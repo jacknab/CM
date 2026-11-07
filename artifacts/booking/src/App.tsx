@@ -37,7 +37,8 @@ const Services = lazy(() => import("@/pages/Services"));
 const CatalogCategories = lazy(() => import("@/pages/catalog/CatalogCategories"));
 const CatalogServices = lazy(() => import("@/pages/catalog/CatalogServices"));
 const CatalogPackages = lazy(() => import("@/pages/catalog/CatalogPackages"));
-const CatalogDeals = lazy(() => import("@/pages/catalog/CatalogDeals"));
+// Marketplace removed 2026-11-07 (owner): Deals and Marketplace Ads are commented out, not deleted.
+// const CatalogDeals = lazy(() => import("@/pages/catalog/CatalogDeals"));
 const CatalogAddons = lazy(() => import("@/pages/catalog/CatalogAddons"));
 const CatalogAddonGroups = lazy(() => import("@/pages/catalog/CatalogAddonGroups"));
 const CatalogProducts = lazy(() => import("@/pages/catalog/CatalogProducts"));
@@ -119,7 +120,7 @@ const AiReceptionistLive = lazy(() => import("@/pages/AiReceptionistLive"));
 const SmsInbox = lazy(() => import("@/pages/SmsInbox"));
 const SmsActivity = lazy(() => import("@/pages/SmsActivity"));
 const Campaigns = lazy(() => import("@/pages/Campaigns"));
-const MarketplaceAdsInfo = lazy(() => import("@/pages/MarketplaceAdsInfo"));
+// const MarketplaceAdsInfo = lazy(() => import("@/pages/MarketplaceAdsInfo")); // marketplace removed 2026-11-07
 const ClientAtRisk = lazy(() => import("@/pages/ClientAtRisk"));
 const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
 const EliteApiDocs = lazy(() => import("@/pages/EliteApiDocs"));
@@ -282,7 +283,7 @@ const authenticatedPaths = [
   "/mail-settings",
   "/ai-receptionist",
   "/campaigns",
-  "/marketplace-ads",
+  // "/marketplace-ads", // marketplace removed 2026-11-07
   "/sms-inbox",
   "/sms-activity",
   "/cash-drawer",
@@ -710,7 +711,7 @@ function AppRoutes() {
       <Route path="/catalog/categories" element={<OwnerOnlyRoute><CatalogCategories /></OwnerOnlyRoute>} />
       <Route path="/catalog/services"   element={<OwnerOnlyRoute><CatalogServices /></OwnerOnlyRoute>} />
       <Route path="/catalog/packages"   element={<OwnerOnlyRoute><CatalogPackages /></OwnerOnlyRoute>} />
-      <Route path="/catalog/deals"      element={<OwnerOnlyRoute><CatalogDeals /></OwnerOnlyRoute>} />
+      {/* <Route path="/catalog/deals"      element={<OwnerOnlyRoute><CatalogDeals /></OwnerOnlyRoute>} /> — marketplace removed 2026-11-07 */}
       <Route path="/catalog/addons"     element={<OwnerOnlyRoute><CatalogAddons /></OwnerOnlyRoute>} />
       <Route path="/catalog/addon-groups" element={<OwnerOnlyRoute><CatalogAddonGroups /></OwnerOnlyRoute>} />
       <Route path="/catalog/products"   element={<OwnerOnlyRoute><CatalogProducts /></OwnerOnlyRoute>} />
@@ -825,7 +826,7 @@ function AppRoutes() {
       <Route path="/sms-inbox" element={<OwnerOnlyRoute><SmsInbox /></OwnerOnlyRoute>} />
       <Route path="/sms-activity" element={<OwnerOnlyRoute><SmsActivity /></OwnerOnlyRoute>} />
       <Route path="/campaigns" element={<OwnerOnlyRoute><Campaigns /></OwnerOnlyRoute>} />
-      <Route path="/marketplace-ads" element={<OwnerOnlyRoute><MarketplaceAdsInfo /></OwnerOnlyRoute>} />
+      {/* <Route path="/marketplace-ads" element={<OwnerOnlyRoute><MarketplaceAdsInfo /></OwnerOnlyRoute>} /> — marketplace removed 2026-11-07 */}
       <Route path="/api-keys" element={<ApiKeys />} />
       <Route path="/elite-api-docs" element={<EliteApiDocs />} />
       <Route path="/elite-details" element={<EliteDetails />} />

@@ -20,7 +20,7 @@ const SECTIONS = [
   { key: "addons", title: "Add-Ons", hint: "Extras clients add to a service" },
   { key: "addon-groups", title: "Add-on Groups", hint: "Add-ons several services share" },
   { key: "packages", title: "Packages", hint: "Services and add-ons sold together" },
-  { key: "deals", title: "Deals", hint: "Vouchers for a package at a lower price" },
+  // { key: "deals", title: "Deals", hint: "Vouchers for a package at a lower price" }, // marketplace removed 2026-11-07
   { key: "products", title: "Products", hint: "Retail items you sell" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
@@ -58,7 +58,7 @@ function renderSection(key: SectionKey) {
     case "addons": return <Addons />;
     case "addon-groups": return <AddonGroups />;
     case "packages": return <Packages />;
-    case "deals": return <Deals />;
+    // case "deals": return <Deals />; // marketplace removed 2026-11-07
     case "products": return <Products />;
   }
 }

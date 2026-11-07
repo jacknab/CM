@@ -157,7 +157,8 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
     { label: pick({ en: "Categories", vi: "Danh mục",       es: "Categorías",    fr: "Catégories" }),  icon: Tag,           to: "/catalog/categories" },
     { label: pick({ en: "Services",   vi: "Dịch vụ",        es: "Servicios",     fr: "Services" }),     icon: Scissors,      to: "/catalog/services" },
     { label: pick({ en: "Packages",   vi: "Gói dịch vụ",    es: "Paquetes",      fr: "Forfaits" }),     icon: Package,       to: "/catalog/packages" },
-    { label: pick({ en: "Deals",      vi: "Ưu đãi",         es: "Ofertas",       fr: "Offres" }),        icon: BadgePercent,  to: "/catalog/deals" },
+    // Marketplace removed 2026-11-07 (owner):
+    // { label: pick({ en: "Deals",      vi: "Ưu đãi",         es: "Ofertas",       fr: "Offres" }),        icon: BadgePercent,  to: "/catalog/deals" },
     { label: pick({ en: "Add-Ons",    vi: "Dịch vụ thêm",   es: "Complementos",  fr: "Suppléments" }),  icon: ClipboardList, to: "/catalog/addons" },
     { label: pick({ en: "Add-on Groups", vi: "Nhóm dịch vụ thêm", es: "Grupos de complementos", fr: "Groupes de suppléments" }), icon: Layers, to: "/catalog/addon-groups" },
     { label: pick({ en: "Nail Config", vi: "Cấu hình móng", es: "Config. de uñas", fr: "Config. ongles" }), icon: Star,       to: "/catalog/nail-services" },
@@ -170,7 +171,8 @@ function buildCatalogSubnav(pick: Pick4): SubNavItem[] {
 function buildMarketingSubnav(pick: Pick4): SubNavItem[] {
   return [
     { label: pick({ en: "Campaigns",       vi: "Chiến dịch",              es: "Campañas",           fr: "Campagnes" }),          icon: Megaphone,     to: "/campaigns" },
-    { label: pick({ en: "Marketplace Ads", vi: "Quảng cáo trên chợ",      es: "Anuncios en el mercado", fr: "Annonces marketplace" }), icon: Store,      to: "/marketplace-ads" },
+    // Marketplace removed 2026-11-07 (owner):
+    // { label: pick({ en: "Marketplace Ads", vi: "Quảng cáo trên chợ",      es: "Anuncios en el mercado", fr: "Annonces marketplace" }), icon: Store,      to: "/marketplace-ads" },
     { label: pick({ en: "SMS Activity",    vi: "Hoạt động SMS",           es: "Actividad SMS",      fr: "Activité SMS" }),       icon: MessageSquare, to: "/sms-activity" },
     { label: pick({ en: "AI Receptionist", vi: "Lễ tân AI",               es: "Recepcionista IA",   fr: "Réceptionniste IA" }),  icon: PhoneCall,     to: "/manage/ai-receptionist" },
     { label: pick({ en: "Loyalty",         vi: "Khách hàng thân thiết",   es: "Fidelización",       fr: "Fidélité" }),           icon: Heart,         to: "/loyalty" },
