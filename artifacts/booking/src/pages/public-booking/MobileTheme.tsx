@@ -33,6 +33,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
 import { useHouseCall, HouseCallFields } from "./houseCall";
+import { BookingClosedNotice, bookingClosed } from "./bookingClosed";
 
 interface MobileThemeProps {
   store: StoreData;
@@ -277,7 +278,10 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
     setView("category");
   };
 
+  // "Who can book online" set to Nobody, or Booking System off: services shown, not booked; call instead (bookingClosed.tsx).
+  const closed = bookingClosed(store);
   const handleServiceSelect = (service: ServiceData) => {
+    if (closed) return;
     const serviceAddons = getAddonsForService(service.id);
     if (serviceAddons.length > 0) {
       setViewingAddonsForService(service);
@@ -437,6 +441,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                         <h2 className="text-lg font-bold text-gray-800">Services</h2>
                         <div className="h-[1px] bg-gray-200 flex-1 ml-2"></div>
                     </div>
+                    {closed && <BookingClosedNotice store={store} className="mb-4" />}
                     {/* The business's real rating (Google, or Certxa reviews), only when it has one. */}
                     {typeof store.displayRating === "number" && (store.displayReviewCount ?? 0) > 0 ? (
                     <div className="flex items-center gap-1 text-sm text-gray-600 mb-4">
@@ -481,6 +486,7 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                     </Button>
                     <h2 className="text-xl font-bold text-gray-800">{activeCategory}</h2>
                 </div>
+                {closed && <BookingClosedNotice store={store} className="mb-4" />}
                 
                 <div className="space-y-3">
                     {groupedServices[activeCategory!]?.map(service => (
@@ -491,9 +497,9 @@ export default function MobileTheme({ store, slug, preselectedStaffId }: MobileT
                             </div>
                             <div className="flex items-center gap-3">
                                 {showPrices && <span className="font-bold text-gray-900">${Number(service.price).toFixed(2)}</span>}
-                                <Button size="sm" className="rounded-full px-4 bg-[color:var(--site-accent,#D32F2F)] hover:bg-[color:var(--site-accent-dark,#B71C1C)]" onClick={() => handleServiceSelect(service)}>
+                                {!closed && <Button size="sm" className="rounded-full px-4 bg-[color:var(--site-accent,#D32F2F)] hover:bg-[color:var(--site-accent-dark,#B71C1C)]" onClick={() => handleServiceSelect(service)}>
                                     Book
-                                </Button>
+                                </Button>}
                             </div>
                         </div>
                     ))}

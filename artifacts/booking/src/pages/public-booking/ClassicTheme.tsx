@@ -30,6 +30,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, CategoryData, TimeSlot } from "./types";
 import { useHouseCall, HouseCallFields } from "./houseCall";
+import { BookingClosedNotice, bookingClosed } from "./bookingClosed";
 import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 
 type Step = "client" | "services" | "time" | "confirm";
@@ -210,7 +211,10 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
     });
   };
 
+  // "Who can book online" set to Nobody, or Booking System off: services shown, not chosen; call instead (bookingClosed.tsx).
+  const closed = bookingClosed(store);
   const toggleService = (service: ServiceData) => {
+    if (closed) return;
     if (selectedServices.find((s) => s.id === service.id)) {
       setSelectedServices((prev) => prev.filter((s) => s.id !== service.id));
       return;
@@ -352,6 +356,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
               </Button>
               <h2 className="font-semibold text-lg">Select Service</h2>
             </div>
+            {closed && <div className="px-4 pt-3"><BookingClosedNotice store={store} /></div>}
 
             <div className="px-4 py-2">
               {servicesLoading ? (
@@ -389,7 +394,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
                                 return (
                                   <button
                                     key={service.id}
-                                    className="w-full flex items-center justify-between px-3 py-3 rounded-md hover:bg-gray-50"
+                                    className="w-full flex items-center justify-between px-3 py-3 rounded-md hover:bg-gray-50 disabled:cursor-default disabled:hover:bg-transparent"
+                                    disabled={closed}
                                     onClick={() => toggleService(service)}
                                     data-testid={`button-service-${service.id}`}
                                   >
@@ -436,7 +442,7 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
               )}
             </div>
 
-            {selectedServices.length > 0 && (
+            {selectedServices.length > 0 && !closed && (
               <div className="fixed bottom-0 left-0 right-0 bg-white border-t px-4 py-3 flex items-center justify-between gap-4 z-50">
                 <div>
                   <span className="text-sm font-medium">

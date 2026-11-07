@@ -36,6 +36,7 @@ import { facebookUrl, instagramUrl, siteStyle } from "./SiteLook";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import SiteLegal from "./SiteLegal";
+import { BookingClosedNotice, bookingClosed, phoneLabel } from "./bookingClosed";
 import type { StoreData } from "./types";
 import { useHouseCall, HouseCallFields } from "./houseCall";
 
@@ -933,6 +934,8 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   const salonName      = store.name || "Your Salon";
   const city           = extractCity(store.address);
   const phoneHref      = store.phone ? `tel:${store.phone}` : undefined;
+  // "Who can book online" set to Nobody, or Booking System off: no booking here, call instead (bookingClosed.tsx).
+  const closed         = bookingClosed(store);
   const directionsUrl  = buildDirectionsUrl(store.address);
   const reviewCount    = store.displayReviewCount ?? store.googleReviewCount ?? reviews.length;
   const avgRating      = typeof store.displayRating === "number" ? store.displayRating
@@ -1023,10 +1026,11 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   }, [preselectedServiceId, services]);
 
   const openBookingFor = useCallback((serviceId?: number) => {
+    if (closed) return;
     setBookingPreselectedId(serviceId ?? null);
     setBookingOpen(true);
     setMenuOpen(false);
-  }, []);
+  }, [closed]);
 
   // Lightbox keyboard nav
   useEffect(() => {
@@ -1142,7 +1146,21 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
             </div>
           </div>
 
-          {/* Book Now, in the centre of the header on every screen */}
+          {/* Book Now, in the centre of the header on every screen — the phone number when booking is closed */}
+          {closed ? (
+            store.phone ? (
+              <a
+                href={phoneHref}
+                data-testid="bloom-header-call"
+                className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                style={{ background: C.gold700 }}
+                aria-label={`Call ${store.phone}`}
+              >
+                <Phone className="h-3.5 w-3.5" aria-hidden="true" />
+                {phoneLabel(store.phone)}
+              </a>
+            ) : <span />
+          ) : (
           <button
             type="button"
             onClick={() => openBookingFor()}
@@ -1154,6 +1172,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
             Book Now
             <ArrowRight className="hidden h-3.5 w-3.5 sm:block" aria-hidden="true" />
           </button>
+          )}
 
           <div className="flex items-center justify-end gap-3">
             {store.phone && (
@@ -1256,6 +1275,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
               <span aria-hidden="true" style={{ color: C.rose600 }}>♥</span>
             </p>
           </div>
+          {closed && <BookingClosedNotice store={store} className="mb-5" />}
 
           {/* Category filter — mobile select + desktop chips */}
           {categories.length > 1 && (
@@ -1446,8 +1466,8 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                     </div>
                   </div>
 
-                  {/* Book button */}
-                  <div className="flex items-center justify-end border-t px-4 py-3 md:px-5 md:py-3.5" style={{ borderColor: "#f3f4f6" }}>
+                  {/* Book button (none while booking is closed) */}
+                  {!closed && <div className="flex items-center justify-end border-t px-4 py-3 md:px-5 md:py-3.5" style={{ borderColor: "#f3f4f6" }}>
                     <button
                       type="button"
                       onClick={() => openBookingFor(svc.id)}
@@ -1458,7 +1478,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                       Book Now
                       <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
-                  </div>
+                  </div>}
                 </article>
               );
             })}
@@ -1834,7 +1854,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                     </a>
                   </li>
                 ))}
-                <li>
+                {!closed && <li>
                   <button
                     type="button"
                     onClick={() => openBookingFor()}
@@ -1843,7 +1863,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
                   >
                     Book Now
                   </button>
-                </li>
+                </li>}
               </ul>
             </nav>
 

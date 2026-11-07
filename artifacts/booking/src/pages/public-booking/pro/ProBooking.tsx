@@ -20,6 +20,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { CheckCircle2, ChevronLeft, Loader2, User } from "lucide-react";
 import type { StoreData } from "../types";
 import { SiteHeader, siteStyle } from "../SiteLook";
+import { BookingClosedNotice, bookingClosed } from "../bookingClosed";
 import { anyRange as anyRangeOf, money, priceOf as priceIn, priceRange as range, proTotal as totalOf, prosForAll } from "./proPricing";
 
 interface Service { id: number; name: string; description?: string; duration: number; price: string; category: string; categoryId?: number; isActive?: boolean }
@@ -97,6 +98,8 @@ export default function ProBooking({ store, slug, fallback }: { store: StoreData
   if (!pricing || (policy?.policy && policy.policy !== "none")) return <>{fallback}</>;
 
   const needsAgreement = !!policy?.cancellationPolicyRequired && !!policy?.cancellationPolicyText?.trim();
+  // "Who can book online" set to Nobody, or Booking System off: services shown, not chosen; call instead (bookingClosed.tsx).
+  const closed = bookingClosed(store);
   const toggle = (id: number) => setPicked((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : cur.length >= MAX_SERVICES ? cur : [...cur, id]));
   const timeLabel = (iso: string) => formatInTimeZone(new Date(iso), tz, "h:mm a");
   const proName = (id: number) => pricing.staff.find((p) => p.id === id)?.name ?? "";
@@ -160,6 +163,7 @@ export default function ProBooking({ store, slug, fallback }: { store: StoreData
           <section data-testid="pro-step-services">
             <h2 className="text-xl font-bold mb-1">Choose your services</h2>
             <p className="text-sm text-gray-500 mb-4">Up to {MAX_SERVICES}. Prices depend on who you book with.</p>
+            {closed && <BookingClosedNotice store={store} className="mb-4" />}
             {groups.map(([cat, g]) => (
               <div key={cat} className="mb-6">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-2">{cat}</h3>
@@ -168,7 +172,7 @@ export default function ProBooking({ store, slug, fallback }: { store: StoreData
                     const r = rangeOf(s.id)!;
                     const sel = picked.includes(s.id);
                     return (
-                      <button key={s.id} type="button" className={`${card} ${sel ? on : "border-gray-200"}`} onClick={() => toggle(s.id)} data-testid={`pro-service-${s.id}`}>
+                      <button key={s.id} type="button" className={`${card} ${sel ? on : "border-gray-200"}`} disabled={closed} onClick={() => { if (!closed) toggle(s.id); }} data-testid={`pro-service-${s.id}`}>
                         <div className="flex items-start justify-between gap-4">
                           <div>
                             <p className="font-semibold">{s.name}</p>
@@ -271,15 +275,15 @@ export default function ProBooking({ store, slug, fallback }: { store: StoreData
         )}
       </main>
 
-      {/* The next step, always at the bottom */}
-      <div className="fixed inset-x-0 bottom-0 border-t bg-white p-4">
+      {/* The next step, always at the bottom (none while booking is closed) */}
+      {!closed && <div className="fixed inset-x-0 bottom-0 border-t bg-white p-4">
         <div className="mx-auto max-w-2xl">
           {step === "services" && <button type="button" className={primary} disabled={picked.length === 0} onClick={() => setStep("pro")} data-testid="pro-next">{picked.length ? `Continue · ${chosen.map((s) => s.name).join(" + ")}` : "Choose a service"}</button>}
           {step === "pro" && <button type="button" className={primary} disabled={proId !== "any" && !pros.some((p) => p.id === proId)} onClick={() => setStep("time")} data-testid="pro-next">Choose a time</button>}
           {step === "time" && <button type="button" className={primary} disabled={!slot} onClick={() => setStep("review")} data-testid="pro-next">{slot ? `Review · ${timeLabel(slot.time)} with ${slot.staffName}` : "Pick a time"}</button>}
           {step === "review" && <button type="button" className={primary} disabled={busy || !name.trim() || phone.replace(/\D/g, "").length !== 10 || (needsAgreement && !agreed)} onClick={() => void book()} data-testid="pro-book">{busy ? "Booking…" : `Book · ${money(slot?.total ?? 0)}`}</button>}
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

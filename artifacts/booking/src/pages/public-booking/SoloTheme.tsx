@@ -48,6 +48,7 @@ import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import SoloShop, { type ShopData, type ShopView } from "./SoloShop";
 import SiteLegal from "./SiteLegal";
 import SiteMessage from "./SiteMessage";
+import { bookingClosed } from "./bookingClosed";
 import { SoloCart, type CartLine } from "./SoloCart";
 import { SoloPay, SoloSaveCard, type DepositHold } from "./SoloPay";
 import { toast } from "@/hooks/use-toast";
@@ -1224,7 +1225,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   const teamShown = team.length >= 2;
   const priced = team.some((m) => m.prices);
   /** The business switched its booking system off: the website stays, its booking controls go. */
-  const bookingOff = store.bookingSystem === false;
+  // Booking System off, or "Who can book online" set to Nobody (bookingClosed.tsx).
+  const bookingOff = bookingClosed(store);
   const [activeCategory, setActiveCategory] = useState("All");
 
   // Header state

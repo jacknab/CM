@@ -27,6 +27,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { addDays, subDays, isSameDay } from "date-fns";
 import { StoreData, ServiceData, ServiceOptionData, CategoryData, TimeSlot, AddonData, ServiceAddonData } from "./types";
 import { useHouseCall, HouseCallFields } from "./houseCall";
+import { BookingClosedNotice, bookingClosed } from "./bookingClosed";
 import { bookingServiceFields, canAddService, extraServiceQuery, technicianLine } from "./twoServices";
 import { detectBrowserLang, BOOKING_STRINGS } from "@/lib/bookingTranslations";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
@@ -245,7 +246,11 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
   const serviceAddons = servicesData?.serviceAddons || [];
   const showPrices = (storeData as any)?.showPrices ?? true;
 
+  // "Who can book online" set to Nobody, or Booking System off: services shown, not chosen; call instead (bookingClosed.tsx).
+  const closed = bookingClosed(store);
+
   useEffect(() => {
+    if (closed) return;
     const requestedServiceId = Number(preselectedServiceId);
     if (!Number.isFinite(requestedServiceId) || requestedServiceId <= 0 || services.length === 0 || preselectionAppliedRef.current === requestedServiceId) {
       return;
@@ -259,7 +264,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
     }
     setSelectedServices([service]);
     setStep("time");
-  }, [preselectedServiceId, services]);
+  }, [preselectedServiceId, services, closed]);
 
   const getAddonsForService = (serviceId: number) => {
     const mappings = serviceAddons.filter(sa => sa.serviceId === serviceId);
@@ -387,6 +392,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
   }, [slots, timezone]);
 
   const toggleService = (service: ServiceData) => {
+    if (closed) return;
     const exists = selectedServices.find((s) => s.id === service.id);
     if (exists) {
       const newAddons = { ...selectedAddons };
@@ -746,6 +752,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                 {activeCategory ? activeCategory : "Select Category"}
               </h2>
             </div>
+            {closed && <div className="px-4 pt-3"><BookingClosedNotice store={store} /></div>}
 
             <div className="px-4 py-2">
               {servicesLoading ? (
@@ -783,7 +790,8 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                           <div
                             key={service.id}
                             className={cn(
-                              "border rounded-lg p-4 cursor-pointer transition-all hover:shadow-md",
+                              "border rounded-lg p-4 transition-all",
+                              closed ? "cursor-default" : "cursor-pointer hover:shadow-md",
                               isSelected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-gray-200 bg-white"
                             )}
                             onClick={() => toggleService(service)}
@@ -830,7 +838,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
               )}
             </div>
 
-            {selectedServices.length > 0 && (
+            {selectedServices.length > 0 && !closed && (
               <div className="fixed bottom-0 left-0 right-0 bg-pink-50 border-t px-4 py-3 flex items-center justify-between gap-4 z-50">
                 <div>
                   <span className="text-sm font-medium">
@@ -1041,7 +1049,7 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                   By checking this box, you consent to receive automated text messages from Certxa LLC on behalf of your selected salon. Messages may include appointment confirmations, reminders, cancellations, rescheduling updates, and other appointment-related notifications. Consent is not a condition of purchase. Message frequency varies. Message and data rates may apply. Reply STOP to unsubscribe and HELP for help. View{" "}
                   <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">TERMS</a>
                   {" "}&{" "}
-                  <a href="/policy" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">PRIVACY</a>
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold underline text-gray-700">PRIVACY</a>
                 </p>
               </div>
 

@@ -29,6 +29,8 @@ export interface StoreData {
   googleReviews?: { rating: number; count: number } | null;
   /** false: the business switched its booking system off; the website stays, its booking controls don't. */
   bookingSystem?: boolean;
+  /** Online booking settings › Who can book online: 'all' | 'existing' | 'off' (Nobody). */
+  onlineBookingMode?: string | null;
   /** The hours an independent pro set as available for services: what can really be booked. Null when not set. */
   serviceHours?: { dayOfWeek: number; openTime: string; closeTime: string; isClosed: boolean; blocks?: { open: string; close: string }[] }[] | null;
   businessHours?: {
