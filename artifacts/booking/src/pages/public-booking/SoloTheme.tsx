@@ -1777,13 +1777,6 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
         </div>
       </div>
 
-      {bookingOff && (
-        <div className="border-b px-5 py-3 text-center text-sm" style={{ background: C.cream50, borderColor: C.cream200, color: C.ink700 }} role="status" data-testid="solo-booking-off">
-          Online booking isn't available right now.
-          {store.phone ? <> Please call <a href={phoneHref} className="font-semibold underline underline-offset-2" style={{ color: C.ink900 }}>{phoneLabel}</a> to book.</> : " Please contact us to book."}
-        </div>
-      )}
-
       {/* ── SERVICES ──────────────────────────────────────────────────────── */}
       <section
         id="services"
@@ -2291,6 +2284,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                   { label: "About", href: "#about" },
                   { label: "Services", href: "#services" },
                   ...portfolioLink,
+                  { label: "Contact", href: "#message" },
                   ...shopLinks,
                 ].map((link) => (
                   <li key={link.href}>
