@@ -3,7 +3,7 @@
  * Certxa Pro (Solo) account, separate from the salon dashboard. Settings stay in the app. Only Solo accounts get in:
  * anyone else goes to the salon dashboard, and a signed-out visitor to the sign-in page.
  */
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CalendarDays, CreditCard, Home, LayoutList, Loader2, LogOut, Users } from "lucide-react";
@@ -38,7 +38,8 @@ const NAV = [
   { to: "/solo/billing", label: "Billing", icon: CreditCard, end: false },
 ];
 
-export default function SoloLayout() {
+/** `children`: a page drawn in the layout outside the /solo route tree (Billing on a computer, SoloBillingPage.tsx). */
+export default function SoloLayout({ children }: { children?: ReactNode } = {}) {
   const { user, isLoading, logout } = useAuth() as any;
   const location = useLocation();
 
@@ -98,7 +99,7 @@ export default function SoloLayout() {
             <button type="button" onClick={() => logout()} className="text-sm font-medium" style={{ color: SOLO_COLORS.muted }}>Sign out</button>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto">
-            <Outlet />
+            {children ?? <Outlet />}
           </main>
           {/* Phone: tabs */}
           <nav className="flex border-t bg-white md:hidden" style={{ borderColor: SOLO_COLORS.border }}>

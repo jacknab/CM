@@ -58,7 +58,7 @@
   - No server changes: the compact API already answers these with `X-Certxa-Solo: 1`, and the allow-list covers every call.
   - Tests: 29 server checks (one wrong expectation: delete answers 204) and 39 browser checks passed.
 - **Step 4b-2 — Clients (`/solo/clients`, `/solo/clients/:id`) and Catalog (`/solo/catalog/:section`): LIVE 2026-11-07, committed.** The app's Clients list + profile (visits open the booking panel, photos, notes, details, VIP, tags, text preferences, edit, delete) and all 7 Catalog sections. Server: the app's service list now includes allowQuantity (it was missing, so saving a service in the app turned "Clients choose how many" off). Tests: 41/45 server (4 wrong expectations) + 49 browser checks; Calendar 39 still pass; 721 API tests.
-- Sending Solo accounts to `/solo` on sign-in: not started.
+- **Step 5 — sign-in redirect + Billing in the dashboard: LIVE 2026-11-07, committed.** Sign-in (lib/default-auth-route.ts) sends app accounts and Solo/Plus plan businesses to `/solo`; `SoloAccountRedirect` (App.tsx) sends any salon dashboard page they open to the matching Solo page. `/solo/billing` (SoloBillingPage.tsx): inside the dashboard on a computer; its own page on a phone and for the app's billing link (`/api/auth/user` returns `appLink: true` for that sign-in). 24 browser checks.
 
 Owner decisions (2026-11-06):
 

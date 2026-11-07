@@ -153,7 +153,7 @@ const PublicReceipt = lazy(() => import("@/pages/public-booking/PublicReceipt"))
 const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBooking"));
 const ProPlus = lazy(() => import("@/pages/ProPlus"));
 const ProCredits = lazy(() => import("@/pages/ProCredits"));
-const SoloBilling = lazy(() => import("@/pages/solo/SoloBilling"));
+const SoloBillingPage = lazy(() => import("@/pages/solo/SoloBillingPage"));
 const SoloLayout = lazy(() => import("@/pages/solo/SoloLayout"));
 const SoloHome = lazy(() => import("@/pages/solo/SoloHome"));
 const SoloCalendar = lazy(() => import("@/pages/solo/SoloCalendar"));
@@ -434,11 +434,32 @@ function OwnerOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** An account made in the Certxa Pro app is one calendar: the staff, commission and payroll pages send it to the calendar. */
-function ProAccountRedirect() {
+/**
+ * A Certxa Pro (Solo) account — made in the app, or a business on the Solo / Plus plan — has its own dashboard on the
+ * website (/solo, plans/solo-web-dashboard.md). Any salon dashboard page it opens (a bookmark, an old link, a sign-in
+ * that came back to one) goes to the matching Solo page instead. Billing has its own rule (SalonBillingOnly).
+ */
+const SOLO_PAGE_FOR: [string, string][] = [
+  ["/calendar", "/solo/calendar"], ["/appointments", "/solo/calendar"],
+  ["/customers", "/solo/clients"], ["/client", "/solo/clients"], ["/client-lookup", "/solo/clients"],
+  ["/services", "/solo/catalog/services"], ["/catalog", "/solo/catalog/services"], ["/products", "/solo/catalog/products"], ["/addons", "/solo/catalog/addons"],
+];
+const under = (pathname: string, base: string) => pathname === base || pathname.startsWith(base + "/");
+function soloPageFor(pathname: string): string | null {
+  if (under(pathname, "/billing") || under(pathname, "/manage/billing") || under(pathname, "/onboarding")) return null;
+  const salonPage = authenticatedPaths.some((p) => under(pathname, p)) || under(pathname, "/manage") || isHiddenForProAccount(pathname);
+  if (!salonPage) return null;
+  return SOLO_PAGE_FOR.find(([from]) => under(pathname, from))?.[1] ?? "/solo";
+}
+function SoloAccountRedirect() {
   const { user } = useAuth();
   const location = useLocation();
-  if (isProAccount((user as any)?.accountType) && isHiddenForProAccount(location.pathname)) return <Navigate to="/calendar" replace />;
+  const target = user && (user as any).role !== "staff" && !currentAppProfile() ? soloPageFor(location.pathname) : null;
+  const pro = isProAccount((user as any)?.accountType);
+  // A Solo / Plus plan business that wasn't made in the app: known once its plan has loaded.
+  const { planCode } = useSubscriptionFeatures();
+  if (!target) return null;
+  if (pro || isSoloPlanCode(planCode)) return <Navigate to={target} replace />;
   return null;
 }
 
@@ -510,7 +531,7 @@ function AppRoutes() {
   const routes = (
     <AppScreenGuard>
     <Suspense fallback={<main className="h-screen w-full flex items-center justify-center" role="status"><Loader2 className="w-7 h-7 animate-spin" /><span className="sr-only">Loading page</span></main>}>
-    <ProAccountRedirect />
+    <SoloAccountRedirect />
     <Routes>
       {/* Root → PHP marketing landing page (hard navigation bypasses React Router) */}
       <Route path="/" element={<RootRedirect />} />
@@ -578,7 +599,7 @@ function AppRoutes() {
       <Route path="/pro-plus" element={<ProPlus />} />
       {/* Certxa Pro text message credits, opened from the app (routes/soloCredits.ts) */}
       <Route path="/pro-credits" element={<ProCredits />} />
-      <Route path="/solo/billing" element={<SoloBilling />} />
+      <Route path="/solo/billing" element={<SoloBillingPage />} />
       {/* The Solo dashboard (plans/solo-web-dashboard.md): its own layout, only for Solo accounts */}
       <Route path="/solo" element={<SoloLayout />}>
         <Route index element={<SoloHome />} />

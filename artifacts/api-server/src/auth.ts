@@ -979,7 +979,8 @@ export function setupAuth(app: Express) {
         // A signed-in account on a device that isn't remembered yet: remember it (see "Remembered devices").
         // Never for a billing sign-in from the app: it must end when the browser closes (lib/appWebSession.ts).
         if (!(req as any).cookies?.[DEVICE_COOKIE] && !appWebLink(req)) await rememberDevice(req, res, userId);
-        res.json({ ...safeUser, role, permissions });
+        // appLink: this is the app's billing-only sign-in, so the Solo billing page stays on its own (no dashboard menu).
+        res.json({ ...safeUser, role, permissions, ...(appWebLink(req) ? { appLink: true } : {}) });
         return;
       }
 

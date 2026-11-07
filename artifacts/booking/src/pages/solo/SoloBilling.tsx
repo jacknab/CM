@@ -110,7 +110,8 @@ function CardForm({ onDone, onCancel }: { onDone: () => void; onCancel: () => vo
   );
 }
 
-export default function SoloBilling() {
+/** `inLayout`: drawn inside the Solo dashboard (a computer, signed in on the website), so no page frame of its own. */
+export default function SoloBilling({ inLayout = false }: { inLayout?: boolean } = {}) {
   useEndAppWebSessionOnClose();
   const location = useLocation();
   const expiredLink = new URLSearchParams(window.location.search).get("link") === "expired";
@@ -191,10 +192,10 @@ export default function SoloBilling() {
   );
 
   return (
-    <div className="fixed inset-0 overflow-y-auto bg-[#F7F5FB] px-4 py-6">{/* fixed: no site header on this page */}
+    <div className={inLayout ? "px-4 pb-16 pt-6 md:px-8 md:pt-10" : "fixed inset-0 overflow-y-auto bg-[#F7F5FB] px-4 py-6"}>{/* fixed: no site header on this page */}
       <div className="mx-auto max-w-md space-y-5">
         <header>
-          {(location.state as any)?.fromDashboard && (
+          {!inLayout && (location.state as any)?.fromDashboard && (
             <Link to="/solo" className="mb-3 inline-block text-sm font-medium text-gray-600">‹ Home</Link>
           )}
           <h1 className="text-2xl font-semibold text-gray-900">Billing</h1>
