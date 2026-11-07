@@ -24,7 +24,7 @@ const SOLO_PAGES = new Set([
   // Signing in and out
   "auth", "app-login", "forgot-password", "reset-password",
   // Public pages: booking sites, booking links, payments, check-in, receipts, reviews
-  "book", "b", "complete-booking", "pay", "q", "receipt", "redeem", "review", "widget", "chat",
+  "book", "b", "complete-booking", "pay", "q", "receipt", "redeem", "review", "widget", "chat", "msg",
   // Marketing pages the booking app shows
   "contact", "faq", "features", "how-it-works", "pricing", "marketing", "spa", "tattoo-studio", "autumn",
   // Their own sign-ins (the support team's portal)

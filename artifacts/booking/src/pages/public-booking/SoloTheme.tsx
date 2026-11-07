@@ -46,6 +46,7 @@ import { useCancellationPolicy } from "@/hooks/use-public-booking";
 import { CancellationPolicyConsent } from "./CancellationPolicyConsent";
 import SoloShop, { type ShopData, type ShopView } from "./SoloShop";
 import SiteLegal from "./SiteLegal";
+import SiteMessage from "./SiteMessage";
 import { SoloCart, type CartLine } from "./SoloCart";
 import { SoloPay, SoloSaveCard, type DepositHold } from "./SoloPay";
 import { toast } from "@/hooks/use-toast";
@@ -1250,6 +1251,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
     <div className="flex min-h-screen flex-col" style={{ ...siteStyle(store.bookingSite), background: C.cream50, color: C.ink900 }}>
 
       <SiteLegal store={store} />
+      {/* Send a message (#message): to the pro's inbox in the app (SiteMessage.tsx). */}
+      <SiteMessage store={store} slug={slug} />
       {/* ── BOOKING PANEL ─────────────────────────────────────────────────── */}
       <BookingPanel
         isOpen={bookingOpen}
@@ -1823,7 +1826,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
             </div>
           )}
 
-          {(store.address || store.phone) && (
+          {/* Contact: always shown, for "Send a message" (owner, 2026-11-07). */}
+          {(
             <div className="mt-8 space-y-2 border-t pt-7 text-sm" style={{ borderColor: C.cream200 }}>
               <h3 className="mb-4 text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>Contact</h3>
               {store.address && (
@@ -1836,6 +1840,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                 </>
               )}
               {store.phone && <a href={phoneHref} className="block" style={{ color: C.ink700 }} itemProp="telephone">{phoneLabel}</a>}
+              <a href="#message" className="inline-block pt-1 font-semibold" style={{ color: C.gold700 }} data-testid="solo-send-message">Send a message</a>
             </div>
           )}
 

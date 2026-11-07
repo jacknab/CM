@@ -4345,6 +4345,9 @@ export async function registerRoutes(
   // The Solo billing page's card on file (change / remove).
   const { default: soloCardRouter } = await import("./routes/soloCard.js");
   app.use(soloCardRouter);
+  // Website messages: clients write from the pro's website, the pro answers in the app (routes/proMessages.ts).
+  const { default: proMessagesRouter } = await import("./routes/proMessages.js");
+  app.use(proMessagesRouter);
   // Payment links texted from the Certxa Pro app, paid on certxa.com/pay/<token> (routes/payLinks.ts).
   const { default: payLinksRouter } = await import("./routes/payLinks.js");
   app.use(payLinksRouter);

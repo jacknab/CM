@@ -161,6 +161,7 @@ const SoloClients = lazy(() => import("@/pages/solo/SoloClients"));
 const SoloClient = lazy(() => import("@/pages/solo/SoloClient"));
 const SoloCatalog = lazy(() => import("@/pages/solo/SoloCatalog"));
 const PayLink = lazy(() => import("@/pages/PayLink"));
+const MessageThread = lazy(() => import("@/pages/MessageThread"));
 const StaffCalendar = lazy(() => import("@/pages/StaffCalendar"));
 const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
 const StaffMenu = lazy(() => import("@/pages/StaffMenu"));
@@ -600,6 +601,8 @@ function AppRoutes() {
       {/* Certxa Pro text message credits, opened from the app (routes/soloCredits.ts) */}
       <Route path="/pro-credits" element={<ProCredits />} />
       <Route path="/solo/billing" element={<SoloBillingPage />} />
+      {/* A client's conversation with a Certxa Pro business, from the e-mail link (routes/proMessages.ts) */}
+      <Route path="/msg/:token" element={<MessageThread />} />
       {/* The Solo dashboard (plans/solo-web-dashboard.md): its own layout, only for Solo accounts */}
       <Route path="/solo" element={<SoloLayout />}>
         <Route index element={<SoloHome />} />
