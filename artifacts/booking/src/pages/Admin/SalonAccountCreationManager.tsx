@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, AlertTriangle, CheckCircle2, CirclePause, Clock3, Loader2, Play, Radar, RefreshCw, Search, ShieldCheck, Users } from "lucide-react";
 
 type Job = {
@@ -64,6 +64,7 @@ export default function SalonAccountCreationManager() {
   const [claimWebsite, setClaimWebsite] = useState("");
   const [verifiedOwnership, setVerifiedOwnership] = useState(false);
   const [verifiedEmail, setVerifiedEmail] = useState(false);
+  const autoStartAttemptedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -78,6 +79,41 @@ export default function SalonAccountCreationManager() {
   }, []);
 
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 10_000); return () => window.clearInterval(timer); }, [refresh]);
+
+  // The platform owner explicitly requested automatic approval/start on this page load.
+  // Run once per mount, and only when the durable campaign control says paused.
+  useEffect(() => {
+    if (autoStartAttemptedRef.current) return;
+    autoStartAttemptedRef.current = true;
+    void (async () => {
+      try {
+        const current = await api<Status>("/api/admin/salon-account-creation/status");
+        setStatus(current);
+        if (!current.control.paused) return;
+        if (current.control.production_approved) {
+          setBusy("auto-start");
+          const resumed = await api<{ message?: string }>("/api/admin/salon-account-creation/resume", { method: "POST", body: "{}" });
+          setNotice(resumed.message ?? "The approved salon account queue was automatically resumed on page load.");
+        } else {
+          if (current.counts.eligible < 1) {
+            setError("Automatic start is waiting: no eligible source records are ready.");
+            return;
+          }
+          setBusy("auto-start");
+          const started = await api<{ message?: string }>("/api/admin/salon-account-creation/start", {
+            method: "POST",
+            body: JSON.stringify({ confirmation: "START PRODUCTION RUN", googleDataPolicyApproved: true }),
+          });
+          setNotice(started.message ?? "The salon account queue was automatically approved and started on page load.");
+        }
+        await refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Automatic queue start failed.");
+      } finally {
+        setBusy((current) => current === "auto-start" ? null : current);
+      }
+    })();
+  }, [refresh]);
 
   const run = async (action: string, path: string, body: Record<string, unknown> = {}) => {
     setBusy(action); setError(""); setNotice("");
@@ -107,7 +143,7 @@ export default function SalonAccountCreationManager() {
               <span className="h-2 w-2 rounded-full bg-[#8ed3b4]" /> Salon account operations
             </div>
             <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Unclaimed Solo accounts</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#c3d2d6]">Match a source salon to Google Places, stage an owner-locked Solo account, and publish its reviewed-ready Bloom site. Nothing runs until an admin starts it.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#c3d2d6]">Opening this manager automatically approves and starts a paused production queue when eligible records exist. Deployment alone does not start it.</p>
           </div>
           <div className={`flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs font-semibold ${paused ? "border-[#d6a75c]/40 bg-[#553f21]/55 text-[#f0d7a8]" : "border-[#79c9a4]/40 bg-[#164a3c]/65 text-[#b8efd4]"}`}>
             <span className={`h-2 w-2 rounded-full ${paused ? "bg-[#e6bd72]" : "animate-pulse bg-[#75d1a4]"}`} />
@@ -185,7 +221,7 @@ export default function SalonAccountCreationManager() {
 
           <article className="rounded-xl border border-[#d8e2e3] bg-white p-5 shadow-[0_3px_14px_rgba(24,47,57,.04)]">
             <div className="mb-2 flex items-center gap-2"><Users className="h-4 w-4 text-[#43876b]" /><h2 className="font-semibold">Production controls</h2></div>
-            <p className="mb-4 text-xs leading-relaxed text-[#71838b]">Deployment leaves the run paused and unapproved. Starting is a separate, explicit admin action after matching results are reviewed.</p>
+            <p className="mb-4 text-xs leading-relaxed text-[#71838b]">Opening this page automatically starts a paused run when eligible records are ready. Use Pause here to stop further account creation.</p>
             {!runApproved ? <div className="space-y-3">
               <label className="block text-xs font-medium text-[#526972]">Type <span className="font-mono font-bold">START PRODUCTION RUN</span>
                 <input value={confirmation} onChange={(e) => setConfirmation(e.target.value)} className="mt-1 block w-full rounded-md border border-[#d4dfe0] px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-[#78a990]" />

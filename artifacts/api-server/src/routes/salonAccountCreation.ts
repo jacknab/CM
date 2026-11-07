@@ -74,7 +74,7 @@ router.post("/start", async (req: any, res) => {
     const queued = await queueEligibleSalonJobs();
     await pool.query(
       `UPDATE salon_account_creation_control SET production_approved=true, approved_by=$1,
-         approved_at=now(), paused=false, paused_at=NULL, updated_at=now() WHERE singleton=true`, [userId],
+         approved_at=now(), paused=false, updated_at=now() WHERE singleton=true`, [userId],
     );
     await resumeSalonAccountQueue();
     await pool.query(

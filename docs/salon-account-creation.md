@@ -14,7 +14,7 @@ Open **Back Office → Salon Creation** (`/isadmin/salon-account-creation`).
 
 - **Test one · no writes** runs a Places lookup for a selected source ID. It creates no queue job or Certxa account.
 - **Scan batch** records only match/skip decisions, up to five records per request. Scan repeatedly to review a small sample; it creates no accounts.
-- To start production, review the matches, tick the Google data-use approval, type exactly `START PRODUCTION RUN`, and select **Approve and start**. This approval is not triggered by page load, deploy, migration, or worker startup.
+- Opening the manager as a platform admin automatically approves and starts the paused campaign when eligible records exist. This will begin creating accounts; deployment, migration, and worker startup alone do not.
 - The queue then continues through remaining source records automatically. Jobs and audit events are stored in PostgreSQL; BullMQ jobs and pause state are persisted in Redis. Account creation starts are limited to one every six minutes (10/hour, at most 240/day).
 - **Pause** stops new jobs; **Resume** continues the already-approved run. Restarting the server preserves progress and does not approve an unapproved run.
 

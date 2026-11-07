@@ -505,7 +505,7 @@ export async function resumeSalonAccountQueue(): Promise<void> {
   if (!q) throw new Error("Redis/BullMQ is unavailable");
   const control = await pool.query<{ production_approved: boolean }>(`SELECT production_approved FROM salon_account_creation_control WHERE singleton=true`);
   if (!control.rows[0]?.production_approved) throw new Error("Production run has not been explicitly approved");
-  await pool.query(`UPDATE salon_account_creation_control SET paused=false, paused_at=NULL, updated_at=now() WHERE singleton=true`);
+  await pool.query(`UPDATE salon_account_creation_control SET paused=false, updated_at=now() WHERE singleton=true`);
   await q.resume();
   await scheduleNextScanIfDrained();
 }
