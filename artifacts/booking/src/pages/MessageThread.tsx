@@ -14,6 +14,8 @@ type Message = { id?: number; sender: "client" | "pro"; body: string; createdAt:
 type Thread = { business: string; subject: string; clientName: string; messages: Message[]; proOnline?: boolean };
 
 const when = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+/** The chime when the business's message comes in (owner, 2026-11-07): the Certxa Pro app's own sound. */
+const CHIME_URL = "/api/public/sounds/message-chime.wav";
 /** Typing goes out at most this often while the client types, and stops after this long without a key. */
 const TYPING_EVERY_MS = 2_500, TYPING_IDLE_MS = 4_000;
 
@@ -34,6 +36,14 @@ export default function MessageThread() {
   const typingSent = useRef(0);
   const typingStop = useRef<ReturnType<typeof setTimeout> | null>(null);
   const proTypingOff = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Browsers only play sound on a page the person has touched; any later message then chimes. Blocked: silent.
+  const chime = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => { chime.current = new Audio(CHIME_URL); chime.current.preload = "auto"; }, []);
+  const playChime = useCallback(() => {
+    const a = chime.current;
+    if (!a) return;
+    try { a.currentTime = 0; void a.play().catch(() => undefined); } catch { /* no sound */ }
+  }, []);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/public/messages/${encodeURIComponent(token)}`);
@@ -63,7 +73,7 @@ export default function MessageThread() {
           setProTyping(!!e.on);
           if (proTypingOff.current) clearTimeout(proTypingOff.current);
           if (e.on) proTypingOff.current = setTimeout(() => setProTyping(false), TYPING_IDLE_MS + 2_000); // if the "stopped" is lost
-        } else if (e.type === "message" && e.message) { setProTyping(false); addMessage(e.message); }
+        } else if (e.type === "message" && e.message) { setProTyping(false); addMessage(e.message); playChime(); }
       };
       ws.onclose = (ev) => {
         if (sock.current === ws) sock.current = null;
@@ -75,7 +85,7 @@ export default function MessageThread() {
     const onVisible = () => { if (document.visibilityState === "visible" && !sock.current) { if (retry) clearTimeout(retry); tries = 0; connect(); void load(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => { closed = true; if (retry) clearTimeout(retry); document.removeEventListener("visibilitychange", onVisible); sock.current?.close(); };
-  }, [token, addMessage, load]);
+  }, [token, addMessage, load, playChime]);
 
   const sendTyping = (on: boolean) => {
     const ws = sock.current;

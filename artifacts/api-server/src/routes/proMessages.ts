@@ -20,6 +20,9 @@
  */
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { pool } from "../db";
@@ -37,12 +40,14 @@ const router = Router();
 export const LIMITS = {
   /** A person needs at least this long to fill in the form; a bot posts at once. */
   minFillMs: 3_000,
-  /** Client messages (new or replies) per sender address. */
-  perIpHour: 10, perIpDay: 30,
+  /** New conversations (the website form) per sender address — where spam comes from. */
+  newPerIpHour: 10, newPerIpDay: 30,
   /** New conversations per e-mail address per business. */
   perEmailHour: 3,
-  /** Client replies per conversation. */
-  perThreadHour: 15,
+  /** Replies in a conversation (live chat, owner 2026-11-07: the old 10/hour per sender stopped real chats). */
+  repliesPerThreadHour: 120, repliesPerIpHour: 300,
+  /** The same reply twice this soon is a double send; the same new message within the window, a repeat. */
+  replyRepeatMs: 15_000, newRepeatMinutes: 10,
   maxLinks: 3,
 };
 
@@ -55,6 +60,8 @@ const snippet = (s: string, n = 120) => { const t = s.replace(/\s+/g, " ").trim(
 const htmlBody = (s: string) => escapeEmailHtml(s).replace(/\r?\n/g, "<br>");
 
 // A first layer per server process; the database limits below are the real ones.
+/** Chat replies: a conversation can be quick. */
+const replyLimiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false, message: { error: "You're sending messages very fast. Please wait a minute and try again." } });
 const publicLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: true, legacyHeaders: false, message: { error: "Too many messages. Please try again later." } });
 
 const text = (max: number) => z.string().trim().max(max);
@@ -86,21 +93,32 @@ async function spamCheck(req: Request, body: string, opts: { website: string; st
   if (!(rc.ok && rc.skipped)) console.log(`[pro-messages] recaptcha ${opts.action}: ${rc.ok ? `ok ${rc.score}` : `refused ${rc.reason}${rc.score !== undefined ? ` ${rc.score}` : ""}`}`);
   if (!rc.ok) return "Your message couldn't be sent. Please try again in a moment.";
   const ip = ipHash(req);
+  if (opts.threadId) {
+    // A reply in an existing conversation (a chat): generous limits, and only a true double send is dropped.
+    const r = (await pool.query(
+      `SELECT COUNT(*) FILTER (WHERE created_at > now() - interval '1 hour')::int AS hour,
+              COUNT(*) FILTER (WHERE created_at > now() - make_interval(secs => $3) AND body = $2)::int AS same
+         FROM pro_messages WHERE ip_hash = $1 AND sender = 'client' AND created_at > now() - interval '1 hour'`, [ip, body, LIMITS.replyRepeatMs / 1000])).rows[0];
+    if (r.same > 0) return "drop";
+    if (r.hour >= LIMITS.repliesPerIpHour) return "You're sending messages very fast. Please wait a minute and try again.";
+    const t = (await pool.query(`SELECT COUNT(*)::int AS n FROM pro_messages WHERE thread_id = $1 AND sender = 'client' AND created_at > now() - interval '1 hour'`, [opts.threadId])).rows[0];
+    if (t.n >= LIMITS.repliesPerThreadHour) return "You're sending messages very fast. Please wait a minute and try again.";
+    return "ok";
+  }
+  // A new conversation (the website form): strict, counting only the first message of each conversation.
   const r = (await pool.query(
-    `SELECT COUNT(*) FILTER (WHERE created_at > now() - interval '1 hour')::int AS hour,
+    `SELECT COUNT(*) FILTER (WHERE m.created_at > now() - interval '1 hour')::int AS hour,
             COUNT(*)::int AS day,
-            COUNT(*) FILTER (WHERE created_at > now() - interval '10 minutes' AND body = $2)::int AS same
-       FROM pro_messages WHERE ip_hash = $1 AND sender = 'client' AND created_at > now() - interval '1 day'`, [ip, body])).rows[0];
+            COUNT(*) FILTER (WHERE m.created_at > now() - make_interval(mins => $3) AND m.body = $2)::int AS same
+       FROM pro_messages m
+      WHERE m.ip_hash = $1 AND m.sender = 'client' AND m.created_at > now() - interval '1 day'
+        AND m.id = (SELECT MIN(f.id) FROM pro_messages f WHERE f.thread_id = m.thread_id)`, [ip, body, LIMITS.newRepeatMinutes])).rows[0];
   if (r.same > 0) return "drop";
-  if (r.hour >= LIMITS.perIpHour || r.day >= LIMITS.perIpDay) return "Too many messages. Please try again later.";
+  if (r.hour >= LIMITS.newPerIpHour || r.day >= LIMITS.newPerIpDay) return "Too many messages. Please try again later.";
   if (opts.email && opts.storeId) {
     const e = (await pool.query(`SELECT COUNT(*)::int AS n FROM pro_message_threads WHERE store_id = $1 AND client_email = $2 AND created_at > now() - interval '1 hour'`,
       [opts.storeId, opts.email])).rows[0];
     if (e.n >= LIMITS.perEmailHour) return "You've sent several messages already. Please wait for an answer.";
-  }
-  if (opts.threadId) {
-    const t = (await pool.query(`SELECT COUNT(*)::int AS n FROM pro_messages WHERE thread_id = $1 AND sender = 'client' AND created_at > now() - interval '1 hour'`, [opts.threadId])).rows[0];
-    if (t.n >= LIMITS.perThreadHour) return "Too many messages. Please try again later.";
   }
   return "ok";
 }
@@ -122,6 +140,19 @@ async function notifyPro(storeId: number, threadId: number, name: string, subjec
 }
 
 // ── The client (public) ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The chime the client's conversation page plays (owner, 2026-11-07), sent from here so it's labelled audio/wav: the
+ * web server in front hands out files from dist/public itself and doesn't know .wav. Built: dist/index.mjs → dist/public.
+ */
+const CHIME_FILE = [
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), "public/sounds/message-chime.wav"),
+  path.resolve(process.cwd(), "dist/public/sounds/message-chime.wav"),
+].find((f) => fs.existsSync(f)) ?? null;
+router.get("/api/public/sounds/message-chime.wav", (_req, res) => {
+  if (!CHIME_FILE) return res.status(404).end();
+  res.type("audio/wav").set("Cache-Control", "public, max-age=86400").sendFile(CHIME_FILE);
+});
 
 /** What the message pages need before sending: the reCAPTCHA site key (public), or null when it's off. */
 router.get("/api/public/messages-config", (_req, res) => {
@@ -193,7 +224,7 @@ router.get("/api/public/messages/:token", async (req, res) => {
   }
 });
 
-router.post("/api/public/messages/:token/reply", publicLimiter, async (req, res) => {
+router.post("/api/public/messages/:token/reply", replyLimiter, async (req, res) => {
   const parsed = replyInput.safeParse(req.body ?? {});
   if (!parsed.success) return invalid(res, parsed.error);
   try {
