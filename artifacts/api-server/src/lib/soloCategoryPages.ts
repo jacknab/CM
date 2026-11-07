@@ -47,6 +47,12 @@ const minutes = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} hr${m % 60 ? ` 
 export async function soloCategoryPages(storeId: number, businessCategory: string | null): Promise<SoloCategoryPage[]> {
   // A test store has none: no pages (its /services/... addresses are 404s), no links, no sitemap entries.
   if (TEST_STORE_IDS.has(storeId)) return [];
+  // A website Certxa prepared that its owner hasn't claimed yet has none either (owner, 2026-11-07): a set of near-alike
+  // category pages across prepared salons could read as doorway pages. They appear once the owner claims the site.
+  const unclaimed = await pool.query(
+    `SELECT 1 FROM salon_account_creation_jobs WHERE store_id = $1 AND status = 'created' AND claimed_at IS NULL LIMIT 1`, [storeId],
+  ).then((r) => r.rows.length > 0).catch(() => false);
+  if (unclaimed) return [];
   const [cats, svcs, photos, table] = await Promise.all([
     pool.query<{ id: number; name: string }>(
       `SELECT id, name FROM service_categories

@@ -53,6 +53,10 @@ export interface SiteContextValue {
   aboutText: string;
   /** The opening sentence under the salon's name (owner, 2026-11-07): written for this salon, else a plain one. */
   heroText: string;
+  /** A website Certxa prepared (owner, 2026-11-07): no sample tagline in the hero. */
+  isPreparedSite: boolean;
+  /** Online booking is on: false for "Who can book online: Nobody" and for prepared sites. */
+  canBookOnline: boolean;
   galleryPhotos: GalleryPhotoEntry[];
   testimonials: LiveTestimonial[];
   reviewCount: number;
@@ -168,6 +172,8 @@ export function SiteProvider({ children }: { children: ReactNode }) {
         })),
         aboutText: DEFAULT_ABOUT_TEXT,
         heroText: DEFAULT_HERO_TEXT,
+        isPreparedSite: false,
+        canBookOnline: !isLiveTenant,
         galleryPhotos: [],
         testimonials: staticTestimonials,
         reviewCount: sample ? 327 : 0,
@@ -259,6 +265,8 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       // Real reviews only (owner, 2026-11-07): no made-up "327+" when a salon has none.
       reviewCount,
       heroText: String(biz?.hero_text ?? '').trim() || plainHeroText(biz?.name ?? '', liveCity(biz)),
+      isPreparedSite: data.isCertxaPreparedSite === true,
+      canBookOnline: data.isCertxaPreparedSite !== true && biz?.online_booking_mode !== 'off',
       avgRating,
       bookingSlug: biz?.booking_slug ?? null,
       loading,

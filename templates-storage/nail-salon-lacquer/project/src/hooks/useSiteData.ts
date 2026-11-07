@@ -20,6 +20,8 @@ export interface BusinessData {
   category?: string;
   /** The salon's about text (its website's own, else the text its account was prepared from). */
   about?: string | null;
+  /** "Who can book online": 'all' | 'existing' | 'off' (Nobody). */
+  online_booking_mode?: string | null;
   /** The website's opening sentence, written for this salon. */
   hero_text?: string | null;
 }
@@ -96,6 +98,8 @@ export interface SiteData {
   galleryPhotos: GalleryPhotoEntry[];
   /** Keyed by service ID — best AI-matched Google review per service */
   serviceReviews?: Record<string | number, ServiceReviewEntry>;
+  /** A website Certxa prepared from public listings (its owner may not have claimed it yet). */
+  isCertxaPreparedSite?: boolean;
 }
 
 export function useSiteData() {

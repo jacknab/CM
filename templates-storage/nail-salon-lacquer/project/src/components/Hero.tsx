@@ -2,7 +2,7 @@ import { Sparkles, Star, Clock } from 'lucide-react';
 import { useSite } from '@/context/SiteContext';
 
 export default function Hero() {
-  const { salonName, tagline, reviewCount, avgRating, services, heroText } = useSite();
+  const { salonName, tagline, reviewCount, avgRating, services, heroText, isPreparedSite, canBookOnline, phone, phoneHref } = useSite();
 
   return (
     <section id="home" className="relative overflow-hidden pt-16 sm:pt-20">
@@ -22,10 +22,12 @@ export default function Hero() {
 
       <div className="container-prose grid min-h-[520px] items-center py-14 sm:min-h-[580px] sm:py-20 lg:min-h-[640px] lg:grid-cols-12 lg:py-28">
         <div className="lg:col-span-7">
+          {!isPreparedSite && (
           <span className="inline-flex items-center gap-2 rounded-full bg-rose-100/80 px-3.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-rose-700 backdrop-blur-sm">
             <Sparkles className="h-3.5 w-3.5" />
             {tagline}
           </span>
+          )}
 
           <h1 className="mt-4 font-serif text-[2.5rem] font-medium leading-[1.05] text-taupe-900 sm:mt-6 sm:text-5xl lg:text-7xl text-balance">
             {salonName}
@@ -50,12 +52,15 @@ export default function Hero() {
           )}
 
           <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:gap-4">
+            {/* Not taking online bookings (prepared sites, "Who can book online: Nobody"): call instead (owner, 2026-11-07). */}
+            {(canBookOnline || phone) && (
             <a
-              href="#contact"
+              href={canBookOnline ? '#contact' : phoneHref}
               className="inline-flex items-center justify-center rounded-full bg-rose-600 px-7 py-3.5 text-base font-semibold text-white shadow-lg shadow-rose-600/20 transition-all hover:-translate-y-0.5 hover:bg-rose-700 hover:shadow-xl sm:px-8 sm:py-4"
             >
-              Book Your Appointment
+              {canBookOnline ? 'Book Your Appointment' : `Call ${phone}`}
             </a>
+            )}
             <a
               href="#services"
               className="inline-flex items-center justify-center rounded-full border border-taupe-300 bg-taupe-50/80 px-7 py-3.5 text-base font-semibold text-taupe-800 backdrop-blur-sm transition-all hover:border-rose-400 hover:text-rose-600 sm:px-8 sm:py-4"
@@ -65,7 +70,8 @@ export default function Hero() {
           </div>
 
           {/* Quick facts */}
-          <dl className="mt-8 grid max-w-lg grid-cols-3 gap-3 border-t border-taupe-300/60 pt-5 sm:mt-12 sm:gap-6 sm:pt-8">
+          <dl className={`mt-8 grid max-w-lg ${canBookOnline ? 'grid-cols-3' : 'grid-cols-2'} gap-3 border-t border-taupe-300/60 pt-5 sm:mt-12 sm:gap-6 sm:pt-8`}>
+            {canBookOnline && (
             <div>
               <dt className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-rose-600">
                 <Clock className="h-3.5 w-3.5" /> Same-Day
@@ -74,6 +80,7 @@ export default function Hero() {
                 Booking
               </dd>
             </div>
+            )}
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wider text-rose-600">
                 Reviews
