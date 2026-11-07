@@ -59,7 +59,8 @@ export default function ChatThread({ token, variant = "page" }: { token: string;
     setOnline(!!data.proOnline);
   }, [token]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [thread?.messages.length, proTyping]);
+  // Newest at the bottom: scroll only the message area (scrollIntoView would move the website behind the bubble too).
+  useEffect(() => { const box = end.current?.closest<HTMLElement>("[data-testid=msg-scroll]"); if (box) box.scrollTop = box.scrollHeight; }, [thread?.messages.length, proTyping]);
 
   /** A message once: by its id (live and loaded copies of the same message meet here). */
   const addMessage = useCallback((m: Message) => setThread((t) => (!t || (m.id && t.messages.some((x) => x.id === m.id)) ? t : { ...t, messages: [...t.messages, m] })), []);
@@ -128,8 +129,9 @@ export default function ChatThread({ token, variant = "page" }: { token: string;
   if (!thread) return <main className={`${frame} flex items-center justify-center bg-gray-50`}><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></main>;
 
   return (
-    <main className={`${frame} flex flex-col overflow-y-auto bg-gray-50 text-gray-900`} data-testid="chat-thread">{/* page: its own frame, no site padding */}
-      <header className="border-b border-gray-200 bg-white px-5 py-4">
+    // Header and the writing box stay put; only the messages scroll (owner, 2026-11-07).
+    <main className={`${frame} flex flex-col overflow-hidden bg-gray-50 text-gray-900`} data-testid="chat-thread">{/* page: its own frame, no site padding */}
+      <header className="shrink-0 border-b border-gray-200 bg-white px-5 py-4">
         <div className="mx-auto max-w-2xl">
           <p className="text-lg font-semibold" data-testid="msg-business">{thread.business}</p>
           <p className="truncate text-sm text-gray-500">{thread.subject}</p>
@@ -141,7 +143,8 @@ export default function ChatThread({ token, variant = "page" }: { token: string;
           </p>
         </div>
       </header>
-      <div className="mx-auto w-full max-w-2xl flex-1 space-y-3 px-5 py-6" data-testid="msg-list">
+      <div className="min-h-0 flex-1 overflow-y-auto" data-testid="msg-scroll">
+      <div className="mx-auto w-full max-w-2xl space-y-3 px-5 py-6" data-testid="msg-list">
         {thread.messages.map((m, i) => (
           <div key={m.id ?? `i${i}`} className={`flex ${m.sender === "client" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-3 ${m.sender === "client" ? "bg-gray-900 text-white" : "border border-gray-200 bg-white"}`}>
@@ -153,7 +156,8 @@ export default function ChatThread({ token, variant = "page" }: { token: string;
         {proTyping && <p className="text-sm italic text-gray-500" data-testid="msg-typing">{thread.business} is typing…</p>}
         <div ref={end} />
       </div>
-      <div className="sticky bottom-0 border-t border-gray-200 bg-white px-5 py-4">
+      </div>
+      <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-4">
         <div className="mx-auto max-w-2xl space-y-2">
           <textarea value={text} onChange={(e) => onType(e.target.value)} rows={3} maxLength={5000} placeholder={`Write to ${thread.business}`}
             className="w-full rounded-xl border border-gray-300 px-3.5 py-2.5 text-[15px] outline-none focus:border-gray-900" data-testid="msg-text" />
