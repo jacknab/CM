@@ -51,6 +51,8 @@ export interface SiteContextValue {
   team: LiveTeamMember[];
   /** The About Us section's text (owner, 2026-11-07): the salon's own, from the database. */
   aboutText: string;
+  /** The opening sentence under the salon's name (owner, 2026-11-07): written for this salon, else a plain one. */
+  heroText: string;
   galleryPhotos: GalleryPhotoEntry[];
   testimonials: LiveTestimonial[];
   reviewCount: number;
@@ -106,6 +108,12 @@ const PLACEHOLDER_AVATAR = 'https://images.pexels.com/photos/1858175/pexels-phot
 
 const SiteContext = createContext<SiteContextValue | null>(null);
 
+/** The template preview's opening sentence; a real salon gets its own (hero_text) or plainHeroText. */
+const DEFAULT_HERO_TEXT = 'From flawless gel manicures to show-stopping custom nail art, our master technicians deliver a pampering experience you will not find anywhere else. Book your appointment in seconds — no account required.';
+/** A salon without its own sentence: its name and city, no claims. */
+const plainHeroText = (name: string, city: string) =>
+  `Manicures, pedicures and nail enhancements at ${name || 'our salon'}${city ? ` in ${city.split(',')[0]}` : ''}. Book your appointment online in seconds.`;
+
 /** Shown only when a salon has no about text of its own (and in the template's preview). */
 const DEFAULT_ABOUT_TEXT = 'We are committed to clean technique, thoughtful service, and beautiful results tailored to every guest.';
 
@@ -124,19 +132,24 @@ function liveCity(biz: { address?: string; city?: string; state?: string; postco
 export function SiteProvider({ children }: { children: ReactNode }) {
   const { data, loading, blocked } = useSiteData();
 
+  // A real salon's page (a slug is set) never shows the sample salon (owner, 2026-11-07): while its data loads, or if it
+  // can't load, there's no New York address, map or phone in its place. Samples stay for the template's own preview.
+  const isLiveTenant = typeof window !== 'undefined' && Boolean(window.__CERTXA_SLUG__);
+
   const value = useMemo<SiteContextValue>(() => {
     if (!data) {
       // Static fallback (used in thumbnail builder + when no slug is present)
+      const sample = !isLiveTenant;
       return {
-        salonName: staticSalon.name,
+        salonName: sample ? staticSalon.name : '',
         tagline: staticSalon.tagline,
-        phone: staticSalon.phone,
-        phoneHref: staticSalon.phoneHref,
-        email: staticSalon.email,
-        emailHref: staticSalon.emailHref,
-        address: staticSalon.address,
-        city: staticSalon.city,
-        hours: staticSalon.hours,
+        phone: sample ? staticSalon.phone : '',
+        phoneHref: sample ? staticSalon.phoneHref : '',
+        email: sample ? staticSalon.email : '',
+        emailHref: sample ? staticSalon.emailHref : '',
+        address: sample ? staticSalon.address : '',
+        city: sample ? staticSalon.city : '',
+        hours: sample ? staticSalon.hours : [],
         services: staticServices.map((s) => ({
           id: s.id,
           name: s.name,
@@ -154,10 +167,11 @@ export function SiteProvider({ children }: { children: ReactNode }) {
           image: m.image,
         })),
         aboutText: DEFAULT_ABOUT_TEXT,
+        heroText: DEFAULT_HERO_TEXT,
         galleryPhotos: [],
         testimonials: staticTestimonials,
-        reviewCount: 327,
-        avgRating: 4.9,
+        reviewCount: sample ? 327 : 0,
+        avgRating: sample ? 4.9 : 0,
         bookingSlug: null,
         loading,
         blocked,
@@ -169,15 +183,15 @@ export function SiteProvider({ children }: { children: ReactNode }) {
 
     const biz = data.business;
 
-    const rawPhone = biz?.phone ?? staticSalon.phone;
+    const rawPhone = biz?.phone ?? '';
     const displayPhone = toPhone(rawPhone);
     const phoneDigits = rawPhone.replace(/\D/g, '');
-    const phoneHref = phoneDigits.length >= 10 ? `tel:+${phoneDigits.startsWith('1') ? phoneDigits : '1' + phoneDigits}` : staticSalon.phoneHref;
+    const phoneHref = phoneDigits.length >= 10 ? `tel:+${phoneDigits.startsWith('1') ? phoneDigits : '1' + phoneDigits}` : '';
 
-    const rawEmail = biz?.email ?? staticSalon.email;
+    const rawEmail = biz?.email ?? '';
 
     // Hours
-    const hours = data.hours.length > 0 ? buildHoursRows(data.hours) : staticSalon.hours;
+    const hours = data.hours.length > 0 ? buildHoursRows(data.hours) : [];
 
     // Services
     const catMap = new Map(data.serviceCategories.map((c) => [c.id, c.name]));
@@ -226,12 +240,12 @@ export function SiteProvider({ children }: { children: ReactNode }) {
         : 5;
 
     return {
-      salonName: biz?.name ?? staticSalon.name,
+      salonName: biz?.name ?? '',
       tagline: staticSalon.tagline,
       phone: displayPhone,
       phoneHref,
       email: rawEmail,
-      emailHref: `mailto:${rawEmail}`,
+      emailHref: rawEmail ? `mailto:${rawEmail}` : '',
       // The business's own address only, never the template's sample one.
       address: biz?.address ?? '',
       city: liveCity(biz),
@@ -242,14 +256,16 @@ export function SiteProvider({ children }: { children: ReactNode }) {
       aboutText: String(biz?.about ?? '').trim() || DEFAULT_ABOUT_TEXT,
       galleryPhotos: data.galleryPhotos ?? [],
       testimonials: liveTestimonials.length > 0 ? liveTestimonials : staticTestimonials,
-      reviewCount: reviewCount > 0 ? reviewCount : 327,
+      // Real reviews only (owner, 2026-11-07): no made-up "327+" when a salon has none.
+      reviewCount,
+      heroText: String(biz?.hero_text ?? '').trim() || plainHeroText(biz?.name ?? '', liveCity(biz)),
       avgRating,
       bookingSlug: biz?.booking_slug ?? null,
       loading,
       blocked,
       serviceReviews: (data.serviceReviews ?? {}) as Record<string | number, ServiceReviewEntry>,
     };
-  }, [data, loading, blocked]);
+  }, [data, loading, blocked, isLiveTenant]);
 
   return <SiteContext.Provider value={value}>{children}</SiteContext.Provider>;
 }

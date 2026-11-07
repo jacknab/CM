@@ -20,6 +20,8 @@ export interface BusinessData {
   category?: string;
   /** The salon's about text (its website's own, else the text its account was prepared from). */
   about?: string | null;
+  /** The website's opening sentence, written for this salon. */
+  hero_text?: string | null;
 }
 
 export interface HoursEntry {

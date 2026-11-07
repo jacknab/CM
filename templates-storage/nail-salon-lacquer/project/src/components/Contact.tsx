@@ -10,7 +10,8 @@ export default function Contact() {
   // An address saved on one line already holds the city: don't repeat it.
   const cityLine = city && !address.includes(city) ? city : '';
   const mapsQuery = encodeURIComponent([address, cityLine].filter(Boolean).join(', '));
-  const mapSrc = `https://www.google.com/maps?q=${mapsQuery}&z=15&hl=en&output=embed`;
+  // No address yet (still loading, or kept private): no map, never a sample one.
+  const mapSrc = address ? `https://www.google.com/maps?q=${mapsQuery}&z=15&hl=en&output=embed` : '';
 
   return (
     <section id="contact" className="bg-taupe-50 py-12 sm:py-16 lg:py-24">
@@ -79,6 +80,7 @@ export default function Contact() {
           </div>
 
           {/* Map — uses live address */}
+          {mapSrc && (
           <div className="min-h-[280px] overflow-hidden rounded-3xl border border-taupe-200 shadow-sm sm:min-h-[400px] lg:min-h-0">
             <iframe
               title={`Map to ${salonName}`}
@@ -88,6 +90,7 @@ export default function Contact() {
               referrerPolicy="no-referrer-when-downgrade"
             />
           </div>
+          )}
         </div>
       </div>
     </section>

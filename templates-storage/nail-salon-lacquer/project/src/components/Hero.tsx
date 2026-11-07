@@ -2,7 +2,7 @@ import { Sparkles, Star, Clock } from 'lucide-react';
 import { useSite } from '@/context/SiteContext';
 
 export default function Hero() {
-  const { salonName, tagline, reviewCount, avgRating, services } = useSite();
+  const { salonName, tagline, reviewCount, avgRating, services, heroText } = useSite();
 
   return (
     <section id="home" className="relative overflow-hidden pt-16 sm:pt-20">
@@ -32,9 +32,7 @@ export default function Hero() {
           </h1>
 
           <p className="mt-4 max-w-xl text-base leading-relaxed text-taupe-700 sm:mt-6 sm:text-lg">
-            From flawless gel manicures to show-stopping custom nail art, our
-            master technicians deliver a pampering experience you will not find
-            anywhere else. Book your appointment in seconds — no account required.
+            {heroText}
           </p>
 
           {/* Rating badge */}
@@ -46,7 +44,7 @@ export default function Hero() {
                 ))}
               </div>
               <span className="text-sm font-medium text-taupe-700">
-                {avgRating} / 5 from {reviewCount}+ happy clients
+                {avgRating} / 5 from {reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
               </span>
             </div>
           )}
@@ -81,7 +79,7 @@ export default function Hero() {
                 Reviews
               </dt>
               <dd className="mt-1 font-serif text-xl font-semibold text-taupe-900 sm:text-2xl">
-                {reviewCount > 0 ? `${reviewCount}+` : '★★★★★'}
+                {reviewCount > 0 ? reviewCount : 'New'}
               </dd>
             </div>
             <div>
