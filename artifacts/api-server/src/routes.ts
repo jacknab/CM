@@ -10715,8 +10715,12 @@ If you have any questions, please contact your administrator.
         return res.status(404).json({ message: "Booking not found" });
       }
 
-      const appointmentPhone = (appointment.customer?.phone || "").replace(/\D/g, "");
-      if (appointmentPhone !== phoneDigits) {
+      // The client's phones are in client_phones (clients has no phone column, so customer.phone was always empty
+      // and every cancel from the confirmation page said "Booking not found"). Last 10 digits, as the lookup matches.
+      const phoneRows = appointment.customerId ? (await pool.query(
+        `SELECT phone_number_e164 FROM client_phones WHERE client_id = $1`, [appointment.customerId])).rows : [];
+      const last10 = (v: string) => v.replace(/\D/g, "").slice(-10);
+      if (!phoneRows.some((r: any) => last10(String(r.phone_number_e164 ?? "")) === last10(phoneDigits))) {
         return res.status(404).json({ message: "Booking not found" });
       }
 

@@ -41,7 +41,18 @@ export async function cancelBookingWithPolicy(
   let cancellationFeeCharged: number | null = null;
   let cancellationFeeError = false;
 
-  if (cutoffHours > 0 && appointment.status !== "cancelled") {
+  // A deposit the client paid (owner, 2026-11-07): cancelled within the policy it is refunded automatically; a late
+  // cancel keeps it, and the kept deposit is the penalty (no fee is charged on top, and the cancel isn't refused).
+  const { pool } = await import("../db");
+  const dep = (await pool.query(
+    `SELECT a.deposit_collected, a.payment_status, a.stripe_payment_intent_id,
+            (SELECT COALESCE(SUM(r.amount_cents), 0) FROM payment_refunds r WHERE r.appointment_id = a.id AND r.status IS DISTINCT FROM 'failed')::int AS refunded
+       FROM appointments a WHERE a.id = $1`, [appointment.id])).rows[0];
+  const depositCents = dep && dep.payment_status !== "awaiting_payment"
+    ? Math.max(0, Math.round((Number(dep.deposit_collected) || 0) * 100) - (Number(dep.refunded) || 0)) : 0;
+  const late = cutoffHours > 0 && (new Date(appointment.date).getTime() - Date.now()) / 3600_000 < cutoffHours;
+
+  if (cutoffHours > 0 && appointment.status !== "cancelled" && depositCents <= 0) {
     const hoursUntilAppointment = (new Date(appointment.date).getTime() - Date.now()) / 3600_000;
     if (hoursUntilAppointment < cutoffHours) {
       const feePct = terms?.saved ? terms.percent : (Number((store as any).cancellationFeeValue) || 0);
@@ -63,7 +74,6 @@ export async function cancelBookingWithPolicy(
               feeCents,
             });
             // Recorded like a fee the pro charges, so it can't be charged a second time from the app.
-            const { pool } = await import("../db");
             await pool.query(`UPDATE appointments SET fee_kind='late_cancel', fee_charged_cents=$2, fee_payment_intent=$3, fee_charged_at=now()
               WHERE id=$1 AND fee_charged_cents IS NULL`, [appointment.id, feeCents, piId]);
             cancellationFeeCharged = feeCents / 100;
@@ -89,13 +99,29 @@ export async function cancelBookingWithPolicy(
     }
   }
 
+  let depositRefunded: number | null = null;
+  let depositKept: number | null = null;
+  let depositRefundError = false;
   if (appointment.status !== "cancelled") {
+    const money = (cents: number) => `$${(cents / 100).toFixed(2)}`;
     await storage.updateAppointment(appointment.id, {
       status: "cancelled",
       cancellationReason: cancellationFeeCharged != null
         ? `Cancelled by customer (late-cancel fee $${cancellationFeeCharged.toFixed(2)} charged)`
+        : depositCents > 0 && late ? `Cancelled by customer after the cancellation window (deposit ${money(depositCents)} kept)`
+        : depositCents > 0 ? `Cancelled by customer within the cancellation policy (deposit ${money(depositCents)} refunded)`
         : "Cancelled by customer",
     });
+    await pool.query(`UPDATE appointments SET cancelled_in_policy = $2 WHERE id = $1`, [appointment.id, !late]);
+    if (depositCents > 0 && late) depositKept = depositCents / 100;
+    if (depositCents > 0 && !late) {
+      const refund = await refundDeposit(Number(store.id), Number(appointment.id), dep.stripe_payment_intent_id ?? null, depositCents);
+      if (refund.ok) depositRefunded = depositCents / 100;
+      else {
+        depositRefundError = true;
+        await storage.updateAppointment(appointment.id, { cancellationReason: `Cancelled by customer within the cancellation policy (deposit ${money(depositCents)} could not be refunded automatically)` } as any);
+      }
+    }
     // Tell the owner's phone (Certxa Pro app) that the client cancelled.
     if (appointment.storeId) void pushBookingEvent(Number(appointment.storeId), Number(appointment.id), "cancelled_client");
     // Someone on the waitlist for that day (Certxa Pro Waitlist, 2026-11-03): tell the owner the time is free.
@@ -107,7 +133,31 @@ export async function cancelBookingWithPolicy(
   if (result?.staff) {
     (result as any).staff = result.staff;
   }
-  return { ok: true, status: 200, body: { ...result, cancellationFeeCharged, cancellationFeeError } };
+  return { ok: true, status: 200, body: { ...result, cancellationFeeCharged, cancellationFeeError, depositRefunded, depositKept, depositRefundError } };
+}
+
+/** Refund a paid deposit in full to the client's card, once (Stripe idempotency + payment_refunds' unique id). */
+async function refundDeposit(storeId: number, appointmentId: number, paymentIntentId: string | null, cents: number): Promise<{ ok: boolean }> {
+  const { pool } = await import("../db");
+  try {
+    const { getPaymentAccount, refundCardPayment } = await import("./stripeConnect");
+    const account = await getPaymentAccount(storeId);
+    if (!account?.providerAccountId) throw new Error("The business's Stripe account isn't connected.");
+    const r = await refundCardPayment(account.providerAccountId, {
+      paymentIntentId, appointmentId, amountCents: cents, reason: "Cancelled within the cancellation policy",
+      idempotencyKey: `deposit_refund_${appointmentId}`,
+    });
+    await pool.query(`INSERT INTO payment_refunds (store_id, appointment_id, stripe_refund_id, stripe_payment_intent, amount_cents, status, reason)
+      VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (stripe_refund_id) DO NOTHING`,
+      [storeId, appointmentId, r.refundId, r.paymentIntentId, cents, r.status, "Deposit refunded: cancelled within the cancellation policy"]);
+    await pool.query(`UPDATE appointments SET deposit_refunded_cents = $2, deposit_refund_error = NULL WHERE id = $1`, [appointmentId, cents]);
+    return { ok: true };
+  } catch (err: any) {
+    const message = String(err?.raw?.message || err?.message || "The refund failed.").slice(0, 300);
+    console.error(`[cancel] deposit refund failed for appointment ${appointmentId}:`, message);
+    await pool.query(`UPDATE appointments SET deposit_refund_error = $2 WHERE id = $1`, [appointmentId, message]).catch(() => {});
+    return { ok: false };
+  }
 }
 
 async function notifyWaitlistForDay(storeId: number, when: Date): Promise<void> {

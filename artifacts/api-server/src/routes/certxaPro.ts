@@ -133,6 +133,8 @@ const appointmentSelect = `SELECT a.id, a.date, a.duration, a.status, a.notes, a
     'phone', (SELECT COALESCE(p.display_phone, p.phone_number_e164) FROM client_phones p WHERE p.client_id=c.id ORDER BY p.is_primary DESC, p.id LIMIT 1),
     'email', (SELECT e.email_address FROM client_emails e WHERE e.client_id=c.id ORDER BY e.is_primary DESC, e.id LIMIT 1)) AS customer,
   json_build_object('id', s.id, 'name', s.name, 'duration', s.duration, 'price', s.price::float8) AS service
+  -- A paid deposit when the client cancelled online: within the policy (refunded automatically) or late (kept).
+  a.cancelled_in_policy AS "cancelledInPolicy", a.deposit_refunded_cents AS "depositRefundedCents", (a.deposit_refund_error IS NOT NULL) AS "depositRefundFailed",
   FROM appointments a LEFT JOIN clients c ON c.id=a.customer_id AND c.store_id=a.store_id
   -- LEFT: a POS quick sale has no service (service_id NULL); Home's "Taken today" counts it (2026-11-06).
   LEFT JOIN services s ON s.id=a.service_id AND s.store_id=a.store_id`;
@@ -692,7 +694,7 @@ router.post("/appointments/:id/no-show", async (req, res) => {
 type FeeOutcome = { ok: true } | { ok: false; status: 402 | 404 | 409; error: string };
 async function chargeBookingFee(storeId: number, appointmentId: number): Promise<FeeOutcome> {
   const a = (await pool.query(
-    `SELECT a.id, a.status, a.fee_charged_cents, a.service_id, a.custom_lines, a.travel_fee,
+    `SELECT a.id, a.status, a.fee_charged_cents, a.service_id, a.custom_lines, a.travel_fee, a.deposit_collected, a.payment_status,
             COALESCE(a.stripe_customer_id, c.stripe_customer_id) AS customer, COALESCE(a.stripe_payment_method_id, c.stripe_payment_method_id) AS pm,
             (SELECT s.price FROM services s WHERE s.id=a.service_id) AS service_price,
             (SELECT COALESCE(SUM(ad.price),0) FROM appointment_addons aa JOIN addons ad ON ad.id=aa.addon_id WHERE aa.appointment_id=a.id) AS addons
@@ -707,6 +709,8 @@ async function chargeBookingFee(storeId: number, appointmentId: number): Promise
   if (!a.customer || !a.pm) return { ok: false, status: 409, error: "This client has no card on file." };
   const lines = Array.isArray(a.custom_lines) ? a.custom_lines : [];
   const total = (Number(a.service_price) || 0) + (Number(a.addons) || 0) + lines.reduce((n: number, l: any) => n + (Number(l?.price) || 0), 0);
+  // A paid deposit is the penalty: it is kept, and no fee is charged on top (owner, 2026-11-07).
+  if (Number(a.deposit_collected) > 0 && a.payment_status !== "awaiting_payment") return { ok: false, status: 409, error: "The client's deposit is kept for this booking, so no fee is charged." };
   const feeCents = terms?.cents ?? Math.round(total * pct);
   if (feeCents < 50) return { ok: false, status: 409, error: "The fee would be under $0.50, which can't be charged." };
   const kind = a.status === "no_show" ? "no_show" : "late_cancel";
