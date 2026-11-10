@@ -15,6 +15,7 @@
 import crypto from "node:crypto";
 import { pool } from "../db";
 import { sendTwilioSms } from "../sms";
+import { possessive } from "./salonSeo";
 
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
 export const CLAIM_LINK_DAYS = 7;
@@ -77,8 +78,8 @@ export async function createClaimLink(jobId: number, sendTo: string, verifiedBy:
     [hashToken(token), jobId, digits(sendTo) || null, String(CLAIM_LINK_DAYS), verifiedBy]);
   const url = `${SITE()}/claim/${token}`;
   const sms = await sendTwilioSms(sendTo, verifiedBy
-    ? `Certxa: claim ${job.name}'s page here: ${url} Create your login and it's yours (link works for ${CLAIM_LINK_DAYS} days).`
-    : `Certxa: claim ${job.name}'s page here: ${url} (link works for ${CLAIM_LINK_DAYS} days). We'll call the salon's phone with a code to confirm it's yours.`);
+    ? `Certxa: claim ${possessive(job.name)} page here: ${url} Create your login and it's yours (link works for ${CLAIM_LINK_DAYS} days).`
+    : `Certxa: claim ${possessive(job.name)} page here: ${url} (link works for ${CLAIM_LINK_DAYS} days). We'll call the salon's phone with a code to confirm it's yours.`);
   if (!sms.success) return { ok: false, message: "The text could not be sent." };
   await pool.query(`INSERT INTO salon_account_creation_logs (job_id, source_salon_id, event, message, details)
                     SELECT id, source_salon_id, 'claim_link_sent', 'Tom texted a claim link.', $2::jsonb FROM salon_account_creation_jobs WHERE id = $1`,
