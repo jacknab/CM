@@ -14,6 +14,7 @@
  * Booking flow opens as a slide-in panel from the right, matching the
  * BookingPanel in templates-storage/nail-salon-bloom/project/src/components/BookingPanel.tsx
  */
+import { PreparedNotice } from "./PreparedNotice";
 import { BusyError, getPublicJson } from "./publicFetch";
 import { storeAddressLine } from "@/lib/storeAddress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1801,6 +1802,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
           on phones the body's own 56px top padding (index.css) already does. */}
       <div id="top" className="sm:h-2 md:h-16 lg:h-[72px]" aria-hidden="true" />
       <h1 className="sr-only">{store.byLabel || salonName}{store.city ? ` in ${store.city}` : ""}</h1>
+      {/* A page Certxa prepared that its owner hasn't claimed yet: how to claim it (PreparedNotice.tsx). */}
+      <PreparedNotice store={store} />
 
       {/* ── TABS: stay under the header while scrolling ──────────────────── */}
       <div ref={tabsTop} aria-hidden="true" />
@@ -1924,7 +1927,8 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
                     {photo && <img src={photo} alt="" loading="lazy" className="h-16 w-16 shrink-0 rounded-lg object-cover" />}
                     <span className="min-w-0 flex-1">
                       <span className="block text-[16px] font-semibold leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>{svc.name}</span>
-                      <span className="mt-0.5 block text-[14px] font-bold" style={{ color: C.ink800 }}>{fromPrice(svc) ? "from " : ""}{formatPrice(priced ? proPrice(svc, team, staffChoice) : svc.price)}</span>
+                      {/* No price on a page the salon hasn't claimed: it would be Certxa's guess (server lib/preparedSalon.ts). */}
+                      {!store.unclaimedPrepared && <span className="mt-0.5 block text-[14px] font-bold" style={{ color: C.ink800 }}>{fromPrice(svc) ? "from " : ""}{formatPrice(priced ? proPrice(svc, team, staffChoice) : svc.price)}</span>}
                       {whereLabel(svc) && <span className="mt-0.5 block text-[12px] font-semibold" style={{ color: C.ink600 }} data-testid={`solo-where-${svc.id}`}>{whereLabel(svc)}</span>}
                       {svc.description && <span className={`mt-1 block text-[13px] leading-snug ${open ? "" : "line-clamp-2"}`} style={{ color: C.ink600 }}>{svc.description}</span>}
                       {on && !open && chosen.length > 0 && <span className="mt-1 block text-[13px] font-semibold leading-snug" style={{ color: C.ink800 }}>+ {chosenFor(svc.id).map((a) => a.name).join(", ")}</span>}

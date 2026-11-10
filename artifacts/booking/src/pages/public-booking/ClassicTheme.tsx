@@ -1,4 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
+import { PreparedNotice } from "./PreparedNotice";
 import { storeAddressLine } from "@/lib/storeAddress";
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -315,6 +316,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
   return (
     <div className="min-h-screen bg-white text-gray-900" style={siteStyle(store.bookingSite)}>
       {step === "services" && <SiteHeader store={store} />}
+      {/* A page Certxa prepared that its owner hasn't claimed yet: how to claim it (PreparedNotice.tsx). */}
+      {step === "services" && <PreparedNotice store={store} />}
 
       {preselectedStaff && (
         <div className="border-b bg-primary/5">

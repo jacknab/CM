@@ -7,6 +7,7 @@
  * Booking flow opens as a slide-in panel from the right, matching the
  * BookingPanel in templates-storage/nail-salon-bloom/project/src/components/BookingPanel.tsx
  */
+import { PreparedNotice } from "./PreparedNotice";
 import { storeAddressLine } from "@/lib/storeAddress";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -1253,6 +1254,8 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
           header; on phones the body's own 56px top padding (index.css) already does. */}
       <div id="top" className="sm:h-2 md:h-16 lg:h-[72px]" aria-hidden="true" />
       <h1 className="sr-only">{store.byLabel || salonName}{store.city ? ` in ${store.city}` : ""}</h1>
+      {/* A page Certxa prepared that its owner hasn't claimed yet: how to claim it (PreparedNotice.tsx). */}
+      <PreparedNotice store={store} />
 
       {/* ── SERVICES ──────────────────────────────────────────────────────── */}
       <section
@@ -1268,7 +1271,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
               className="text-[28px] font-bold leading-tight"
               style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
             >
-              Our Services
+              {store.unclaimedPrepared ? "Services" : "Our Services"}
             </h2>
             <p className="mt-1 text-[14px]" style={{ color: C.ink600 }}>
               Real results from real clients{" "}
@@ -1399,12 +1402,15 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
 
                       {/* Price + Duration row */}
                       <div className="flex items-center gap-3">
+                        {/* No price on a page the salon hasn't claimed: it would be Certxa's guess (server lib/preparedSalon.ts). */}
+                        {!store.unclaimedPrepared && (
                         <span
                           className="text-[22px] font-bold"
                           style={{ fontFamily: "'Playfair Display', Georgia, serif", color: "#374151" }}
                         >
                           {formatPrice(svc.price)}
                         </span>
+                        )}
                         {(svc.duration ?? 0) > 0 && (
                           <div className="flex items-center gap-1 text-[14px]" style={{ color: C.ink500 }}>
                             <Clock className="h-4 w-4 flex-shrink-0" aria-hidden="true" />

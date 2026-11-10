@@ -1,4 +1,7 @@
 export interface StoreData {
+  /** A page Certxa prepared that its owner hasn't claimed yet: no prices, and claimLine says how to claim it (server lib/preparedSalon.ts). */
+  unclaimedPrepared?: boolean;
+  claimLine?: string | null;
   id: number;
   name: string;
   address?: string;
