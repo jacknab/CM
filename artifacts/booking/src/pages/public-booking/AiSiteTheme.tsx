@@ -52,6 +52,18 @@ export function useSiteFonts(spec: AiSpec) {
   }, [spec.theme.fonts.heading, spec.theme.fonts.body]);
 }
 export const aiFontStack = (f: string) => fontStack(f);
+/** Load any of the designer's fonts by name (the salon dashboard's idea mockups). */
+export function useFontFamilies(names: string[]) {
+  const key = [...new Set(names)].sort().join("|");
+  useEffect(() => {
+    const families = key.split("|").map((f) => FONT_QUERY[f]).filter(Boolean);
+    if (!families.length) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet"; link.href = `https://fonts.googleapis.com/css2?${families.map((f) => `family=${f}`).join("&")}&display=swap`;
+    document.head.appendChild(link);
+    return () => { link.remove(); };
+  }, [key]);
+}
 
 /** The design's Home blocks, for the foundation's About tab. `onBook` opens the booking (Services tab). */
 export function AiBlocks({ spec, facts, onBook }: { spec: AiSpec; facts: AiFacts; onBook: () => void }) {

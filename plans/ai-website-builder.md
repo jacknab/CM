@@ -127,7 +127,11 @@ Fact sheet assembled server-side, each fact tagged with its source:
   (`sameBusiness`; 11-09 it first picked Bonnie Brae Nails for Nails By Toby). Phone/name/address/hours conflicts are
   computed by code; AI adds ≤3 fact questions. A picked phone is saved to `locations.phone`; answers + cards feed the
   ideas and build prompts. App: What I found cards + "I need you for a moment" questions (build label Nov 9 · Q).
-- Next: salon web screen, Anthropic fallbacks param.
+- **2026-11-10 — Salon screen LIVE:** `artifacts/booking/src/pages/WebsiteDesigner.tsx` at `/website-designer`
+  (owner only), same API with `?storeId=` from the store switcher; opened from Settings › Online Booking (desktop
+  card + mobile "Website" row). Idea mockups load the real Google fonts (`useFontFamilies` in AiSiteTheme.tsx).
+  Committed 995a7c09 (server + site) and the salon screen after it.
+- Next: Anthropic switch-on test + cost per account, "Add anything" uploads, Anthropic fallbacks param.
 
 ## Needs from the owner
 1. Anthropic API key (Console → API keys) for `/etc/certxa.env`.

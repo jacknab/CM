@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -512,6 +513,14 @@ ${cards}
         )}
 
         {selectedStore?.bookingSlug && <SiteAppearanceCard storeId={selectedStore.id} />}
+
+        {selectedStore?.bookingSlug && (
+          <Card className="p-6">
+            <h3 className="text-lg font-semibold mb-1">Design my website with AI</h3>
+            <p className="text-sm text-muted-foreground mb-4">Six ideas made for your business, then a full website built from the ones you love. Your services, prices and booking stay connected.</p>
+            <Button asChild data-testid="button-website-designer"><Link to="/website-designer">Open the website designer</Link></Button>
+          </Card>
+        )}
 
         {selectedStore?.bookingSlug && (
           <>

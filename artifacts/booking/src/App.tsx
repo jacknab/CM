@@ -145,6 +145,7 @@ const CommissionPayrollFlow = lazy(() => import("@/pages/setup/CommissionPayroll
 const MarketingFlow = lazy(() => import("@/pages/setup/MarketingFlow"));
 const AIReceptionistFlow = lazy(() => import("@/pages/setup/AIReceptionistFlow"));
 const WebsiteSetupFlow = lazy(() => import("@/pages/setup/WebsiteSetupFlow"));
+const WebsiteDesigner = lazy(() => import("@/pages/WebsiteDesigner"));
 const PublicBooking = lazy(() => import("@/pages/PublicBooking"));
 const VoucherBookingPage = lazy(() => import("@/pages/VoucherBookingPage"));
 const BookingWidgetPage = lazy(() => import("@/pages/BookingWidgetPage"));
@@ -279,6 +280,7 @@ const authenticatedPaths = [
   "/chkeditor",
   "/team-permissions",
   "/online-booking",
+  "/website-designer",
   "/sms-settings",
   "/mail-settings",
   "/ai-receptionist",
@@ -701,6 +703,8 @@ function AppRoutes() {
       <Route path="/setup/payroll" element={<CommissionPayrollFlow />} />
       <Route path="/setup/marketing" element={<MarketingFlow />} />
       <Route path="/setup/website" element={<WebsiteSetupFlow />} />
+      {/* AI Website Builder for salons (pages/WebsiteDesigner.tsx; plans/ai-website-builder.md) */}
+      <Route path="/website-designer" element={<OwnerOnlyRoute><WebsiteDesigner /></OwnerOnlyRoute>} />
       <Route path="/setup/ai" element={<AIReceptionistFlow />} />
       {/* Core booking system */}
       <Route path="/overview" element={<Navigate to="/analytics" replace />} />
