@@ -1231,7 +1231,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
   // Page data
   const [services, setServices]   = useState<ServiceEntry[]>([]);
   const [serviceCategories, setServiceCategories] = useState<ServiceCategoryEntry[]>([]);
-  const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesLoading, setServicesLoading] = useState(true); // loading from the first paint: the menu is fetched at once
   const [reviews, setReviews]     = useState<GoogleReviewEntry[]>([]);
   const [gallery, setGallery]     = useState<GalleryPhoto[]>([]);
   // The menu links to Portfolio only when there are photos to show.
@@ -1890,7 +1890,7 @@ export default function SoloTheme({ store, slug, preselectedStaffId, preselected
             </button>
           </div>
         ) : servicesLoading ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-12">
+          <div key="services-loading" className="flex flex-col items-center justify-center gap-3 min-h-[70vh] py-12">
             <Loader2 className="h-6 w-6 animate-spin" style={{ color: C.gold700 }} />
             {servicesBusy === "waiting" && (
               <p className="text-center text-[14px]" style={{ color: C.ink600 }} role="status" data-testid="solo-services-waiting">Lots of people are looking right now. Loading the services again in a moment…</p>

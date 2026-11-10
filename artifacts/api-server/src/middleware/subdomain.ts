@@ -403,6 +403,8 @@ export async function subdomainMiddleware(req: Request, res: Response, next: Nex
               // A Solo website lists its service category pages too (lib/soloCategoryPages.ts).
               const pages = await soloCategoryLinks(store as any, facts).catch(() => []);
               if (file === "/sitemap.xml") return res.type("application/xml").send(salonSitemapXml(facts, pages));
+              // For AI assistants to read, not a page for search results (it repeats the home page).
+              res.setHeader("X-Robots-Tag", "noindex");
               return res.type("text/markdown; charset=utf-8").send(salonLlmsTxt(facts, pages));
             }
           }

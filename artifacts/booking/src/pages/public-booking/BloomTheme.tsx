@@ -910,7 +910,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
   // Page data
   const [services, setServices]   = useState<ServiceEntry[]>([]);
   const [serviceCategories, setServiceCategories] = useState<ServiceCategoryEntry[]>([]);
-  const [servicesLoading, setServicesLoading] = useState(false);
+  const [servicesLoading, setServicesLoading] = useState(true); // loading from the first paint: the menu is fetched at once
   const [reviews, setReviews]     = useState<GoogleReviewEntry[]>([]);
   const [gallery, setGallery]     = useState<GalleryPhoto[]>([]);
   /** Backend AI-matched service reviews — keyed by service ID (string or number) */
@@ -1325,7 +1325,7 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
 
           {/* Service cards */}
         {servicesLoading ? (
-          <div className="flex justify-center py-12">
+          <div key="services-loading" className="flex justify-center min-h-[70vh] py-12">
             <Loader2 className="h-6 w-6 animate-spin" style={{ color: C.gold700 }} />
           </div>
         ) : (

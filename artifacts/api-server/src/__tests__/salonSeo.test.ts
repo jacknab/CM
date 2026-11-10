@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { proByLabel } from "../lib/proCraft";
-import { applySalonPage, salonFaq, salonHead, salonLlmsTxt, salonRobotsTxt, type SalonFacts } from "../lib/salonSeo";
+import { applySalonPage, possessive, salonFaq, salonHead, salonIndexable, salonLlmsTxt, salonRobotsTxt, salonSitemapXml, type SalonFacts } from "../lib/salonSeo";
 
 const facts = (over: Partial<SalonFacts> = {}): SalonFacts => ({
   slug: "tobys", name: "Toby’s", category: "Nail Salon", city: "Denver", state: "CO", cityState: "Denver, CO",
@@ -187,5 +187,29 @@ describe("booking switched off", () => {
     const head = salonHead(facts());
     expect(head.description).toMatch(/Book online/);
     expect(JSON.stringify(head.jsonLd)).toContain("ReserveAction");
+  });
+});
+
+describe("SEO review fixes (2026-11-10)", () => {
+  it("writes the possessive of a name ending in s with only an apostrophe", () => {
+    expect(possessive("Happy Beauty Nails")).toBe("Happy Beauty Nails'");
+    expect(possessive("Kim")).toBe("Kim's");
+    expect(salonFaq(facts({ name: "Happy Beauty Nails" })).map((x) => x.q)).toContain("What are Happy Beauty Nails' hours?");
+  });
+  it("keeps test salons and empty pages out of search results", () => {
+    expect(salonIndexable(facts({ storeId: 7 }))).toBe(true);
+    expect(salonIndexable(facts({ storeId: 41 }))).toBe(false);
+    expect(salonIndexable(facts({ services: [] }))).toBe(false);
+    expect(applySalonPage(TEMPLATE, facts({ services: [] }))).toContain('<meta name="robots" content="noindex, follow" />');
+  });
+  it("shows no Certxa image when the salon has no photo, and the salon's own when it has one", () => {
+    const withGeneric = TEMPLATE.replace("</head>", '<meta property="og:image" content="/web-app.png" /><meta name="twitter:card" content="summary_large_image" /><meta name="twitter:image" content="https://certxa.com/web-app.png" /></head>');
+    const none = applySalonPage(withGeneric, facts());
+    expect(none).not.toContain("web-app.png");
+    expect(none).toContain('<meta name="twitter:card" content="summary" />');
+    expect(applySalonPage(withGeneric, facts({ image: "https://cdn.example/salon.jpg" }))).toContain('<meta property="og:image" content="https://cdn.example/salon.jpg" />');
+  });
+  it("leaves llms.txt out of the sitemap", () => {
+    expect(salonSitemapXml(facts())).not.toContain("llms.txt");
   });
 });

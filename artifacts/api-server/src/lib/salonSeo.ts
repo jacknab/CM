@@ -22,9 +22,11 @@ import { displayPhone, toE164 } from "./tenant-seo";
 import { resolveStorePlan } from "./featureAccess";
 import { isBookingSystemOff } from "./bookingSystem";
 import { craftFor, craftTitle, placesSentence, proByLabel, soloKeywords, type SoloPlaces } from "./proCraft";
+import { TEST_STORE_IDS } from "./testStores";
 
 export interface SalonFacts {
   slug: string;
+  storeId?: number;
   name: string;
   category: string;
   city: string | null;
@@ -121,6 +123,7 @@ async function loadFacts(slug: string): Promise<SalonFacts | null> {
     : Number(own?.n) >= 3 ? { value: Math.round(Number(own.avg) * 10) / 10, count: Number(own.n), source: "Certxa" as const } : null;
   return {
     slug: s.booking_slug,
+    storeId: Number(s.id),
     name: String(s.name ?? "").trim() || "Salon",
     category: String(s.category ?? "").trim(),
     city: s.city ?? null,
@@ -159,6 +162,20 @@ async function loadFacts(slug: string): Promise<SalonFacts | null> {
 
 /** "Nail Salon in Denver, CO" — or for a Solo pro, their craft: "Nails in Denver, CO" (never "salon"). */
 const kindIn = (f: SalonFacts) => [f.solo ? craftTitle(craftFor(f.category)) : f.category, f.cityState ? `in ${f.cityState}` : ""].filter(Boolean).join(" ");
+/** "Kim's Nails" → "Kim's Nails'": a name ending in s takes only the apostrophe (2026-11-10: "Happy Beauty Nails's"). */
+export function possessive(name: string): string {
+  return /s$/i.test(name.trim()) ? `${name.trim()}'` : `${name.trim()}'s`;
+}
+
+/**
+ * Whether search engines may index the salon's page (2026-11-10 SEO review): not a test salon, and not an empty page.
+ * The same rule as certxa.com/salon-sitemap.xml (lib/salonSitemap.ts), which lists a booking page only with at least
+ * one public service.
+ */
+export function salonIndexable(f: SalonFacts): boolean {
+  return !(f.storeId != null && TEST_STORE_IDS.has(f.storeId)) && f.services.length > 0;
+}
+
 /** "Toby’s nails" when the name is already possessive, else "Kim Tran — nails". */
 const nameWithWork = (f: SalonFacts) => {
   const work = craftFor(f.category).work;
@@ -183,7 +200,7 @@ export function salonFaq(f: SalonFacts): { q: string; a: string }[] {
   const name = who(f);
   const where = addressLine(f);
   if (where) faq.push({ q: `Where is ${name} located?`, a: `${name} is ${f.streetAddress ? "at" : "in"} ${where}.` });
-  if (hasHours(f)) faq.push({ q: f.byLabel ? `What are the hours for ${name}?` : `What are ${name}'s hours?`, a: `${hoursText(f).join("; ")}.` });
+  if (hasHours(f)) faq.push({ q: f.byLabel ? `What are the hours for ${name}?` : `What are ${possessive(name)} hours?`, a: `${hoursText(f).join("; ")}.` });
   // A Solo pro: where the appointment happens.
   if (f.solo && f.places.houseCalls) {
     faq.push({ q: `Does ${name} come to you?`,
@@ -329,7 +346,9 @@ export function applySalonPage(template: string, f: SalonFacts, servicePages: Se
   const set: Array<[RegExp, string]> = [
     [/<title>[^<]*<\/title>/i, `<title>${t}</title>`],
     [/<meta\s+name=["']description["'][^>]*>/i, `<meta name="description" content="${d}" />`],
-    [/<meta\s+name=["']robots["'][^>]*>/i, `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />`],
+    [/<meta\s+name=["']robots["'][^>]*>/i, salonIndexable(f)
+      ? `<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />`
+      : `<meta name="robots" content="noindex, follow" />`],
     [/<meta\s+name=["']keywords["'][^>]*>/i, `<meta name="keywords" content="${k}" />`],
     // Marked as the salon's own, so the booking app's head manager leaves it alone (components/SeoManager.tsx).
     [/<link\s+rel=["']canonical["'][^>]*>/i, `<link rel="canonical" href="${c}" data-salon-page="true" />`],
@@ -356,6 +375,11 @@ export function applySalonPage(template: string, f: SalonFacts, servicePages: Se
     set.push([/<meta\s+name=["']twitter:image["'][^>]*>/i, `<meta name="twitter:image" content="${img}" />`]);
   }
   let html = template;
+  // No photo of its own: no picture rather than Certxa's app image, the same one on every salon's page (2026-11-10).
+  if (!img) {
+    html = html.replace(/\s*<meta\s+property=["']og:image["'][^>]*>/i, "").replace(/\s*<meta\s+name=["']twitter:image["'][^>]*>/i, "")
+      .replace(/<meta\s+name=["']twitter:card["'][^>]*>/i, `<meta name="twitter:card" content="summary" />`);
+  }
   for (const [pattern, tag] of set) html = pattern.test(html) ? html.replace(pattern, tag) : html.replace("</head>", `  ${tag}\n  </head>`);
   // Structured data (escaped so nothing in a salon's text can close the script) and the llms.txt pointer.
   const ld = JSON.stringify(head.jsonLd).replace(/</g, "\\u003c");
@@ -397,8 +421,7 @@ export function salonSitemapXml(f: SalonFacts, servicePages: ServicePageLink[] =
   return `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${esc(f.canonical)}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
-${servicePages.map((x) => `  <url><loc>${esc(x.url)}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>\n`).join("")}  <url><loc>${esc(f.canonical)}llms.txt</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.3</priority></url>
-</urlset>
+${servicePages.map((x) => `  <url><loc>${esc(x.url)}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>\n`).join("")}</urlset>
 `;
 }
 

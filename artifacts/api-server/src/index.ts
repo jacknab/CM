@@ -5,7 +5,7 @@
 //   3. .env in cwd                       (local dev fallback)
 // `/etc/certxa.env` is authoritative in production and should override any older
 // values already present in process.env when the server starts.
-import { applySalonPage, salonFacts } from "./lib/salonSeo";
+import { applySalonPage, salonFacts, salonIndexable } from "./lib/salonSeo";
 import dotenv from "dotenv";
 import fs from "fs";
 if (fs.existsSync("/etc/certxa.env")) {
@@ -1761,6 +1761,8 @@ async function repairTwilioMessagingServiceInboundWebhook() {
               // A Solo website links its service category pages from the summary (lib/soloCategoryPages.ts).
               const { soloCategoryLinksBySlug } = await import("./lib/soloCategoryPages");
               const pages = await soloCategoryLinksBySlug(decodeURIComponent(segments[2]), facts).catch(() => []);
+              // A test salon or an empty page stays out of search results (lib/salonSeo.ts salonIndexable).
+              if (!salonIndexable(facts)) res.setHeader("X-Robots-Tag", "noindex, follow");
               res.status(200).type("html").send(applySalonPage(indexTemplate, facts, pages));
               return;
             }
