@@ -2049,6 +2049,14 @@ export function setupSupportAgentRoutes(httpServer: HttpServer, app: Express): v
       return res.status(403).type("text/plain").send("Forbidden");
     }
 
+    // Retired (owner, 2026-11-10): Maril, Certxa's Account Services agent, answers this line now (routes/salesAgent.ts,
+    // lib/marilAccountSupport.ts). Twilio keeps the caller's number, so an owner calling from their mobile is recognised.
+    if (process.env.SUPPORT_AGENT_LEGACY !== "1") {
+      const marilUrl = `${appUrl.replace(/\/+$/, "")}/api/webhook/twilio/sales/shavez`;
+      console.log(`${LOG_PREFIX} forwarding call to Maril (Account Services)`);
+      return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Redirect method="POST">${marilUrl}</Redirect></Response>`);
+    }
+
     const callSidRaw = ((req.body?.CallSid as string | undefined) ?? "").trim();
     if (!callSidRaw) {
       return res.status(200).type("text/plain").send("ok");
