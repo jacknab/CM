@@ -10,6 +10,7 @@ import MobileTheme from "./public-booking/MobileTheme";
 import SimpleTheme from "./public-booking/SimpleTheme";
 import OfferPage from "./public-booking/OfferPage";
 import ProBooking from "./public-booking/pro/ProBooking";
+import AiSite from "./public-booking/AiSite";
 
 export default function PublicBooking() {
   const { slug } = useParams<{ slug?: string }>();
@@ -63,11 +64,12 @@ export default function PublicBooking() {
   const previewTheme = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("previewTheme") : null;
   const theme = previewTheme && ["bloom", "solo", "aspen", "simple", "classic", "mobile"].includes(previewTheme) ? previewTheme : effectiveStore.bookingTheme;
 
-  const themed = (() => { switch (theme) {
+  // One design for a store; the AI preview's Book page uses it with the site's accent (AiSiteTheme.tsx).
+  const renderTheme = (s: StoreData) => { switch (theme) {
     case "classic":
       return (
         <ClassicTheme
-          store={effectiveStore as StoreData}
+          store={s}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
         />
@@ -75,7 +77,7 @@ export default function PublicBooking() {
     case "mobile":
       return (
         <MobileTheme
-          store={effectiveStore as StoreData}
+          store={s}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
         />
@@ -84,7 +86,7 @@ export default function PublicBooking() {
     case "solo":
       return (
         <SoloTheme
-          store={effectiveStore as StoreData}
+          store={s}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
           preselectedServiceId={preselectedServiceId}
@@ -94,7 +96,7 @@ export default function PublicBooking() {
     case "aspen":
       return (
         <AspenTheme
-          store={effectiveStore as StoreData}
+          store={s}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
           preselectedServiceId={preselectedServiceId}
@@ -103,7 +105,7 @@ export default function PublicBooking() {
     case "simple":
       return (
         <SimpleTheme
-          store={effectiveStore as StoreData}
+          store={s}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
           preselectedServiceId={preselectedServiceId}
@@ -112,13 +114,21 @@ export default function PublicBooking() {
     default:
       return (
         <BloomTheme
-          store={effectiveStore as StoreData}
+          store={s}
           slug={effectiveSlug!}
           preselectedStaffId={preselectedStaffId}
           preselectedServiceId={preselectedServiceId}
         />
       );
-  } })();
+  } };
+  const themed = renderTheme(effectiveStore as StoreData);
+
+  // A design made by the AI Website Builder, opened as a private preview from the app (?aiPreview=<token>).
+  // The live site when the owner has put an AI design online (Stage 4); ?previewTheme= still shows a regular design.
+  const aiPreview = searchParams.get("aiPreview");
+  if (aiPreview || ((effectiveStore as any).aiSiteLive && !previewTheme)) {
+    return <AiSite store={effectiveStore as StoreData} slug={effectiveSlug!} token={aiPreview} preselectedStaffId={preselectedStaffId} preselectedServiceId={preselectedServiceId} />;
+  }
 
   // Barbershops and hair salons: their own booking page, priced by professional (pricing levels). Every other
   // business, nail salons included, gets its design exactly as before. ?previewTheme= still shows a design, and a

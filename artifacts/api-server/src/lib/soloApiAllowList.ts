@@ -44,6 +44,8 @@ export const SOLO_API_ALLOW: string[] = [
   "/api/payments/overview", "/api/payments/stripe/*", "/api/payments/terminal/*", "/api/payments/transactions/*",
   "/api/pos/email-receipt", "/api/pos/sms-receipt", "/api/pos-settings/*", "/api/tip-presets/*",
   "/api/pro/*", "/api/reviews/*",
+  // AI Website Builder (owner, 2026-11-09): every account, Certxa Pro included.
+  "/api/ai-site/*",
   "/api/stores/*", "/api/user/delete-account", "/api/waitlist/*",
   // The Solo dashboard on the website (/solo): its plan (owner, 2026-11-07)
   "/api/plans/my-features",

@@ -4351,6 +4351,9 @@ export async function registerRoutes(
   // Payment links texted from the Certxa Pro app, paid on certxa.com/pay/<token> (routes/payLinks.ts).
   const { default: payLinksRouter } = await import("./routes/payLinks.js");
   app.use(payLinksRouter);
+  // AI Website Builder: facts, six ideas, Love it / Not this (routes/aiSite.ts; plans/ai-website-builder.md).
+  const { default: aiSiteRouter } = await import("./routes/aiSite.js");
+  app.use(aiSiteRouter);
   // Gift cards and prepaid packages sold on the Solo website (routes/siteShop.ts).
   const { default: siteShopRouter } = await import("./routes/siteShop.js");
   app.use(siteShopRouter);
@@ -8931,7 +8934,7 @@ If you have any questions, please contact your administrator.
       // Public (a salon's own subdomain): no internal fields, no private street address (lib/publicStore.ts).
       const publicStore = publicStoreView(store);
       const hours = await storage.getBusinessHours(store.id);
-      return res.json({ ...publicStore, businessHours: hours, byLabel: store.bookingSlug ? (await salonFacts(store.bookingSlug))?.byLabel ?? null : null,
+      return res.json({ ...publicStore, businessHours: hours, aiSiteLive: (store as any).aiSiteLiveVersionId != null, byLabel: store.bookingSlug ? (await salonFacts(store.bookingSlug))?.byLabel ?? null : null,
         // As /api/public/store/:slug gives them: booking switched on or off, and the Google reviews the website names.
         bookingSystem: !(await isBookingSystemOff(store.id)),
         googleReviews: await googleReviewSummary(store.id) });
@@ -8995,6 +8998,8 @@ If you have any questions, please contact your administrator.
       return res.json({
         ...publicStore, businessHours: hours, showPrices,
         byLabel: (await salonFacts(req.params.slug))?.byLabel ?? null,
+        // AI Website Builder: an AI-designed version is the live site (public-booking/AiSiteTheme.tsx).
+        aiSiteLive: (store as any).aiSiteLiveVersionId != null,
         googleRating, googleReviewCount,
         displayRating, displayReviewCount, reviewSource,
         // false: the salon switched its booking system off (lib/bookingSystem.ts) — no booking from this page.

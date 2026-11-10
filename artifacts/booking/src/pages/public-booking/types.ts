@@ -15,6 +15,10 @@ export interface StoreData {
   category?: string | null;
   /** A Solo pro's label: "Nails by Toby" (server: lib/proCraft.ts). */
   byLabel?: string | null;
+  /** Padded time: minutes every booking keeps after the visit (0 = off). */
+  paddedMinutes?: number;
+  /** An AI-designed site is the live website (AI Website Builder, Stage 4). */
+  aiSiteLive?: boolean;
   state?: string | null;
   googleRating?: number | null;
   googleReviewCount?: number;

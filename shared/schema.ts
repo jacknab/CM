@@ -267,12 +267,17 @@ export const locations = pgTable("locations", {
   houseCalls:                   boolean("house_calls").notNull().default(false),
   houseCallRadiusMiles:         integer("house_call_radius_miles").notNull().default(15),
   houseCallAlarmMinutes:        integer("house_call_alarm_minutes").notNull().default(0),
+  houseCallSetupMinutes:        integer("house_call_setup_minutes").notNull().default(15),
+  houseCallPackupMinutes:       integer("house_call_packup_minutes").notNull().default(15),
   houseCallFee:                 decimal("house_call_fee", { precision: 10, scale: 2 }).notNull().default("0"),
   houseCallTravelMinutes:       integer("house_call_travel_minutes").notNull().default(15),
   bookingApproval:              text("booking_approval").notNull().default("auto"), // 'auto' | 'manual'
   bookingRequestExpiryHours:    integer("booking_request_expiry_hours").notNull().default(48),
   // Days a link with other times offered to a client stays open (migration 0256).
   bookingOfferValidDays:        integer("booking_offer_valid_days").notNull().default(3),
+  // AI Website Builder: the AI-designed version shown as the live site; null = the regular design (migration 0333).
+  aiSiteLiveVersionId:          integer("ai_site_live_version_id"),
+  // Certxa Pro: the Available for services grid, kept while the pro shows business hours instead (migration 0319).
   advanceBookingEnabled:        boolean("advance_booking_enabled").notNull().default(false),
   advanceBookingMonths:         integer("advance_booking_months").notNull().default(3),
   onlineWaitlistEnabled:        boolean("online_waitlist_enabled").notNull().default(false),
@@ -356,8 +361,13 @@ export const services = pgTable("services", {
   autoAssigned: boolean("auto_assigned").default(false),
   isActive: boolean("is_active").notNull().default(true),
   hiddenFromPublic: boolean("hidden_from_public").default(false),
+  /** Draft placeholder service with no verified price; excluded from public menus until owner sets a price. */
+  isUnpricedPlaceholder: boolean("is_unpriced_placeholder").notNull().default(false),
   /** Solo plan: where the service is offered — at the professional's place, at the client's, or either. */
   offeredAt: text("offered_at").notNull().default("any"),
+  // Clients choose how many on the booking website (migration 0314).
+  allowQuantity: boolean("allow_quantity").notNull().default(false),
+  maxQuantity: integer("max_quantity").notNull().default(10),
 });
 
 export const serviceOptions = pgTable("service_options", {
@@ -386,6 +396,9 @@ export const addons = pgTable("addons", {
   type: text("type").notNull().default("full"),        // "full" | "mini" | "express"
   parentAddonId: integer("parent_addon_id"),            // mini/express → full parent
   isStackable: boolean("is_stackable").notNull().default(true),
+  // Clients choose how many on the booking website (migration 0314).
+  allowQuantity: boolean("allow_quantity").notNull().default(false),
+  maxQuantity: integer("max_quantity").notNull().default(10),
   isActive: boolean("is_active").notNull().default(true),
   hiddenFromPublic: boolean("hidden_from_public").default(false),
 });
@@ -394,20 +407,10 @@ export const serviceAddons = pgTable("service_addons", {
   id: serial("id").primaryKey(),
   serviceId: integer("service_id").references(() => services.id).notNull(),
   addonId: integer("addon_id").references(() => addons.id).notNull(),
-});
-
-export const appointmentAddons = pgTable("appointment_addons", {
-  id: serial("id").primaryKey(),
-  appointmentId: integer("appointment_id").references(() => appointments.id).notNull(),
-  addonId: integer("addon_id").references(() => addons.id).notNull(),
-  // Which service on the ticket it goes with: null = the ticket's own service, n = custom_lines[n] (migration 0266).
-  lineNo: integer("line_no"),
-});
-
   // false: linked only because one of the service's add-on groups holds the add-on (migration 0320).
   manual: boolean("manual").notNull().default(true),
-// ── Packages ────────────────────────────────────────────────────────────────
-// A package bundles existing services + add-ons into one named item. Duration
+});
+
 // ── Add-on Groups (migration 0320) ──────────────────────────────────────────
 // A reusable list of existing add-ons. Assigning a group to a service writes
 // ordinary service_addons links (manual = false), kept in step by
@@ -433,6 +436,16 @@ export const serviceAddonGroups = pgTable("service_addon_groups", {
   groupId: integer("group_id").references(() => addonGroups.id, { onDelete: "cascade" }).notNull(),
 }, (table) => [unique("service_addon_groups_service_id_group_id_key").on(table.serviceId, table.groupId)]);
 
+export const appointmentAddons = pgTable("appointment_addons", {
+  id: serial("id").primaryKey(),
+  appointmentId: integer("appointment_id").references(() => appointments.id).notNull(),
+  addonId: integer("addon_id").references(() => addons.id).notNull(),
+  // Which service on the ticket it goes with: null = the ticket's own service, n = custom_lines[n] (migration 0266).
+  lineNo: integer("line_no"),
+});
+
+// ── Packages ────────────────────────────────────────────────────────────────
+// A package bundles existing services + add-ons into one named item. Duration
 // is always the sum of the components; price is that sum ('sum') or a fixed
 // owner-set amount ('fixed'). A booked package is a single appointment with
 // `packageId` set (see appointments.packageId) and the package's add-ons
@@ -779,6 +792,8 @@ export const calendarSettings = pgTable("calendar_settings", {
   requireClientForWalkin: boolean("require_client_for_walkin").notNull().default(false),
   // Minutes a technician is held after each appointment before they can take another (0/5/10/15).
   bufferMinutes: integer("buffer_minutes").notNull().default(0),
+  // Padded time: minutes added to the end of every booking (0 off, 15/30/45/60; lib/paddedTime.ts, migration 0330).
+  paddedMinutes: integer("padded_minutes").notNull().default(0),
   language: text("language").notNull().default("en"),
 });
 
