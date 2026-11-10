@@ -255,7 +255,7 @@ export async function scheduleClaimCallback(jobId: number, callerName: string, c
 }
 
 /** Places every call-back that is due (each server process runs this; the UPDATE gives each call to one of them). */
-export async function placeDueClaimCallbacks(webhookUrl: string, fromNumber: string): Promise<void> {
+export async function placeDueClaimCallbacks(webhookUrl: string, fromNumber: string, statusUrl?: string): Promise<void> {
   const { rows } = await pool.query(
     `UPDATE salon_claim_callbacks SET status = 'calling', updated_at = now()
       WHERE id IN (SELECT id FROM salon_claim_callbacks WHERE status = 'pending' AND call_at <= now() ORDER BY id LIMIT 5 FOR UPDATE SKIP LOCKED)
@@ -268,6 +268,8 @@ export async function placeDueClaimCallbacks(webhookUrl: string, fromNumber: str
       if (!sid || !auth) throw new Error("Twilio is not configured");
       const call = await Twilio(sid, auth).calls.create({
         to: `+1${row.salon_phone}`, from: fromNumber, url: `${webhookUrl}?claimCallback=${encodeURIComponent(row.token)}`, timeout: 40,
+        // Not answered, busy or failed: Twilio says so here, and the call-back is tried once more (retryClaimCallback).
+        ...(statusUrl ? { statusCallback: `${statusUrl}?claimCallback=${encodeURIComponent(row.token)}`, statusCallbackEvent: ["completed"], statusCallbackMethod: "POST" } : {}),
       });
       await pool.query(`UPDATE salon_claim_callbacks SET call_sid = $2, updated_at = now() WHERE id = $1`, [row.id, call.sid]);
       console.log(`[salon-claim] call-back ${row.id} placed`);
@@ -311,4 +313,30 @@ export async function checkCallbackCode(callbackId: number, spoken: string): Pro
     return "ok";
   }
   return Number(row.code_attempts) >= 3 ? "locked" : "wrong";
+}
+
+export const CALLBACK_RETRY_MINUTES = 2;
+
+/**
+ * The call-back didn't reach anyone (voicemail, no answer, busy, failed): call again in two minutes, once. Returns
+ * whether a retry was scheduled; on the second miss the call-back is marked failed and the owner calls Certxa back.
+ */
+export async function retryClaimCallback(by: { token?: string; id?: number }, reason: string): Promise<boolean> {
+  const where = by.id != null ? "id = $1" : "token = $1";
+  const { rows: [row] } = await pool.query(
+    `UPDATE salon_claim_callbacks
+        SET status = CASE WHEN attempts < 2 THEN 'pending' ELSE 'failed' END,
+            call_at = CASE WHEN attempts < 2 THEN now() + ($2 || ' minutes')::interval ELSE call_at END,
+            attempts = CASE WHEN attempts < 2 THEN attempts + 1 ELSE attempts END,
+            code_attempts = 0, updated_at = now()
+      WHERE ${where} AND status IN ('calling', 'connected')
+      RETURNING id, status`, [by.id ?? by.token, String(CALLBACK_RETRY_MINUTES)]);
+  if (!row) return false;
+  console.log(`[salon-claim] call-back ${row.id} ${reason}: ${row.status === "pending" ? `retrying in ${CALLBACK_RETRY_MINUTES} minutes` : "no more tries"}`);
+  return row.status === "pending";
+}
+
+/** Will a missed call-back be tried again (it's the first try)? */
+export async function callbackHasRetryLeft(id: number): Promise<boolean> {
+  return Boolean((await pool.query(`SELECT 1 FROM salon_claim_callbacks WHERE id = $1 AND attempts < 2`, [id])).rowCount);
 }
