@@ -4339,6 +4339,9 @@ export async function registerRoutes(
   // Certxa Pro Plus: the app's one-time link into certxa.com/pro-plus, and buying Plus there (routes/soloPlus.ts).
   const { default: soloPlusRouter } = await import("./routes/soloPlus.js");
   app.use(soloPlusRouter);
+  // Certxa Pro: card payment setup on Certxa's page with Stripe's embedded onboarding (routes/proPaymentsSetup.ts).
+  const { default: proPaymentsSetupRouter } = await import("./routes/proPaymentsSetup.js");
+  app.use(proPaymentsSetupRouter);
   // Certxa Pro text message credits: one tap with a card on file, else certxa.com/pro-credits (routes/soloCredits.ts).
   const { default: soloCreditsRouter } = await import("./routes/soloCredits.js");
   app.use(soloCreditsRouter);

@@ -15,10 +15,12 @@ export const APP_WEB_IDLE_MS = 30 * 60 * 1000;
 
 type AppWebLink = { scope: "billing"; storeId: number | null; lastSeen: number };
 
-/** Where a billing sign-in may go: its pages, and the data those pages read. */
-const PAGE_PATHS = ["/solo/billing", "/pro-plus", "/pro-credits"];
+/** Where a billing sign-in may go: its pages, and the data those pages read. Card payment setup (owner, 2026-11-10;
+ *  routes/proPaymentsSetup.ts) uses the same sign-in for Stripe's embedded onboarding and nothing else. */
+const PAGE_PATHS = ["/solo/billing", "/pro-plus", "/pro-credits", "/pro-payments-setup"];
 const API_PATHS = [
   "/api/solo/plus", "/api/solo/credits", "/api/solo/billing/history", "/api/solo/billing/card",
+  "/api/payments/stripe/status", "/api/payments/stripe/account-session", "/api/payments/stripe/sync",
   "/api/app-web-session/end", "/api/auth/user", "/api/auth/logout",
 ];
 /** Exactly these (method + address, nothing under them): Business Phone's billing, not its calls, texts or settings. */

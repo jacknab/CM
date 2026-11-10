@@ -107,7 +107,7 @@ export const KNOWN_APP_PREFIXES = new Set([
   "language-settings", "loyalty", "mail-settings", "manage", "marketing",
   "marketplace-ads",
   "msg", "multi-location", "nail", "onboarding", "online-booking", "overview", "payments", "payouts",
-  "payroll", "payroll-settings", "pos", "pos-settings", "pay", "pricing", "print-checks", "products", "pro-credits", "pro-plus", "q",
+  "payroll", "payroll-settings", "pos", "pos-settings", "pay", "pricing", "print-checks", "products", "pro-credits", "pro-plus", "pro-payments-setup", "q",
   "receipt", "redeem", "register-reports", "rentals", "reports", "reset-password", "resources", "review", "reviews",
   "salon-dashboard", "salon-earnings", "services", "settings", "setup",
   "sms-activity", "sms-inbox", "sms-settings", "solo", "spa", "staff", "staff-1099",
