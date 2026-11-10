@@ -40,6 +40,7 @@ import { getStripe } from "../lib/stripe";
 import { syncAccountFromStripe, getPaymentAccount } from "../lib/stripeConnect";
 import { finalizeCapturedTerminalPayment } from "./stripeConnect";
 import { syncContractorAccountStatus, findContractorByStripeAccount } from "../lib/stripeContractorAccounts";
+import { notifyPaymentsAttention } from "../lib/paymentsAttention";
 import type Stripe from "stripe";
 
 const router = Router();
@@ -125,6 +126,8 @@ async function handleAccountUpdated(event: Stripe.Event): Promise<void> {
 
   await syncAccountFromStripe(storeId, connectedAccountId);
   console.log(`[connect-webhook/account.updated] Synced account ${connectedAccountId} → storeId=${storeId}`);
+  // Stripe asking the owner for more: banner, push and e-mail (lib/paymentsAttention.ts).
+  await notifyPaymentsAttention(storeId);
 }
 
 async function handleCapabilityUpdated(event: Stripe.Event): Promise<void> {
@@ -143,6 +146,7 @@ async function handleCapabilityUpdated(event: Stripe.Event): Promise<void> {
 
   // Re-sync the full account to pick up updated charges_enabled / payouts_enabled
   await syncAccountFromStripe(storeId, connectedAccountId);
+  await notifyPaymentsAttention(storeId);
   console.log(
     `[connect-webhook/capability.updated] capability=${capability.id} status=${capability.status} ` +
     `→ synced account ${connectedAccountId} storeId=${storeId}`

@@ -154,7 +154,7 @@ function BusinessProfile({ store }: { store: Store }) {
             control={form.control}
             name="legalEntityType"
             render={({ field }) => (
-              <Field label="Legal entity type" hint="The legal structure of your business.">
+              <Field label="Legal entity type" hint="Why we ask: Stripe, who processes your card payments, files your account by how your business is set up. Certxa passes it on so Stripe's setup form doesn't ask again.">
                 <Select value={field.value} onValueChange={field.onChange}>
                   <SelectTrigger data-testid="select-legal-entity" className={inputCls}>
                     <SelectValue placeholder="Select a structure" />
@@ -173,7 +173,7 @@ function BusinessProfile({ store }: { store: Store }) {
             control={form.control}
             name="ein"
             render={({ field }) => (
-              <Field label="Employer Identification Number (EIN)" hint="Your 9-digit federal tax ID number.">
+              <Field label="Employer Identification Number (EIN)" hint="Your 9-digit federal tax ID number. Why we ask: Stripe needs it to verify an LLC or corporation before it can take card payments, and uses it for the yearly tax form it sends you. Certxa passes it on so you don't type it twice. A sole proprietor can leave it empty.">
                 <Input
                   {...field}
                   inputMode="numeric"

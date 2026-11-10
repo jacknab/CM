@@ -22,6 +22,14 @@ export const RESERVED_BOOKING_SLUGS = new Set([
 const SLUG_FORMAT = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,48}[a-z0-9]$/;
 
 /** "Toby's Nails!" → "tobys-nails". What a person typed, made into a link they can check. */
+/**
+ * The address a client is sent to book (owner, 2026-11-09): always <slug>.certxa.com, never certxa.com/book/<slug>.
+ * Without a slug, Certxa's home page.
+ */
+export function bookingSiteUrl(slug: string | null | undefined): string {
+  return slug ? `https://${slug}.certxa.com` : "https://certxa.com";
+}
+
 export function slugFromText(value: string): string {
   return String(value ?? "")
     .toLowerCase()

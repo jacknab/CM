@@ -46,6 +46,9 @@ import {
   computeTerminalRecord,
 } from "../lib/terminalPaymentMath";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { bookingSiteUrl } from "../lib/bookingSlug";
+import { DetailsError, ownerPaymentDetailsSummary, prefillStripeAccount, saveOwnerPaymentDetails } from "../lib/ownerPaymentDetails";
+import { storePaymentsAttention } from "../lib/paymentsAttention";
 import { awardLoyaltyForCompletion } from "../lib/loyaltyAward";
 import { db, pool } from "../db";
 import { contractors, appointments, contractorInstantTransfers, storePaymentAccounts, clients, services, locations } from "@shared/schema";
@@ -207,6 +210,8 @@ router.get("/stripe/status", async (req: Request, res: Response) => {
       currency:          account.currency,
       lastSyncAt:        account.updatedAt,
       publishableKey:    process.env.STRIPE_PUBLISHABLE_KEY ?? null,
+      // Stripe asking for more after setup: the banner on every page (lib/paymentsAttention.ts).
+      attention:         await storePaymentsAttention(storeId),
     });
   } catch (err: any) {
     console.error("[stripeConnect/status]", err?.message);
@@ -438,10 +443,10 @@ async function ensurePaymentAccountId(storeId: number): Promise<{ accountId: str
   // Prefill every field we already collected at Certxa signup/onboarding
   // so Stripe's embedded onboarding form skips asking for it again —
   // Stripe explicitly excludes any prefilled field from what it asks
-  // the connected account to fill in. Deliberately NOT prefilling the
-  // individual's own home address (individual.address) — we only have
-  // the business location on file, and that can legitimately differ
-  // from where the owner actually lives, which would risk a KYC mismatch.
+  // the connected account to fill in. The owner's own details asked at
+  // sign-up (date of birth, home address, business structure, EIN) are
+  // added by prefillStripeAccount (lib/ownerPaymentDetails.ts) before the
+  // form opens, never the business address as a guess at the home address.
   const newAccount = await stripe.accounts.create({
     type: "express",
     email: store?.email ?? ownerEmail,
@@ -470,7 +475,7 @@ async function ensurePaymentAccountId(storeId: number): Promise<{ accountId: str
       // already has its own Certxa booking page, which is a genuine,
       // real, working URL for the business rather than leaving this
       // required field blank.
-      url: store?.website || (store?.bookingSlug ? `https://certxa.com/book/${store.bookingSlug}` : undefined),
+      url: store?.website || (store?.bookingSlug ? bookingSiteUrl(store.bookingSlug) : undefined),
       // Every Certxa business is a personal-care service business —
       // this is Stripe's standard merchant category code for that
       // (Barber & Beauty Shops), removing business_profile.mcc from
@@ -491,6 +496,64 @@ async function ensurePaymentAccountId(storeId: number): Promise<{ accountId: str
   return { accountId: newAccount.id };
 }
 
+// ─── Owner details for Stripe (lib/ownerPaymentDetails.ts) ───────────────────
+// GET: what is on file (never the values). PUT: saved at sign-up (Certxa Pro app) or before the setup form opens.
+router.get("/stripe/owner-details", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+    return res.json(await ownerPaymentDetailsSummary(storeId));
+  } catch (err: any) {
+    console.error("[stripeConnect/owner-details]", err?.message);
+    return res.status(500).json({ error: "We couldn't load your details. Please try again." });
+  }
+});
+
+router.put("/stripe/owner-details", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+    const b = req.body ?? {};
+    await saveOwnerPaymentDetails(storeId, {
+      dateOfBirth: b.dateOfBirth, homeSameAsBusiness: b.homeSameAsBusiness,
+      homeAddress: b.homeAddress, homeCity: b.homeCity, homeState: b.homeState, homePostcode: b.homePostcode,
+      legalEntityType: b.legalEntityType, legalName: b.legalName, ein: b.ein,
+    });
+    return res.json(await ownerPaymentDetailsSummary(storeId));
+  } catch (err: any) {
+    if (err instanceof DetailsError) return res.status(400).json({ error: err.message });
+    console.error("[stripeConnect/owner-details]", err?.message);
+    return res.status(500).json({ error: "We couldn't save your details. Please try again." });
+  }
+});
+
+// ─── POST /api/payments/stripe/identity ──────────────────────────────────────
+// The last 4 digits of the owner's Social Security number, asked on Get paid: sent straight to Stripe with what
+// else Certxa knows, never saved or logged by Certxa.
+router.post("/stripe/identity", async (req: Request, res: Response) => {
+  if (!await requireOwnerOrAdmin(req, res)) return;
+  if (!isStripeConfigured()) return res.status(503).json({ error: "Card payments aren't available right now. Please try again later." });
+  const ssnLast4 = String(req.body?.ssnLast4 ?? "").replace(/\D/g, "");
+  if (ssnLast4.length !== 4) return res.status(400).json({ error: "Enter the last 4 digits of your Social Security number." });
+  try {
+    const storeId = await resolveSessionStoreId(req);
+    if (!storeId) return res.status(400).json({ error: "No store found" });
+    if (req.body?.dateOfBirth !== undefined) await saveOwnerPaymentDetails(storeId, { dateOfBirth: req.body.dateOfBirth });
+    const ensured = await ensurePaymentAccountId(storeId);
+    if ("reconnectByOAuth" in ensured) {
+      return res.status(409).json({ error: "This business's Stripe account was disconnected. Reconnect it at certxa.com under Payments." });
+    }
+    await prefillStripeAccount(storeId, ensured.accountId, { ssnLast4 });
+    return res.json({ ok: true });
+  } catch (err: any) {
+    if (err instanceof DetailsError) return res.status(400).json({ error: err.message });
+    console.error("[stripeConnect/identity]", err?.message);
+    return res.status(500).json({ error: "We couldn't send that to Stripe. Please try again." });
+  }
+});
+
 // ─── POST /api/payments/stripe/onboarding-link ───────────────────────────────
 // The Certxa Pro app's "Get paid" step: a link to Stripe's own hosted setup for this store's account,
 // which the app opens in an in-app browser. Stripe sends the browser back to /stripe/app-return
@@ -506,6 +569,7 @@ router.post("/stripe/onboarding-link", async (req: Request, res: Response) => {
     if ("reconnectByOAuth" in ensured) {
       return res.status(409).json({ error: "This business's Stripe account was disconnected. Reconnect it at certxa.com under Payments." });
     }
+    if (!(await getPaymentAccount(storeId))?.detailsSubmitted) await prefillStripeAccount(storeId, ensured.accountId);
     const base = getReturnBaseUrl(req);
     const link = await getStripe().accountLinks.create({
       account: ensured.accountId,
@@ -543,6 +607,8 @@ router.post("/stripe/account-session", async (req: Request, res: Response) => {
     }
     const connectedAccountId = ensured.accountId;
     const stripe = getStripe();
+    // What the owner told Certxa at sign-up goes to Stripe first, so the form doesn't ask for it.
+    if (!(await getPaymentAccount(storeId))?.detailsSubmitted) await prefillStripeAccount(storeId, connectedAccountId);
 
     const session = await stripe.accountSessions.create({
       account: connectedAccountId,

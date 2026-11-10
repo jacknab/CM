@@ -4,6 +4,7 @@ import { useInSettingsShell } from "@/lib/settings-shell-context";
 import { useNavigate } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import { currentAppProfile } from "@/lib/appProfile";
+import { PaymentsAttentionBanner } from "@/components/PaymentsAttentionBanner";
 
 /**
  * AppLayout — desktop sidebar + scrollable content wrapper.
@@ -29,6 +30,7 @@ export function AppLayout({ children, fullHeight = false }: { children: ReactNod
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-background salon-shell paper-grain">
+      <PaymentsAttentionBanner />
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop-only sidebar */}
         <div className="hidden md:block">
@@ -76,6 +78,7 @@ function AppFrame({ children, fullHeight }: { children: ReactNode; fullHeight: b
           Home
         </button>
       </header>
+      <PaymentsAttentionBanner />
       <main className={fullHeight ? "flex flex-1 flex-col overflow-hidden" : "flex-1 overflow-y-auto"}>
         {fullHeight ? children : <div className="container mx-auto p-4 md:p-8">{children}</div>}
       </main>
