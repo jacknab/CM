@@ -233,7 +233,7 @@ export async function unclaimedSalonByPhone(phone: string | null | undefined): P
  * call, or why he can't.
  */
 export async function scheduleClaimCallback(jobId: number, callerName: string, callerPhone: string | null):
-  Promise<{ ok: true; salonPhone: string; salonName: string } | { ok: false; message: string }> {
+  Promise<{ ok: true; salonPhone: string; salonName: string; code: string } | { ok: false; message: string }> {
   const { rows: [job] } = await pool.query(
     `SELECT j.status, j.claimed_at, l.name, l.phone FROM salon_account_creation_jobs j JOIN locations l ON l.id = j.store_id WHERE j.id = $1`, [jobId]);
   if (!job) return { ok: false, message: "That salon was not found. Use find_prepared_salon first." };
@@ -244,10 +244,12 @@ export async function scheduleClaimCallback(jobId: number, callerName: string, c
   if (recent.rowCount) return { ok: false, message: "This salon has already been called back three times today. Direct them to support@certxa.com." };
   const name = callerName.trim().slice(0, 60);
   if (name.length < 2) return { ok: false, message: "Ask for the caller's name first: you'll ask for them by name when you call the salon." };
+  // The number Tom gives the caller now and asks for on the call-back (owner, 2026-11-10): 10–99.
+  const code = String(crypto.randomInt(10, 100));
   await pool.query(
-    `INSERT INTO salon_claim_callbacks (token, job_id, caller_name, caller_phone, salon_phone, call_at) VALUES ($1, $2, $3, $4, $5, now() + interval '60 seconds')`,
-    [crypto.randomBytes(18).toString("base64url"), jobId, name, digits(callerPhone) || null, salonPhone]);
-  return { ok: true, salonPhone: `(${salonPhone.slice(0, 3)}) ${salonPhone.slice(3, 6)}-${salonPhone.slice(6)}`, salonName: job.name };
+    `INSERT INTO salon_claim_callbacks (token, job_id, caller_name, caller_phone, salon_phone, call_at, verify_code) VALUES ($1, $2, $3, $4, $5, now() + interval '60 seconds', $6)`,
+    [crypto.randomBytes(18).toString("base64url"), jobId, name, digits(callerPhone) || null, salonPhone, code]);
+  return { ok: true, salonPhone: `(${salonPhone.slice(0, 3)}) ${salonPhone.slice(3, 6)}-${salonPhone.slice(6)}`, salonName: job.name, code };
 }
 
 /** Places every call-back that is due (each server process runs this; the UPDATE gives each call to one of them). */
@@ -274,7 +276,7 @@ export async function placeDueClaimCallbacks(webhookUrl: string, fromNumber: str
   }
 }
 
-export type ClaimCallbackContext = { jobId: number; callerName: string; salonName: string; street: string | null; city: string | null };
+export type ClaimCallbackContext = { callbackId: number; jobId: number; callerName: string; salonName: string; street: string | null; city: string | null };
 
 /** The call-back this outbound call is for (its token came in the call's webhook URL), marked connected. */
 export async function claimCallbackForCall(token: string): Promise<ClaimCallbackContext | null> {
@@ -283,14 +285,28 @@ export async function claimCallbackForCall(token: string): Promise<ClaimCallback
     `UPDATE salon_claim_callbacks c SET status = 'connected', updated_at = now()
        FROM salon_account_creation_jobs j JOIN locations l ON l.id = j.store_id
       WHERE c.token = $1 AND c.status = 'calling' AND j.id = c.job_id
-      RETURNING c.job_id, c.caller_name, l.name, l.address, l.city`, [token]);
+      RETURNING c.id, c.job_id, c.caller_name, l.name, l.address, l.city`, [token]);
   if (!row) return null;
   const parts = String(row.address ?? "").split(",").map((p: string) => p.trim()).filter(Boolean);
-  return { jobId: Number(row.job_id), callerName: row.caller_name, salonName: row.name, street: parts[0] ?? null, city: row.city || parts[1] || null };
+  return { callbackId: Number(row.id), jobId: Number(row.job_id), callerName: row.caller_name, salonName: row.name, street: parts[0] ?? null, city: row.city || parts[1] || null };
 }
 
 /** Is this call-back token one Tom placed and hasn't been answered yet (for the call webhook)? */
 export async function claimCallbackIsCalling(token: string): Promise<boolean> {
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return false;
   return Boolean((await pool.query(`SELECT 1 FROM salon_claim_callbacks WHERE token = $1 AND status = 'calling'`, [token])).rowCount);
+}
+
+/** The number the person on the call-back says: the one Tom gave them before hanging up? Three tries. */
+export async function checkCallbackCode(callbackId: number, spoken: string): Promise<"ok" | "wrong" | "locked"> {
+  const said = String(spoken ?? "").replace(/\D/g, "");
+  const { rows: [row] } = await pool.query(
+    `UPDATE salon_claim_callbacks SET code_attempts = code_attempts + 1, updated_at = now()
+      WHERE id = $1 AND code_attempts < 3 RETURNING verify_code, code_attempts`, [callbackId]);
+  if (!row) return "locked";
+  if (said && said === String(row.verify_code)) {
+    await pool.query(`UPDATE salon_claim_callbacks SET status = 'verified', updated_at = now() WHERE id = $1`, [callbackId]);
+    return "ok";
+  }
+  return Number(row.code_attempts) >= 3 ? "locked" : "wrong";
 }
