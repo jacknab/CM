@@ -33,7 +33,8 @@ export type PreparedSalonMatch = {
 
 /** Prepared salons matching what the caller said: a phone number (best), else name words and/or city. Up to 5. */
 export async function findPreparedSalons(q: { name?: string; phone?: string; city?: string }): Promise<PreparedSalonMatch[]> {
-  const phone = digits(q.phone);
+  // A repeated area code ("657 657 440 6958"): the last ten digits are the number.
+  const phone = digits(q.phone).slice(-10);
   const name = String(q.name ?? "").trim().toLowerCase().replace(/[^a-z0-9& ]/g, " ").replace(/\s+/g, " ").trim();
   const city = String(q.city ?? "").trim().toLowerCase();
   if (phone.length !== 10 && name.length < 2 && city.length < 2) return [];
