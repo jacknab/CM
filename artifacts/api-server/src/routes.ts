@@ -1993,6 +1993,7 @@ export async function registerRoutes(
     if (req.path.startsWith("/webhooks/twilio/")) return next(); // Twilio SMS webhook — uses own Twilio auth
     if (req.path.startsWith("/webhooks/textbelt/")) return next(); // Textbelt SMS webhook — signature-verified
     if (req.path === "/contact") return next(); // Public contact form — no session required
+    if (req.path.startsWith("/salon-claim/")) return next(); // Claiming a prepared salon page — one-time token (routes/salonClaim.ts)
 
     // ── Platform lifecycle email — public endpoints (signed tokens, no session) ─
     if (req.path.startsWith("/platform-emails/unsubscribe")) return next();
@@ -4332,6 +4333,10 @@ export async function registerRoutes(
   });
 
   // === SERVICES ===
+  // Public (signed out): mounted before the "/api" routers that require sign-in for every path after them.
+  // Claiming a Certxa-prepared salon page from the link Tom texts (routes/salonClaim.ts, lib/salonClaim.ts).
+  const { default: salonClaimRouter } = await import("./routes/salonClaim.js");
+  app.use(salonClaimRouter);
   // Native JSON contract after authentication, trial and suspension gates, but
   // before the older web endpoints. The router passes non-native calls through.
   const { default: certxaProRouter } = await import("./routes/certxaPro.js");

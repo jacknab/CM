@@ -98,7 +98,7 @@ export const KNOWN_APP_PREFIXES = new Set([
   "api-keys", "app-login", "appointments", "auth", "autumn", "b", "barber", "billing",
   "book", "booking", "booking-policies", "business-hours", "business-settings",
   "calendar", "calendar-settings", "campaigns", "cash-drawer", "catalog",
-  "chat", "checkin-kiosk", "chkeditor", "client", "client-lookup", "clients",
+  "chat", "checkin-kiosk", "chkeditor", "claim", "client", "client-lookup", "clients",
   "commission-report", "commissions", "complete-booking", "contact",
   "contractor-onboarding", "customers", "dashboard", "data-transfer",
   "elite-api-docs", "elite-details", "faq", "features", "features-settings", "forgot-password",

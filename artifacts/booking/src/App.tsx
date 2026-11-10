@@ -155,6 +155,7 @@ const PublicReceipt = lazy(() => import("@/pages/public-booking/PublicReceipt"))
 const CompleteBooking = lazy(() => import("@/pages/public-payment/CompleteBooking"));
 const ProPlus = lazy(() => import("@/pages/ProPlus"));
 const ProPaymentsSetup = lazy(() => import("@/pages/ProPaymentsSetup"));
+const ClaimSalon = lazy(() => import("@/pages/ClaimSalon"));
 const ProCredits = lazy(() => import("@/pages/ProCredits"));
 const SoloBillingPage = lazy(() => import("@/pages/solo/SoloBillingPage"));
 const SoloLayout = lazy(() => import("@/pages/solo/SoloLayout"));
@@ -604,6 +605,8 @@ function AppRoutes() {
       <Route path="/pro-plus" element={<ProPlus />} />
       {/* Certxa Pro app: card payment setup with Stripe's embedded onboarding (opened from the app, signed in by link). */}
       <Route path="/pro-payments-setup" element={<ProPaymentsSetup />} />
+      {/* Claiming a salon page Certxa prepared, from the link Tom texts (pages/ClaimSalon.tsx). */}
+      <Route path="/claim/:token" element={<ClaimSalon />} />
       {/* Certxa Pro text message credits, opened from the app (routes/soloCredits.ts) */}
       <Route path="/pro-credits" element={<ProCredits />} />
       <Route path="/solo/billing" element={<SoloBillingPage />} />
