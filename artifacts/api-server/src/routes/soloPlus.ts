@@ -27,7 +27,7 @@ import { stripe, isStripeConfigured } from "../lib/stripe";
 import { setSmsPlus, soloPlanCode } from "../lib/soloSmsCredits";
 import { startInHouseSubscription, setCancelAtPeriodEnd } from "../services/saas-billing";
 import { pushPlanChange } from "../lib/ownerPush";
-import { startAppWebSession } from "../lib/appWebSession";
+import { claimAppWebLink, startAppWebSession } from "../lib/appWebSession";
 
 const router = Router();
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
@@ -71,15 +71,11 @@ router.get("/pro-plus/start", async (req: Request, res: Response) => {
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
   try {
     // Used once: the update only succeeds for an unused, unexpired link.
-    const r = await pool.query(
-      `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'plus' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id, store_id`,
-      [hash(code)],
-    );
-    const userId = r.rows[0]?.user_id;
+    const claimed = await claimAppWebLink(req, hash(code), 'plus');
+    const userId = claimed?.user_id;
     if (!userId) return fail();
     // Billing only, for this browser session only (lib/appWebSession.ts).
-    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null, "/pro-plus", fail);
+    startAppWebSession(req, res, userId, claimed!.store_id ?? null, "/pro-plus", fail);
   } catch (err: any) {
     console.error("[solo-plus/start]", err?.message ?? err);
     return fail();
@@ -111,15 +107,11 @@ router.get("/billing/start", async (req: Request, res: Response) => {
   const fail = () => res.redirect(302, "/solo/billing?link=expired");
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
   try {
-    const r = await pool.query(
-      `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'billing' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id, store_id`,
-      [hash(code)],
-    );
-    const userId = r.rows[0]?.user_id;
+    const claimed = await claimAppWebLink(req, hash(code), 'billing');
+    const userId = claimed?.user_id;
     if (!userId) return fail();
     // Billing only, for this browser session only (lib/appWebSession.ts).
-    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null, "/solo/billing", fail);
+    startAppWebSession(req, res, userId, claimed!.store_id ?? null, "/solo/billing", fail);
   } catch (err: any) {
     console.error("[solo-billing/start]", err?.message ?? err);
     return fail();

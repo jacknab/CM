@@ -98,6 +98,8 @@ self.addEventListener("fetch", (event) => {
   if (!url.protocol.startsWith("http")) return;
   if (url.origin !== self.location.origin) return;
   if (shouldSkip(url.pathname)) return;
+  // One-time app links (…/start?code=): loaded once, by the browser itself. A repeat would find the link used.
+  if (url.pathname.endsWith("/start") && url.searchParams.has("code")) return;
 
   // ── HTML shells: network-ONLY. Never cache and never serve a stale index.html.
   //    A stale shell references hashed /assets/*.js that the next deploy deletes,

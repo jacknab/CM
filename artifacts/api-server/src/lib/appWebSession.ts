@@ -10,6 +10,7 @@
  *  - the page ends it when it is closed or when "Back to Certxa Pro" is tapped (POST /api/app-web-session/end).
  */
 import type { Request, Response, NextFunction } from "express";
+import { pool } from "../db";
 
 export const APP_WEB_IDLE_MS = 30 * 60 * 1000;
 
@@ -36,6 +37,25 @@ const under = (path: string, bases: string[]) => bases.some((b) => path === b ||
 export function appWebLink(req: Request): AppWebLink | null {
   const link = (req.session as any)?.appWebLink;
   return link && link.scope === "billing" ? link : null;
+}
+
+/**
+ * Claims a one-time app link: an unused, unexpired link once. The same link asked for again within 2 minutes by the
+ * browser that already holds the sign-in it made is let through too: the website's service worker can repeat a page
+ * load, and the repeat used to land on "This link has expired" (owner, 2026-11-11).
+ */
+export async function claimAppWebLink(req: Request, tokenHash: string, purpose: string): Promise<{ user_id: string; store_id: number | null } | null> {
+  const r = await pool.query(
+    `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
+     RETURNING user_id, store_id`, [tokenHash, purpose]);
+  if (r.rows[0]?.user_id) return r.rows[0];
+  const link = appWebLink(req);
+  if (!link) return null;
+  const again = (await pool.query(
+    `SELECT user_id, store_id FROM app_web_links WHERE token_hash = $1 AND purpose = $2 AND used_at > now() - interval '2 minutes'`,
+    [tokenHash, purpose])).rows[0];
+  const sameSignIn = again && String(again.user_id) === String((req.session as any)?.userId) && (again.store_id ?? null) === (link.storeId ?? null);
+  return sameSignIn ? again : null;
 }
 
 /** Signs the app's owner in on this browser for billing only, then sends them to `to`. */

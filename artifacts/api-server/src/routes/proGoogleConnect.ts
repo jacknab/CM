@@ -12,7 +12,7 @@ import crypto from "node:crypto";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
-import { startAppWebSession } from "../lib/appWebSession";
+import { claimAppWebLink, startAppWebSession } from "../lib/appWebSession";
 
 const router = Router();
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
@@ -39,10 +39,7 @@ router.get("/pro-google-connect/start", async (req: Request, res: Response) => {
   const fail = () => res.redirect(302, "/pro-google-connect?link=expired");
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
   try {
-    const r = await pool.query(
-      `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'google-connect' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id, store_id`, [hash(code)]);
-    const row = r.rows[0];
+    const row = await claimAppWebLink(req, hash(code), 'google-connect');
     if (!row?.user_id || !row.store_id) return fail();
     startAppWebSession(req, res, row.user_id, row.store_id, `/pro-google-connect?storeId=${Number(row.store_id)}`, fail);
   } catch (err: any) {

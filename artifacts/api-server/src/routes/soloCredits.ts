@@ -25,7 +25,7 @@ import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { stripe, isStripeConfigured } from "../lib/stripe";
 import { addSoloCredits, smsPlusOn, soloCreditPacks, soloPlanCode } from "../lib/soloSmsCredits";
-import { startAppWebSession } from "../lib/appWebSession";
+import { claimAppWebLink, startAppWebSession } from "../lib/appWebSession";
 
 const packById = async (id: unknown) => (await soloCreditPacks()).find((p) => p.id === id) ?? null;
 
@@ -162,13 +162,11 @@ router.get("/pro-credits/start", async (req, res) => {
   const fail = () => res.redirect(302, "/pro-credits?link=expired");
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
   try {
-    const r = await pool.query(
-      `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'credits' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id, store_id`, [hash(code)]);
-    const userId = r.rows[0]?.user_id;
+    const claimed = await claimAppWebLink(req, hash(code), 'credits');
+    const userId = claimed?.user_id;
     if (!userId) return fail();
     // Billing only, for this browser session only (lib/appWebSession.ts).
-    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null,
+    startAppWebSession(req, res, userId, claimed!.store_id ?? null,
       `/pro-credits${req.query.card === "1" ? "?card=1" : pack ? `?pack=${pack.id}` : ""}`, fail);
   } catch (err: any) {
     console.error("[solo-credits/start]", err?.message ?? err);

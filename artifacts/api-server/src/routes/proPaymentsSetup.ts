@@ -13,7 +13,7 @@ import crypto from "node:crypto";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
-import { startAppWebSession } from "../lib/appWebSession";
+import { claimAppWebLink, startAppWebSession } from "../lib/appWebSession";
 
 const router = Router();
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
@@ -44,14 +44,10 @@ router.get("/pro-payments-setup/start", async (req: Request, res: Response) => {
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(code)) return fail();
   try {
     // Used once: the update only succeeds for an unused, unexpired link.
-    const r = await pool.query(
-      `UPDATE app_web_links SET used_at = now() WHERE token_hash = $1 AND purpose = 'payments-setup' AND used_at IS NULL AND expires_at > now()
-       RETURNING user_id, store_id`,
-      [hash(code)],
-    );
-    const userId = r.rows[0]?.user_id;
+    const claimed = await claimAppWebLink(req, hash(code), 'payments-setup');
+    const userId = claimed?.user_id;
     if (!userId) return fail();
-    startAppWebSession(req, res, userId, r.rows[0].store_id ?? null, "/pro-payments-setup", fail);
+    startAppWebSession(req, res, userId, claimed!.store_id ?? null, "/pro-payments-setup", fail);
   } catch (err: any) {
     console.error("[pro-payments-setup/start]", err?.message ?? err);
     return fail();
