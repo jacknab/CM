@@ -55,6 +55,9 @@ import { TimeZoneNote } from "./TimeZoneNote";
 import { facebookUrl, instagramUrl, siteStyle } from "./SiteLook";
 import { AiBlocks, aiFontStack, useSiteFonts, type AiFacts, type AiSpec } from "./AiSiteTheme";
 
+/** AI blocks the About tab leaves out: the page shows these already (Services tab, Contact, Reviews). */
+const ABOUT_HAS = new Set(["priceList", "reviews", "location"]);
+
 /** The design's palette as the CSS variables behind every C colour (and the accent behind gold). */
 function designVars(spec: AiSpec): Record<string, string> {
   const p = spec.theme.palette;
@@ -2190,10 +2193,10 @@ export default function AiFoundationTheme({ store, slug, preselectedStaffId, pre
         itemScope
         itemType="https://schema.org/LocalBusiness"
       >
-        {/* The AI design's home blocks (AiSiteTheme.tsx AiBlocks); every booking button opens the Services tab. No
-            services list here: the Services tab has them all (owner, 2026-11-11). */}
+        {/* The AI design's home blocks (AiSiteTheme.tsx AiBlocks); every booking button opens the Services tab. Nothing the page
+            already has: no services (the Services tab), reviews or location (Contact and Reviews below) (owner, 2026-11-11). */}
         <div className="mx-auto w-full max-w-5xl px-4 text-left" data-testid="ai-foundation-blocks">
-          <AiBlocks spec={{ ...ai.spec, home: ai.spec.home.filter((b) => b.type !== "priceList") }} facts={ai.facts} onBook={() => pickTab("services")} />
+          <AiBlocks spec={{ ...ai.spec, home: ai.spec.home.filter((b) => !ABOUT_HAS.has(b.type)) }} facts={ai.facts} onBook={() => pickTab("services")} />
         </div>
         <div className="mx-auto w-full max-w-2xl px-5 text-center sm:px-8">
           {cancelPolicyText && (

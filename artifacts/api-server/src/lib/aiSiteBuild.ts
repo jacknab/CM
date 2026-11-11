@@ -54,8 +54,8 @@ You write a design spec only, using the block types given. Certxa fills in facts
 So never write prices, hours, phone numbers, addresses or review quotes yourself.
 
 Rules:
-- Home (the About tab): start with a hero; 4–8 blocks in all; end with a callToAction. No priceList on Home: the Services
-  tab already lists every service. Menu: the priceList (all services), maybe a short intro block.
+- Home (the About tab): start with a hero; 4–8 blocks in all; end with a callToAction. No priceList, reviews or location on Home: the
+  Services tab lists every service, and the page already shows the reviews and contact details. Menu: the priceList (all services), maybe a short intro block.
 - Use only facts given. featuredPerson only for a real team member. houseCalls only if the business does house calls.
   location only if there is an area or address. gallery only if there are photos. reviews only if there are reviews.
 - Strong contrast: text on background, text on surface and accentText on accent must all be easy to read.
@@ -90,8 +90,8 @@ export function tidy(spec: SiteSpec, facts: SiteFacts, categories: string[]): Si
   const fix = (b: SiteBlock): SiteBlock => (b.type === "priceList" && b.categories
     ? { ...b, categories: b.categories.filter((c) => categories.some((x) => x.toLowerCase() === c.toLowerCase())) }
     : b);
-  // No price list on the home (About) tab: the Services tab has them all (owner, 2026-11-11).
-  const home = spec.home.filter(keep).filter((b) => b.type !== "priceList");
+  // Not on the home (About) tab: services (the Services tab), reviews and location (the page shows them) (owner, 2026-11-11).
+  const home = spec.home.filter(keep).filter((b) => !["priceList", "reviews", "location"].includes(b.type));
   const menu = spec.menu.filter(keep).map(fix);
   if (!menu.some((b) => b.type === "priceList")) menu.unshift({ type: "priceList", variant: "menu-board", title: "Services and prices" });
   return { ...spec, home, menu };
