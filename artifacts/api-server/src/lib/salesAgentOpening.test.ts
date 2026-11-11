@@ -16,13 +16,13 @@ describe("TOM's immediate acknowledgement and guided sales opening", () => {
 
   it("moves directly into a name question after the phone-system acknowledgement", () => {
     const instruction = tomOpeningInstructions("Test brand", true);
-    expect(instruction).toContain('Begin with: "This is Tom at Test brand. May I ask who I\'m speaking with?"');
+    expect(instruction).toContain('relaxed and friendly like a real person picking up, with a little natural pause after your name: "This is Tom at Test brand. May I ask who I\'m speaking with?"');
     expect(instruction).toContain("do not repeat that acknowledgement");
     expect(instruction).not.toContain("Thanks for calling Test brand");
   });
 
   it("retains a full welcome when the acknowledgement parameter is absent", () => {
-    expect(tomOpeningInstructions("Test brand")).toContain('Begin with: "Thanks for calling Test brand. This is Tom. May I ask who I\'m speaking with?"');
+    expect(tomOpeningInstructions("Test brand")).toContain('relaxed and friendly like a real person picking up, with a little natural pause after your name: "Thanks for calling Test brand. This is Tom. May I ask who I\'m speaking with?"');
   });
 
   it("skips known information, answers a direct question, and protects caller memory", () => {
