@@ -260,6 +260,17 @@ describe("Getting a number ($10/month, paid before the numbers are shown)", () =
     expect(state.prepaid).toBe("pi_paid");
   });
 
+  it("refunds the paid month in full when they cancel before choosing a number", async () => {
+    state.prepaid = "pi_paid";
+    const r = await post("/api/pro/phone/subscribe/cancel", {});
+    expect(r).toMatchObject({ status: 200, body: { refunded: true } });
+    expect(state.refunds).toEqual([{ payment_intent: "pi_paid" }]);
+    expect(state.prepaid).toBeNull();
+    const again = await post("/api/pro/phone/subscribe/cancel", {});
+    expect(again.body).toMatchObject({ refunded: false });
+    expect(state.refunds).toHaveLength(1);
+  });
+
   it("tells an older app to update instead of giving a free number", async () => {
     const r = await post("/api/pro/phone/claim", { phoneNumber: "+15205550300" });
     expect(r.status).toBe(400);

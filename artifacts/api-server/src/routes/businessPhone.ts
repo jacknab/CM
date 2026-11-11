@@ -17,6 +17,7 @@
  * No Twilio credential leaves the server: the app gets a one-hour voice access token signed with an API key.
  *   GET  /api/pro/phone                      the business's number and ring setting (null = not set up)
  *   POST /api/pro/phone/subscribe            pay the first $10 month; only then are numbers shown (owner, 2026-11-11)
+ *   POST /api/pro/phone/subscribe/cancel     paid but no number chosen: refund the $10 and stop
  *   GET  /api/pro/phone/available            five numbers to choose from (?areaCode, ?exclude= for "show others"); paid first
  *   GET  /api/pro/phone/pricing              $10/month and the $5 change fee, the card on file they are charged to, and
  *                                            whether the first month is already paid (prepaid)
@@ -301,6 +302,27 @@ router.post("/api/pro/phone/subscribe", isAuthenticated, searchLimiter, async (r
     res.json({ prepaid: true });
   } catch (error) { failed(res, "subscribe", error); }
   finally { db.release(); }
+});
+
+/** Paid but changed their mind before choosing a number: the $10 is refunded in full (owner, 2026-11-11). */
+router.post("/api/pro/phone/subscribe/cancel", isAuthenticated, searchLimiter, async (req, res) => {
+  const storeId = await storeOf(req, res); if (!storeId) return;
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext('business-phone-claim'), $1)`, [storeId]);
+    const prepaid = (await db.query<{ payment_id: string }>(`SELECT payment_id FROM business_phone_prepaid WHERE store_id = $1 FOR UPDATE`, [storeId])).rows[0];
+    if (!prepaid) { await db.query("ROLLBACK"); return res.json({ prepaid: false, refunded: false }); }
+    // Refund first; the paid month is only forgotten once Stripe has taken the refund.
+    await stripe.refunds.create({ payment_intent: prepaid.payment_id }, { idempotencyKey: `refund_${prepaid.payment_id}` });
+    await db.query(`DELETE FROM business_phone_prepaid WHERE store_id = $1`, [storeId]);
+    await db.query("COMMIT");
+    console.log(`[business-phone] store=${storeId} cancelled before choosing a number, $10 refunded (${prepaid.payment_id})`);
+    res.json({ prepaid: false, refunded: true });
+  } catch (error) {
+    await db.query("ROLLBACK").catch(() => undefined);
+    failed(res, "cancel before number", error);
+  } finally { db.release(); }
 });
 
 router.post("/api/pro/phone/cancel", isAuthenticated, async (req, res) => {
