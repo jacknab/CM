@@ -32,7 +32,8 @@ function findProjectDir(templateDir: string, depth = 0): string {
   return templateDir;
 }
 
-function createStaticServer(rootDir: string): { server: http.Server; port: number } {
+/** A local server for the built template; resolves once it is listening (its port is known only then). */
+async function createStaticServer(rootDir: string): Promise<{ server: http.Server; port: number }> {
   const server = http.createServer((req, res) => {
     let urlPath = req.url?.split("?")[0] ?? "/";
     if (urlPath === "/") urlPath = "/index.html";
@@ -88,7 +89,10 @@ function createStaticServer(rootDir: string): { server: http.Server; port: numbe
     }
   });
 
-  server.listen(0);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
   const port = (server.address() as { port: number }).port;
   return { server, port };
 }
@@ -343,7 +347,7 @@ export async function buildAndScreenshot(templateId: number, templateDir: string
 
   logger.info({ distDir, templateId }, "Serving built template for screenshot");
 
-  const { server, port } = createStaticServer(distDir);
+  const { server, port } = await createStaticServer(distDir);
 
   try {
     const puppeteer = await import("puppeteer");
