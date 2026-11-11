@@ -53,12 +53,49 @@ async function ownerRow(where: string, params: unknown[]): Promise<(VerifiedOwne
   return rows.map((r: any) => ({ userId: r.id, firstName: r.first_name, email: r.email, phone: r.phone, accountType: r.account_type, storeId: Number(r.store_id), businessName: r.name }));
 }
 
-/** The account whose owner's mobile on file is this caller's number (caller-ID verification). */
+/**
+ * The account this caller's number belongs to (caller-ID verification): the owner's mobile on file, else a number the
+ * owner proved before with a texted code (verified_caller_numbers, migration 0348). Only one match counts.
+ */
 export async function ownerByCallerId(phone: string | null | undefined): Promise<VerifiedOwner | null> {
   const d = digits(phone);
   if (d.length !== 10) return null;
   const rows = await ownerRow(`right(regexp_replace(coalesce(u.phone, ''), '\\D', '', 'g'), 10) = $1`, [d]);
-  return rows.length === 1 ? rows[0] : null;
+  if (rows.length === 1) return rows[0];
+  if (rows.length > 1) return null;
+  const known = await pool.query<{ store_id: number }>(
+    `SELECT DISTINCT store_id FROM verified_caller_numbers WHERE right(regexp_replace(phone_e164, '\\D', '', 'g'), 10) = $1`, [d]).catch(() => ({ rows: [] as { store_id: number }[] }));
+  if (known.rows.length !== 1) return null;
+  const storeId = Number(known.rows[0].store_id);
+  const [owner] = await ownerRow(`u.id = (SELECT user_id FROM locations WHERE id = $1)`, [storeId]);
+  if (!owner) return null;
+  const store = await pool.query<{ name: string }>(`SELECT name FROM locations WHERE id = $1`, [storeId]);
+  await pool.query(`UPDATE verified_caller_numbers SET last_verified_at = now() WHERE store_id = $1 AND right(regexp_replace(phone_e164, '\\D', '', 'g'), 10) = $2`, [storeId, d]).catch(() => undefined);
+  return { ...owner, storeId, businessName: store.rows[0]?.name ?? owner.businessName };
+}
+
+/**
+ * After a texted-code verification, keep the number they called from (when it isn't the mobile on file already), with
+ * their name and store, so Tom and Marel know it next time (owner, 2026-11-11). Never throws.
+ */
+export async function rememberVerifiedCaller(callerE164: string | null, owner: VerifiedOwner, callSid: string | null): Promise<boolean> {
+  const d = digits(callerE164);
+  if (d.length !== 10 || !callerE164) return false;
+  try {
+    const { rows: [u] } = await pool.query(`SELECT phone, first_name, last_name FROM users WHERE id = $1`, [owner.userId]);
+    if (digits(u?.phone) === d) return false; // already the mobile on file
+    const name = [u?.first_name, u?.last_name].filter(Boolean).join(" ") || owner.firstName || null;
+    await pool.query(
+      `INSERT INTO verified_caller_numbers (phone_e164, store_id, user_id, name, verified_via, verified_by, call_sid)
+       VALUES ($1, $2, $3, $4, 'sms_code', 'marel', $5)
+       ON CONFLICT (phone_e164, store_id) DO UPDATE SET name = EXCLUDED.name, last_verified_at = now(), call_sid = EXCLUDED.call_sid`,
+      [callerE164, owner.storeId, owner.userId, name, callSid]);
+    await log(owner.storeId, "caller_number_saved", { ending: d.slice(-4) });
+    return true;
+  } catch (e: any) {
+    console.warn("[marel] could not save the verified caller number:", e?.message ?? e);
+    return false;
+  }
 }
 
 /** Accounts matching what the caller said (e-mail, business name, or the business or owner phone): masked, to pick one for the code. */

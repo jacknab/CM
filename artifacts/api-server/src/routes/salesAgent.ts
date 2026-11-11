@@ -28,7 +28,7 @@ import { fileURLToPath } from "url";
 import { formatInTimeZone } from "date-fns-tz";
 import { pool } from "../db";
 import { sendTwilioSms } from "../sms";
-import { accountDetails, accountHealth, accountSummary, applyCredit, extendTrial, findAccounts, hashCode, openTicket, ownerByCallerId, refundCharge, retryPayment, sendBillingLink, sendPasswordReset, sendReceipt, sendVerificationCode, type VerifiedOwner } from "../lib/marilAccountSupport";
+import { accountDetails, accountHealth, accountSummary, applyCredit, extendTrial, findAccounts, hashCode, openTicket, ownerByCallerId, refundCharge, rememberVerifiedCaller, retryPayment, sendBillingLink, sendPasswordReset, sendReceipt, sendVerificationCode, type VerifiedOwner } from "../lib/marilAccountSupport";
 import { callbackHasRetryLeft, checkCallbackCode, claimCallbackForCall, retryClaimCallback, claimCallbackIsCalling, createClaimLink, findPreparedSalons, placeDueClaimCallbacks, recordRemovalRequest, scheduleClaimCallback, unclaimedSalonByPhone, type ClaimCallbackContext } from "../lib/salonClaim";
 import { issueStreamPass, redeemStreamPass, passFromPath } from "../lib/streamPass";
 import { requireSupportAuth } from "../lib/supportAuth";
@@ -326,6 +326,7 @@ async function buildAgentInstructions(
   accountSupportHandoff = false,
   claimContext: ClaimCallContext | null = null,
   marilContext: MarilCallContext | null = null,
+  knownCustomer: VerifiedOwner | null = null,
 ): Promise<{ voice: string; backend: string }> {
   const maril = accountSupportHandoff && agent.id === "shavez";
   // These live facts are warmed/cached off the call path; never make a caller wait on HTTP/DB reads before the greeting.
@@ -482,7 +483,10 @@ The caller's number is ${callerPhone ?? "unknown"}.`;
   const memoryBlock = memoryCandidate
     ? "A stored profile may match this number. It is private until verify_caller_identity confirms the caller's volunteered identity details. Do not state or imply the stored person's name or business before verification."
     : "No prior caller memory has been loaded into this prompt. The phone lookup may still be pending or unavailable; do not claim no profile exists, and do not use previous-call details unless verify_caller_identity confirms them.";
-  const claimBlock = agent.id === "tom" && !accountSupportHandoff ? `\n\n${claimCallGuidance(claimContext)}` : "";
+  const claimBlock = (agent.id === "tom" && !accountSupportHandoff ? `\n\n${claimCallGuidance(claimContext)}` : "")
+    + (agent.id === "tom" && !accountSupportHandoff && knownCustomer
+      ? `\n\nKNOWN CUSTOMER BY CALLER ID: This number belongs to ${knownCustomer.firstName ?? "the owner"}, owner of ${knownCustomer.businessName}, an existing Certxa customer (their mobile on file, or a number they verified with Account Services). Once they've said who they are, you can use their first name. Don't pitch a free trial or sign-up as if they were new; ask how you can help. For anything about their account, billing, sign-in or subscription, transfer them to Account Services as usual. Don't read out account details yourself.`
+      : "");
   return { voice: `${voice}\n\nCALLER MEMORY PRIVACY:\n${memoryBlock}${claimBlock}`, backend: `${backend}${claimBlock}` };
 }
 
@@ -717,6 +721,9 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   let claimContext: ClaimCallContext | null = null;
   const verifiedClaimJobs = new Map<number, "caller_id" | "callback">();
   let claimContextPromise: Promise<void> = Promise.resolve();
+  /** Tom: the account this caller's number belongs to (owner's mobile or a number verified before), if any. */
+  let knownCustomer: VerifiedOwner | null = null;
+  let knownCustomerPromise: Promise<void> = Promise.resolve();
   let callbackScheduled = false;
   let accountSupportHandoff = false;
   /** Marel's ready-made opener, already playing when GPT-Live starts (lib/marilOpener.ts). */
@@ -1324,6 +1331,8 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         if (hashCode(String(args.code ?? "")) !== pendingCode.hash) return { success: false, verified: false, message: "That code doesn't match. Ask them to read it again." };
         verifiedOwner = pendingCode.owner;
         pendingCode = null;
+        // The number they called from is theirs now too: Tom and Marel recognise it next time (migration 0348).
+        void rememberVerifiedCaller(callerPhoneE164, verifiedOwner, callSid);
         return { success: true, verified: true, message: `Verified: the owner of ${verifiedOwner.businessName}. You can use the account tools now.` };
       }
       case "get_account_summary": return verifiedOwner ? { success: true, account: await accountSummary(verifiedOwner) } : needOwner;
@@ -1352,7 +1361,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     if (!key) { console.error(`${LOG} OPENAI_API_KEY is missing`); finish("no_ai_key"); return; }
     if (closed) return;
     openAi = new WebSocket(LIVE_URL, { headers: { Authorization: `Bearer ${key}` } });
-    const instructionsPromise = Promise.all([claimContextPromise, marilContextPromise]).then(() => buildAgentInstructions(agentProfile, callerPhone, false, accountSupportHandoff, claimContext, marilContext));
+    const instructionsPromise = Promise.all([claimContextPromise, marilContextPromise, knownCustomerPromise]).then(() => buildAgentInstructions(agentProfile, callerPhone, false, accountSupportHandoff, claimContext, marilContext, knownCustomer));
     const voicePromise = callLogPromise.then(() => voiceForCall(agentProfile)).catch(() => ({ voice: agentProfile.voice as string | { id: string }, label: agentProfile.voice }));
     openAi.on("open", () => {
       const socketOpenedAt = Date.now();
@@ -1557,6 +1566,11 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
       }
       // A prepared salon page: Tom's call-back to the salon (its token came with the call), or a call from a salon's own line.
       const claimToken = String(msg.start?.customParameters?.claimCallback ?? "");
+      if (agentProfile.id === "tom" && !String(msg.start?.customParameters?.claimCallback ?? "")) {
+        knownCustomerPromise = ownerByCallerId(callerPhone)
+          .then((owner) => { knownCustomer = owner; if (owner) console.log(`${LOG} Tom: caller is a known customer (store ${owner.storeId}) call=${callSid ?? "unknown"}`); })
+          .catch((e) => console.warn(`${LOG} Tom known-customer lookup failed:`, e?.message ?? e));
+      }
       claimContextPromise = agentProfile.id !== "tom" || accountSupportHandoff ? Promise.resolve() : (async () => {
         if (claimToken) {
           const cb = await claimCallbackForCall(claimToken);
