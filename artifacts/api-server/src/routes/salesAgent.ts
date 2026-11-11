@@ -1501,7 +1501,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
                 ? `Speak first now, warmly and naturally: "${marilOpenerText}" ${transferGreetingInstruction(marilContext?.tomNote ?? null)} Do not pitch sales.`
                 : marilContext?.lastCall
                 ? `Speak first now, relaxed and natural like picking up a busy office phone: "${marilOpenerText}" ${callbackGreetingInstruction(marilContext.lastCall)}`
-                : `Speak first now, relaxed and natural like picking up a busy office phone, in one breath: "${marilOpenerText}${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
+                : `Speak first now, relaxed and natural like picking up a busy office phone, with a little natural pause after your name: "${marilOpenerText}${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
               : agentProfile.id === "tom" && claimContext?.mode === "callback"
               ? `Speak first now. Say: "Hi, this is Tom from Certxa calling back for ${claimContext.callerName}. May I speak with ${claimContext.callerName}, please?" Then wait for them to come to the phone, and follow OUTBOUND OWNERSHIP CALL-BACK.`
               : agentProfile.id === "tom"

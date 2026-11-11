@@ -55,8 +55,10 @@ How to use it: treat them like someone you just spoke with. Use their first name
 
 /** What she (or Tom) says straight after the opening line for a caller calling back. */
 export function callbackGreetingInstruction(c: MarelLastCall): string {
-  const example = c.agent === "tom" ? `"did you get a chance to look at the trial link I sent?"` : `"did you get the e-mail to reset your password?"`;
-  return `They called you ${ago(c.minutesAgo)} (see CALLING BACK). Carry straight on, warmly and naturally, in one short breath: greet them again by their first name if you know it ("hello again, [their first name]" — never a name that isn't in the last call or the account), then ask one short question about how what you did or promised last time went (for example ${example}). Base it only on the last call. If you can't tell what it was about, say "hello again" and ask how you can help. Then listen.`;
+  const example = c.agent === "tom"
+    ? `"Oh hey, Lisa! ... Did you get a chance to look at that trial link I sent?"`
+    : `"Oh hey, Toby! ... So, did that password reset e-mail come through okay?"`;
+  return `They called you ${ago(c.minutesAgo)} (see CALLING BACK). Then, like a person who recognises a friendly regular — relaxed, a little casual, not formal — say hello again by their first name if you know it (never a name that isn't in the last call or the account), take a natural beat, and then ask how the thing from last time went, as its own easy sentence. For example ${example} Short pieces with natural pauses, not one long run-on sentence; don't rush it. Base it only on the last call. If you can't tell what it was about, just "oh hey, hello again — what can I do for you?" Then listen.`;
 }
 
 /** Tom's note when he transfers a caller (owner, 2026-11-11): his one-line reason and what the caller told him. */
@@ -84,6 +86,6 @@ ${n.reason ? `Why they need Account Services: ${n.reason}\n` : ""}${n.callerSaid
 /** What she says right after "Thanks for holding, this is Marel with Account Services." on a transfer. */
 export function transferGreetingInstruction(n: TomTransferNote | null): string {
   return n?.reason || n?.callerSaid.length
-    ? `Carry straight on, warmly, in one short breath: show you already know why they're calling, from TOM'S NOTE (for example "Tom mentioned you can't sign in — let's get you back in."), then ask for the one thing you need to start (if they aren't verified yet, begin verification). Don't ask why they're calling.`
+    ? `Then, easy and relaxed, show you already know why they're calling from TOM'S NOTE, in short natural pieces with a little pause between them (for example "So Tom said you're locked out? ... Okay, no worries, let's get you back in."), then ask for the one thing you need to start (if they aren't verified yet, begin verification). Don't ask why they're calling.`
     : `Carry straight on: "Tom said you had a question about your account — what's going on?" Then listen.`;
 }
