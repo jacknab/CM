@@ -20,7 +20,7 @@ export function ServicesWidget({ hidden, look = "cards" }: { hidden?: boolean; l
         className="px-4 py-10 sm:px-6 sm:py-14"
         style={{ background: "var(--ai-section-alt, #f4ede8)" }}
       >
-        <div className="mx-auto w-full max-w-7xl">
+        <div className={`mx-auto w-full ${look === "list" ? "max-w-3xl" : "max-w-7xl"}`}>
           <div className="mb-5">
             <h2
               id="services-heading"
@@ -74,7 +74,7 @@ export function ServicesWidget({ hidden, look = "cards" }: { hidden?: boolean; l
             )}
           </div>
         ) : (
-          <div className={look === "list" ? "mx-auto grid w-full max-w-3xl grid-cols-1 gap-4" : "bloom-service-grid grid grid-cols-1 gap-4"}>
+          <div className={look === "list" ? "grid grid-cols-1 gap-4" : "bloom-service-grid grid grid-cols-1 gap-4"}>
             {filteredServices.map((svc) => {
               const on = cart.some((x) => x.id === svc.id);
               const open = on && expandedId === svc.id;
