@@ -16,9 +16,11 @@
  *
  * No Twilio credential leaves the server: the app gets a one-hour voice access token signed with an API key.
  *   GET  /api/pro/phone                      the business's number and ring setting (null = not set up)
- *   GET  /api/pro/phone/available            five numbers to choose from (?areaCode, ?exclude= for "show others")
- *   GET  /api/pro/phone/pricing              $10/month and the $5 change fee, and the card on file they are charged to
- *   POST /api/pro/phone/claim                charge the first $10, buy the chosen number and wire its webhooks
+ *   POST /api/pro/phone/subscribe            pay the first $10 month; only then are numbers shown (owner, 2026-11-11)
+ *   GET  /api/pro/phone/available            five numbers to choose from (?areaCode, ?exclude= for "show others"); paid first
+ *   GET  /api/pro/phone/pricing              $10/month and the $5 change fee, the card on file they are charged to, and
+ *                                            whether the first month is already paid (prepaid)
+ *   POST /api/pro/phone/claim                buy the chosen number with the month already paid and wire its webhooks
  *   POST /api/pro/phone/cancel · /resume     stop (or keep) the $10/month at the end of the paid month
  *   POST /api/pro/phone/pay                  pay $10 now after a failed renewal (unpauses a held number)
  *   GET  /api/pro/phone/change               the fee to change the number, and the card on file it is charged to
@@ -81,6 +83,10 @@ function failed(res: Response, where: string, error: unknown) {
     return res.status(503).json({ message: "Business Phone isn't available right now. Please try again later." });
   }
   return res.status(500).json({ message: "Something went wrong. Try again." });
+}
+/** The first month paid before a number was chosen (migration 0346), or null. */
+async function prepaidOf(storeId: number): Promise<{ payment_id: string } | null> {
+  return (await pool.query<{ payment_id: string }>(`SELECT payment_id FROM business_phone_prepaid WHERE store_id = $1`, [storeId])).rows[0] ?? null;
 }
 async function storeOf(req: Request, res: Response): Promise<number | null> {
   const storeId = await resolveSessionStoreId(req);
@@ -178,6 +184,10 @@ router.get("/api/pro/phone", isAuthenticated, async (req, res) => {
 router.get("/api/pro/phone/available", isAuthenticated, searchLimiter, async (req, res) => {
   try {
     const storeId = await storeOf(req, res); if (!storeId) return;
+    // Numbers are shown once Business Phone is paid for (or to change the number of a line that has one).
+    if (!(await lineOf(storeId)) && !(await prepaidOf(storeId))) {
+      return res.status(402).json({ needsPayment: true, message: "Pay for Business Phone first, then choose your number." });
+    }
     const client = twilioClient();
     if (!client) return res.status(503).json({ message: "Business Phone isn't available right now." });
     const store = await pool.query<{ phone: string | null; state: string | null }>(`SELECT phone, state FROM locations WHERE id = $1`, [storeId]);
@@ -214,13 +224,10 @@ router.post("/api/pro/phone/claim", isAuthenticated, searchLimiter, async (req, 
     await db.query(`SELECT pg_advisory_xact_lock(hashtext('business-phone-claim'), $1)`, [storeId]);
     const has = await db.query(`SELECT phone_number FROM business_phone_lines WHERE store_id = $1`, [storeId]);
     if (has.rows.length) { await db.query("ROLLBACK"); return res.status(409).json({ message: "Your business already has a number." }); }
-    // The first month is paid before the number is bought; it is refunded if the number can't be had.
-    const charge = await chargePhone(storeId, MONTHLY_CENTS, `bp-start-${storeId}-${parsed.data.idempotencyKey}`, "Business Phone, first month");
-    if (!charge.ok) {
-      await db.query("ROLLBACK");
-      return res.status(402).json({ needsCard: charge.needsCard || charge.declined, message: charge.needsCard ? "Add a card to pay $10/month." : charge.message });
-    }
-    paid = charge.paymentId;
+    // The first month was paid before the numbers were shown (POST /subscribe); it stays paid if this number is taken.
+    const prepaid = (await db.query<{ payment_id: string }>(`SELECT payment_id FROM business_phone_prepaid WHERE store_id = $1 FOR UPDATE`, [storeId])).rows[0];
+    if (!prepaid) { await db.query("ROLLBACK"); return res.status(402).json({ needsPayment: true, message: "Pay for Business Phone first, then choose your number." }); }
+    paid = prepaid.payment_id;
     let bought;
     try {
       bought = await client.incomingPhoneNumbers.create({
@@ -231,20 +238,19 @@ router.post("/api/pro/phone/claim", isAuthenticated, searchLimiter, async (req, 
       });
     } catch (error) {
       await db.query("ROLLBACK");
-      await refundPhone(paid);
       console.warn("[business-phone] purchase refused:", error instanceof Error ? error.message : "unknown error");
-      return res.status(409).json({ message: "That number was just taken. Choose another one. Your $10 was refunded." });
+      return res.status(409).json({ message: "That number was just taken. Choose another one — your $10 month is still paid." });
     }
     try {
       await db.query(
         `INSERT INTO business_phone_lines (store_id, phone_number, twilio_sid, billing_status, paid_until, last_payment_id)
          VALUES ($1, $2, $3, 'active', now() + ($4 || ' days')::interval, $5)`, [storeId, bought.phoneNumber, bought.sid, String(PERIOD_DAYS), paid]);
+      await db.query(`DELETE FROM business_phone_prepaid WHERE store_id = $1`, [storeId]);
       await db.query("COMMIT");
     } catch (error) {
       await db.query("ROLLBACK");
-      // Don't keep paying for a number no business has, nor keep the pro's money for it.
+      // Don't keep paying for a number no business has; the paid month stays for the next number they choose.
       await client.incomingPhoneNumbers(bought.sid).remove().catch(() => undefined);
-      await refundPhone(paid);
       throw error;
     }
     console.log(`[business-phone] store=${storeId} number claimed (${paid})`);
@@ -258,8 +264,43 @@ router.get("/api/pro/phone/pricing", isAuthenticated, async (req, res) => {
   try {
     const storeId = await storeOf(req, res); if (!storeId) return;
     const card = await savedCard(storeId);
-    res.json({ monthlyCents: MONTHLY_CENTS, changeFeeCents: NUMBER_CHANGE_FEE_CENTS, card: card ? { brand: card.brand, last4: card.last4 } : null });
+    res.json({ monthlyCents: MONTHLY_CENTS, changeFeeCents: NUMBER_CHANGE_FEE_CENTS, card: card ? { brand: card.brand, last4: card.last4 } : null,
+      prepaid: !!(await prepaidOf(storeId)) });
   } catch (error) { failed(res, "pricing", error); }
+});
+
+/** Pay the first $10 month before choosing a number (owner, 2026-11-11). Paying twice charges once. */
+router.post("/api/pro/phone/subscribe", isAuthenticated, searchLimiter, async (req, res) => {
+  const key = String(req.body?.idempotencyKey ?? "");
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(key)) return res.status(400).json({ message: "Update the app to get a business number." });
+  const storeId = await storeOf(req, res); if (!storeId) return;
+  const db = await pool.connect();
+  try {
+    await db.query("BEGIN");
+    await db.query(`SELECT pg_advisory_xact_lock(hashtext('business-phone-claim'), $1)`, [storeId]);
+    if ((await db.query(`SELECT 1 FROM business_phone_lines WHERE store_id = $1`, [storeId])).rows.length) {
+      await db.query("ROLLBACK"); return res.status(409).json({ message: "Your business already has a number." });
+    }
+    if ((await db.query(`SELECT 1 FROM business_phone_prepaid WHERE store_id = $1`, [storeId])).rows.length) {
+      await db.query("ROLLBACK"); return res.json({ prepaid: true });
+    }
+    const charge = await chargePhone(storeId, MONTHLY_CENTS, `bp-start-${storeId}-${key}`, "Business Phone, first month");
+    if (!charge.ok) {
+      await db.query("ROLLBACK");
+      return res.status(402).json({ needsCard: charge.needsCard || charge.declined, message: charge.needsCard ? "Add a card to pay $10/month." : charge.message });
+    }
+    try {
+      await db.query(`INSERT INTO business_phone_prepaid (store_id, payment_id, amount_cents) VALUES ($1, $2, $3)`, [storeId, charge.paymentId, MONTHLY_CENTS]);
+      await db.query("COMMIT");
+    } catch (error) {
+      await db.query("ROLLBACK");
+      await refundPhone(charge.paymentId); // not recorded, so not kept
+      throw error;
+    }
+    console.log(`[business-phone] store=${storeId} first month paid, choosing a number (${charge.paymentId})`);
+    res.json({ prepaid: true });
+  } catch (error) { failed(res, "subscribe", error); }
+  finally { db.release(); }
 });
 
 router.post("/api/pro/phone/cancel", isAuthenticated, async (req, res) => {

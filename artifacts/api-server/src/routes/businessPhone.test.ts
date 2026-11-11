@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   card: { customerId: "cus_1", paymentMethodId: "pm_1", brand: "visa", last4: "4242" } as Record<string, string> | null,
   charges: [] as unknown[], refunds: [] as unknown[], removed: [] as string[], line: { phone_number: "+15205550100", twilio_sid: "PN_OLD" },
   plusStores: [9] as number[], plusRing: "hours", noted: [] as unknown[][], convs: [] as unknown[][],
-  buyFails: false, hasLine: false, inserted: [] as unknown[][], billing: "active",
+  buyFails: false, hasLine: false, inserted: [] as unknown[][], billing: "active", prepaid: null as string | null,
 }));
 vi.mock("twilio", async (importOriginal) => {
   const real = (await importOriginal<any>()).default;
@@ -66,10 +66,14 @@ beforeEach(() => {
   process.env.NODE_ENV = "test";
   process.env.TWILIO_ACCOUNT_SID = "AC_test";
   state.card = { customerId: "cus_1", paymentMethodId: "pm_1", brand: "visa", last4: "4242" };
-  state.charges = []; state.refunds = []; state.removed = []; state.buyFails = false; state.hasLine = false; state.inserted = []; state.plusStores = [9]; state.plusRing = "hours"; state.noted = []; state.convs = []; state.billing = "active"; state.line = { phone_number: "+15205550100", twilio_sid: "PN_OLD" };
+  state.charges = []; state.refunds = []; state.removed = []; state.buyFails = false; state.hasLine = false; state.inserted = []; state.plusStores = [9]; state.plusRing = "hours"; state.noted = []; state.convs = []; state.billing = "active"; state.prepaid = null; state.line = { phone_number: "+15205550100", twilio_sid: "PN_OLD" };
   state.pushes = []; state.calls.clear(); state.texts = []; state.open = true; state.ring = "hours";
   state.query.mockReset().mockImplementation(async (sql: string, values: any[]) => {
     if (sql.includes("SELECT phone_number, twilio_sid, billing_status FROM business_phone_lines")) return { rows: [state.line] };
+    if (sql.includes("DELETE FROM business_phone_prepaid")) { state.prepaid = null; return { rows: [] }; }
+    if (sql.includes("INSERT INTO business_phone_prepaid")) { state.prepaid = values[1]; return { rows: [] }; }
+    if (sql.includes("FROM business_phone_prepaid WHERE store_id")) return { rows: state.prepaid ? [{ payment_id: state.prepaid }] : [] };
+    if (sql.includes("SELECT 1 FROM business_phone_lines WHERE store_id")) return { rows: state.hasLine ? [{}] : [] };
     if (sql.includes("SELECT phone_number FROM business_phone_lines WHERE store_id")) return { rows: state.hasLine ? [{ phone_number: LINE }] : [] };
     if (sql.includes("INSERT INTO business_phone_lines")) { state.inserted.push(values); return { rows: [] }; }
     if (sql.includes("FROM business_phone_lines WHERE phone_number")) return { rows: values[0] === LINE && !(sql.includes("<> 'held'") && state.billing === "held") ? [{ store_id: 7, ring: state.ring, billing_status: state.billing }] : [] };
@@ -204,27 +208,56 @@ async function post(path: string, body: unknown) {
   return { status: response.status, body: await response.json() as any };
 }
 
-describe("Getting a number ($10/month)", () => {
-  it("charges the first $10, then buys the number and starts the paid month", async () => {
+describe("Getting a number ($10/month, paid before the numbers are shown)", () => {
+  it("charges the first $10 once, and paying again doesn't charge again", async () => {
+    const r = await post("/api/pro/phone/subscribe", { idempotencyKey: "sub-12345678" });
+    expect(r).toMatchObject({ status: 200, body: { prepaid: true } });
+    expect(state.charges).toEqual([expect.objectContaining({ amount: 1000, off_session: true })]);
+    expect(state.prepaid).toBe("pi_1");
+    await post("/api/pro/phone/subscribe", { idempotencyKey: "sub-87654321" });
+    expect(state.charges).toHaveLength(1);
+  });
+
+  it("doesn't charge a business that already has a number", async () => {
+    state.hasLine = true;
+    const r = await post("/api/pro/phone/subscribe", { idempotencyKey: "sub-12345678" });
+    expect(r.status).toBe(409);
+    expect(state.charges).toHaveLength(0);
+  });
+
+  it("asks for a card without charging", async () => {
+    state.card = null;
+    const r = await post("/api/pro/phone/subscribe", { idempotencyKey: "sub-12345678" });
+    expect(r).toMatchObject({ status: 402, body: { needsCard: true } });
+    expect(state.prepaid).toBeNull();
+  });
+
+  it("won't show numbers or buy one before the month is paid", async () => {
+    const lines = state.query.getMockImplementation()!;
+    state.query.mockImplementation(async (sql: string, values: any[]) => (sql.includes("FROM business_phone_lines WHERE store_id") && !sql.includes("SELECT 1") ? { rows: [] } : lines(sql, values)));
+    const search = await fetch(`${base}/api/pro/phone/available`).then(async (x) => ({ status: x.status, body: await x.json() as any }));
+    expect(search).toMatchObject({ status: 402, body: { needsPayment: true } });
+    const r = await post("/api/pro/phone/claim", { phoneNumber: "+15205550300", idempotencyKey: "claim-12345678" });
+    expect(r).toMatchObject({ status: 402, body: { needsPayment: true } });
+    expect(state.charges).toHaveLength(0);
+    expect(state.inserted).toHaveLength(0);
+  });
+
+  it("buys the chosen number with the paid month, without charging again", async () => {
+    state.prepaid = "pi_paid";
     const r = await post("/api/pro/phone/claim", { phoneNumber: "+15205550300", idempotencyKey: "claim-12345678" });
     expect(r.status).toBe(200);
-    expect(state.charges).toEqual([expect.objectContaining({ amount: 1000, off_session: true })]);
-    expect(state.inserted[0]).toEqual([7, "+15205550300", "PN_NEW", "31", "pi_1"]);
+    expect(state.charges).toHaveLength(0);
+    expect(state.inserted[0]).toEqual([7, "+15205550300", "PN_NEW", "31", "pi_paid"]);
+    expect(state.prepaid).toBeNull();
   });
 
-  it("refunds the $10 when the number is taken", async () => {
-    state.buyFails = true;
+  it("keeps the paid month when the chosen number is taken", async () => {
+    state.prepaid = "pi_paid"; state.buyFails = true;
     const r = await post("/api/pro/phone/claim", { phoneNumber: "+15205550300", idempotencyKey: "claim-12345678" });
     expect(r.status).toBe(409);
-    expect(state.refunds).toEqual([{ payment_intent: "pi_1" }]);
-    expect(state.inserted).toHaveLength(0);
-  });
-
-  it("asks for a card without buying anything", async () => {
-    state.card = null;
-    const r = await post("/api/pro/phone/claim", { phoneNumber: "+15205550300", idempotencyKey: "claim-12345678" });
-    expect(r).toMatchObject({ status: 402, body: { needsCard: true } });
-    expect(state.inserted).toHaveLength(0);
+    expect(state.refunds).toHaveLength(0);
+    expect(state.prepaid).toBe("pi_paid");
   });
 
   it("tells an older app to update instead of giving a free number", async () => {
