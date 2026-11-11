@@ -3,6 +3,8 @@
  * answered"). GPT-Live takes about two seconds to connect and speak, so the opener is made once with OpenAI's speech
  * API in the same "marin" voice, kept on disk as 8 kHz μ-law, and played the moment Twilio's stream starts; Maril's
  * live reply (routes/salesAgent.ts) is queued behind it and carries on from it.
+ * A call to her own number first hears 8 seconds of hold music (owner, 2026-11-11), made by
+ * scripts/make-maril-hold-music.mjs from a Twilio hold track; GPT-Live gets ready while it plays.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -21,6 +23,8 @@ const DIR = process.env.VOICE_CACHE_DIR || "/var/lib/certxa/voice-cache";
 const FRAME_BYTES = 160; // 20 ms of 8 kHz μ-law
 
 const frames = new Map<MarilOpenerKind, string[]>();
+let holdMusic: string[] | null = null;
+const toFrames = (ulaw: Buffer) => { const list: string[] = []; for (let i = 0; i < ulaw.length; i += FRAME_BYTES) list.push(ulaw.subarray(i, i + FRAME_BYTES).toString("base64")); return list; };
 
 /** 16-bit linear → 8-bit G.711 μ-law. */
 function linearToUlaw(sample: number): number {
@@ -85,13 +89,19 @@ export async function warmMarilOpeners(): Promise<void> {
         fs.writeFileSync(`${file}.part-${process.pid}`, ulaw);
         fs.renameSync(`${file}.part-${process.pid}`, file);
       }
-      const list: string[] = [];
-      for (let i = 0; i < ulaw.length; i += FRAME_BYTES) list.push(ulaw.subarray(i, i + FRAME_BYTES).toString("base64"));
-      frames.set(kind, list);
+      frames.set(kind, toFrames(ulaw));
     } catch (e: any) {
       console.warn(`[Sales Agent] Maril ${kind} opener not ready (calls start with her live greeting):`, e?.message ?? e);
     }
   }
+  const music = path.join(DIR, "maril-hold-music.ulaw");
+  holdMusic = fs.existsSync(music) ? toFrames(fs.readFileSync(music)) : null;
+  if (!holdMusic) console.warn(`[Sales Agent] Maril hold music missing (${music}); calls go straight to her opener`);
+}
+
+/** The hold music's 20 ms frames, or null without the file. */
+export function marilHoldMusicFrames(): string[] | null {
+  return holdMusic;
 }
 
 /** The opener's 20 ms frames, or null if it isn't ready. */
