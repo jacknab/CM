@@ -1,5 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { PreparedNotice } from "./PreparedNotice";
+import { PreparedGoogleReviews, PreparedNotice } from "./PreparedNotice";
 import { storeAddressLine } from "@/lib/storeAddress";
 import { useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -469,6 +469,8 @@ export default function ClassicTheme({ store, slug, preselectedStaffId }: Classi
                 </Button>
               </div>
             )}
+            {/* A page Certxa prepared: its Google reviews (PreparedNotice.tsx). */}
+            <PreparedGoogleReviews store={store} />
           </div>
         )}
 

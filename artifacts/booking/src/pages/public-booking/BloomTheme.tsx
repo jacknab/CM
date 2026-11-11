@@ -1500,6 +1500,10 @@ export default function BloomTheme({ store, slug, preselectedStaffId, preselecte
         {/* Review cards — real review text with the service/staff the client
             actually received, when known (only ever present on Certxa's own
             native reviews; synced Google reviews never carry this). */}
+        {/* Google's reviews are named as Google's on the page (Google's terms; owner, 2026-11-11). */}
+        {reviews.length > 0 && isGoogleSourced && (
+          <p className="mt-6 text-[12px] font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink600 }} data-testid="bloom-reviews-from-google">Reviews from Google</p>
+        )}
         {reviews.length > 0 && (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {reviews.slice(0, 6).map((r) => (

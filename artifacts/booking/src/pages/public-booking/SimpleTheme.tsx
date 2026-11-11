@@ -1,5 +1,5 @@
 import { EMPTY_ARRAY } from "@/lib/empty";
-import { PreparedNotice } from "./PreparedNotice";
+import { PreparedGoogleReviews, PreparedNotice } from "./PreparedNotice";
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -858,6 +858,8 @@ export default function SimpleTheme({ store, slug, preselectedStaffId, preselect
                 </Button>
               </div>
             )}
+            {/* A page Certxa prepared: its Google reviews (PreparedNotice.tsx). */}
+            <PreparedGoogleReviews store={store} />
           </div>
         )}
 
