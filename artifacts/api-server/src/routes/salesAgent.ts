@@ -38,6 +38,7 @@ import { toE164US } from "../lib/phoneUtils";
 import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgentGreeting, salesAgentFactCheckProductGuidance, salesAgentProductFitGuidance, type SalesAgentProfile } from "../lib/salesAgentProfiles";
 import { salesAgentConnectionOpening, tomOpeningInstructions, TOM_SALES_DISCOVERY } from "../lib/salesAgentOpening";
 import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
+import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, type MarelLastCall } from "../lib/marelLastCall";
 import { MARIL_OPENER_TEXT, isSilentUlaw, marilHoldMusicFrames, marilOpenerFrames, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
 import { isExistingCustomerAccountSupportRequest, mayTransferToAccountServices, SHAVEZ_ACCOUNT_SUPPORT_GREETING, shavezHandoffTwiML, TOM_ACCOUNT_SUPPORT_HANDOFF } from "../lib/salesAgentTransfer";
 import {
@@ -115,7 +116,7 @@ async function voiceForCall(agent: SalesAgentProfile): Promise<{ voice: string |
 }
 
 /** Who Marel is talking to, as known when the call starts. */
-type MarilCallContext = { transferred: boolean; owner: VerifiedOwner | null };
+type MarilCallContext = { transferred: boolean; owner: VerifiedOwner | null; lastCall?: MarelLastCall | null };
 
 function marilGuidance(c: MarilCallContext): string {
   const who = c.owner
@@ -126,7 +127,7 @@ function marilGuidance(c: MarilCallContext): string {
 WHAT YOU DON'T DO — TECH SUPPORT: You are Account Services, not tech support. You can't fix or troubleshoot hardware or devices: card readers, receipt printers, cash drawers, tablets or iPads, the customer-facing screen, the check-in kiosk, the front-desk station itself, Wi-Fi, internet or network problems, phone or app crashes, or anything that needs someone to look at a device. When the problem is one of these, say kindly that it's for Certxa's technical support team, not Account Services, and offer to open a ticket (open_ticket) with a clear description (what device, what happens, since when) so the team follows up. Don't guess at fixes, don't walk them through device steps, and never promise when the team will call. If they're not sure whether it's the account or a device, check get_account_health first: if the account side is fine, it's a ticket for tech support.
 
 ${who}
-
+${c.lastCall ? `\n${lastCallForPrompt(c.lastCall)}\n` : ""}
 HOW TO HELP:
 - Listen to the actual problem first, then use the account tools to answer from their real account — never from public prices or guesses. Say dates and amounts plainly.
   · get_account_summary: plan, free trial (end date, daysRemaining, or ended), next charge, card on file, recent charges, credits, open tickets. When they ask how long their trial has left, say the days remaining and the end date.
@@ -1404,10 +1405,14 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
             content: accountSupportHandoff && marilOpener === "transferred"
               ? `You have already said, and the caller has heard: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Do not greet them again or repeat it. Listen to the caller and help. Do not pitch sales or ask why they called again if they already said.`
               : accountSupportHandoff && marilOpener === "direct"
-              ? `You have already said, and the caller is hearing: "Account services, this is Marel." Do not say it again or greet again. Carry straight on, with no pause or filler, and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
+              ? marilContext?.lastCall
+                ? `You have already said, and the caller is hearing: "Account services, this is Marel." Do not say it again. ${callbackGreetingInstruction(marilContext.lastCall)}`
+                : `You have already said, and the caller is hearing: "Account services, this is Marel." Do not say it again or greet again. Carry straight on, with no pause or filler, and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
               : accountSupportHandoff
               ? marilContext?.transferred
                 ? `Speak first now: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Then listen carefully and help. Do not pitch sales or ask why they called again if they already said.`
+                : marilContext?.lastCall
+                ? `Speak first now: "Account services, this is Marel." ${callbackGreetingInstruction(marilContext.lastCall)}`
                 : `Speak first now: "Account services, this is Marel.${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
               : agentProfile.id === "tom" && claimContext?.mode === "callback"
               ? `Speak first now. Say: "Hi, this is Tom from Certxa calling back for ${claimContext.callerName}. May I speak with ${claimContext.callerName}, please?" Then wait for them to come to the phone, and follow OUTBOUND OWNERSHIP CALL-BACK.`
@@ -1543,9 +1548,12 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
           transcript.push({ role: "tom", text: canonicalizeSpokenBrandForText(MARIL_OPENER_TEXT[kind]), at: new Date().toISOString() });
           console.log(`${LOG} Marel ${kind} opener playing call=${callSid ?? "unknown"} ms=${Date.now() - twilioStartAt}`);
         }
+        // Calling her back: what was said on this number's last call to her today (lib/marelLastCall.ts).
+        const lastCall = transferredByTom ? Promise.resolve(null) : marelLastCall(callerPhoneE164, callSid);
         marilContextPromise = ownerByCallerId(callerPhone)
-          .then((owner) => { verifiedOwner = owner; marilContext = { transferred: transferredByTom, owner }; })
-          .catch((e) => { marilContext = { transferred: transferredByTom, owner: null }; console.warn(`${LOG} Marel caller lookup failed:`, e?.message ?? e); });
+          .then(async (owner) => { verifiedOwner = owner; marilContext = { transferred: transferredByTom, owner, lastCall: await lastCall }; })
+          .catch(async (e) => { marilContext = { transferred: transferredByTom, owner: null, lastCall: await lastCall }; console.warn(`${LOG} Marel caller lookup failed:`, e?.message ?? e); })
+          .then(() => { if (marilContext?.lastCall) console.log(`${LOG} Marel: caller calling back (last call ${marilContext.lastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
       }
       // A prepared salon page: Tom's call-back to the salon (its token came with the call), or a call from a salon's own line.
       const claimToken = String(msg.start?.customParameters?.claimCallback ?? "");
