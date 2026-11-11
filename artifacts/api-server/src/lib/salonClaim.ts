@@ -16,13 +16,14 @@ import crypto from "node:crypto";
 import { pool } from "../db";
 import { sendTwilioSms } from "../sms";
 import { possessive } from "./salonSeo";
-import { CLAIM_PHONE } from "./preparedSalon";
 
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
 export const CLAIM_LINK_DAYS = 7;
 const CODE_MINUTES = 15;
 const MAX_CODE_CALLS = 3;
 const MAX_CODE_ATTEMPTS = 5;
+/** Certxa's claim line (Tom), as on every unclaimed page (lib/preparedSalon.ts CLAIM_PHONE). */
+const CLAIM_PHONE = "(888) 814-7623";
 
 export const hashToken = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
 const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "");
