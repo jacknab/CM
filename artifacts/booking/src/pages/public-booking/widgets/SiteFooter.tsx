@@ -1,15 +1,15 @@
 /**
- * The website footer (owner, 2026-11-11; plans/ai-site-widgets.md): name, links, social, balances, legal. Moved
+ * The website footer (owner, 2026-11-11): name, links, social, balances, legal. Moved
  * unchanged from SoloTheme.tsx.
  */
 import { Facebook, Instagram } from "lucide-react";
 import { facebookUrl, instagramUrl } from "../SiteLook";
-import { C, HEADING_FONT } from "./shared";
+import { C } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** The footer. */
 export function SiteFooter() {
-  const { pageLinks, store, services, portfolioLink, shop, shopLinks, bookingOff, barShown, salonName, bookNow } = useSite();
+  const { store, services, portfolioLink, shop, shopLinks, bookingOff, barShown, salonName, bookNow } = useSite();
   return (
     <>
       {/* ── FOOTER ────────────────────────────────────────────────────────── */}
@@ -20,7 +20,7 @@ export function SiteFooter() {
             <div>
               <p
                 className="text-xl font-semibold text-white"
-                style={{ fontFamily: HEADING_FONT }}
+                style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
               >
                 {salonName}
               </p>
@@ -31,7 +31,10 @@ export function SiteFooter() {
             <nav aria-label="Footer navigation">
               <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2">
                 {[
-                  ...pageLinks,
+                  { label: "About", href: "#about" },
+                  { label: "Services", href: "#services" },
+                  ...portfolioLink,
+                  { label: "Contact", href: "#message" },
                   ...shopLinks,
                 ].map((link) => (
                   <li key={link.href}>

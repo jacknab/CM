@@ -20,8 +20,6 @@ export interface StoreData {
   byLabel?: string | null;
   /** Padded time: minutes every booking keeps after the visit (0 = off). */
   paddedMinutes?: number;
-  /** An AI-designed site is the live website (AI Website Builder, Stage 4). */
-  aiSiteLive?: boolean;
   state?: string | null;
   googleRating?: number | null;
   googleReviewCount?: number;

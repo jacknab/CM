@@ -3,7 +3,7 @@
  * its own so it can be shaped for one independent pro without changing Bloom for full-platform salons. Picked in the
  * app's "Pick a design" step; every Certxa Pro account on Bloom was moved to it (migration 0304).
  *
- * Since 2026-11-11 (plans/ai-site-widgets.md) it is a layout of the website widgets in ./widgets — Solo's fixed order:
+ * Since 2026-11-11 it is a layout of the website widgets in ./widgets (one copy shared with Aspen) — Solo's fixed order:
  *   Header → tabs (About · Services · [Portfolio] · Contact) → Visit us → Footer
  *   One tab shows at a time, so the page is not one long scroll (owner, 2026-11-04). The tab is in the address
  *   (#about, #services, #portfolio), so the menu links, the footer links and shared links open the right one.

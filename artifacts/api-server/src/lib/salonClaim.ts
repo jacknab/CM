@@ -226,7 +226,7 @@ function escXml(s: string): string {
 /** The unclaimed prepared salon whose listed phone number this is (a caller on the salon's own line), if any. */
 export async function unclaimedSalonByPhone(phone: string | null | undefined): Promise<PreparedSalonMatch | null> {
   if (digits(phone).length !== 10) return null;
-  const match = (await findPreparedSalons({ phone: String(phone) }).catch(() => [])).find((m) => !m.claimed);
+  const match = (await findPreparedSalons({ phone: String(phone) }).catch((): PreparedSalonMatch[] => [])).find((m) => !m.claimed);
   return match ?? null;
 }
 

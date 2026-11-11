@@ -1,5 +1,5 @@
 /**
- * Pages that open over the website (owner, 2026-11-11; plans/ai-site-widgets.md): terms and privacy, balance checks,
+ * Pages that open over the website (owner, 2026-11-11): terms and privacy, balance checks,
  * Send a message, the booking panel, the cart and the gift card / package shop. Moved unchanged from SoloTheme.tsx.
  */
 import SoloShop from "../SoloShop";

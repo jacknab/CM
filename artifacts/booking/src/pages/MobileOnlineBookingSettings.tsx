@@ -271,14 +271,6 @@ export default function MobileOnlineBookingSettings() {
       </header>
 
       <main className="px-4 pt-8">
-        <section className="mb-8">
-          <h2 className="mb-3 px-1 text-[28px] font-bold tracking-[-0.04em]">Website</h2>
-          <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111]">
-            <SettingRow title="Design my website with AI" description="Six ideas for your business, then a website built from the ones you love." onClick={() => navigate("/website-designer")}>
-              <span className="text-xl text-[#777]" aria-hidden>›</span>
-            </SettingRow>
-          </div>
-        </section>
         <section>
           <h2 className="mb-3 px-1 text-[28px] font-bold tracking-[-0.04em]">Cancellations</h2>
           <div className="overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111111] divide-y divide-white/[0.08]">

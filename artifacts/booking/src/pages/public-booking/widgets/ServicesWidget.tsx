@@ -1,14 +1,13 @@
 /**
- * Services widget (owner, 2026-11-11; plans/ai-site-widgets.md): categories, service cards, add-on groups and the
+ * Services widget (owner, 2026-11-11): categories, service cards, add-on groups and the
  * category pages. Moved unchanged from SoloTheme.tsx.
  */
 import { Loader2 } from "lucide-react";
-import { C, CheckDot, QtyStepper, TINT, formatPrice, proPrice, HEADING_FONT } from "./shared";
+import { C, CheckDot, QtyStepper, TINT, formatPrice, proPrice } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** The services, with their add-on groups; tapping chooses them for booking. */
-/** look "cards" (Solo: two columns on a computer) or "list" (one column), for an AI design (AiWidgetTheme.tsx). */
-export function ServicesWidget({ hidden, look = "cards" }: { hidden?: boolean; look?: string }) {
+export function ServicesWidget({ hidden }: { hidden?: boolean }) {
   const { store, services, servicesLoading, team, staffChoice, priced, bookingOff, activeCategory, setActiveCategory, cart, cartAddons, expandedId, addons, addonsFor, chosenFor, qtyOf, shownPrice, fromPrice, setAddonQty, setServiceQuantity, tapService, toggleAddon, photoLightbox, setPhotoLightbox, servicesBusy, setServicesTry, servicePages, whereLabel, categories, filteredServices } = useSite();
   return (
     <>
@@ -18,14 +17,14 @@ export function ServicesWidget({ hidden, look = "cards" }: { hidden?: boolean; l
         hidden={hidden}
         aria-labelledby="services-heading"
         className="px-4 py-10 sm:px-6 sm:py-14"
-        style={{ background: "var(--ai-section-alt, #f4ede8)" }}
+        style={{ background: "#f4ede8" }}
       >
-        <div className={`mx-auto w-full ${look === "list" ? "max-w-3xl" : "max-w-7xl"}`}>
+        <div className="mx-auto w-full max-w-7xl">
           <div className="mb-5">
             <h2
               id="services-heading"
               className="text-[28px] font-bold leading-tight"
-              style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
+              style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
             >
               Services
             </h2>
@@ -74,7 +73,7 @@ export function ServicesWidget({ hidden, look = "cards" }: { hidden?: boolean; l
             )}
           </div>
         ) : (
-          <div className={look === "list" ? "grid grid-cols-1 gap-4" : "bloom-service-grid grid grid-cols-1 gap-4"}>
+          <div className="bloom-service-grid grid grid-cols-1 gap-4">
             {filteredServices.map((svc) => {
               const on = cart.some((x) => x.id === svc.id);
               const open = on && expandedId === svc.id;
@@ -100,7 +99,7 @@ export function ServicesWidget({ hidden, look = "cards" }: { hidden?: boolean; l
                   >
                     {photo && <img src={photo} alt="" loading="lazy" className="h-16 w-16 shrink-0 rounded-lg object-cover" />}
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[16px] font-semibold leading-snug" style={{ fontFamily: HEADING_FONT, color: C.ink900 }}>{svc.name}</span>
+                      <span className="block text-[16px] font-semibold leading-snug" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>{svc.name}</span>
                       {/* No price on a page the salon hasn't claimed: it would be Certxa's guess (server lib/preparedSalon.ts). */}
                       {!store.unclaimedPrepared && <span className="mt-0.5 block text-[14px] font-bold" style={{ color: C.ink800 }}>{fromPrice(svc) ? "from " : ""}{formatPrice(priced ? proPrice(svc, team, staffChoice) : svc.price)}</span>}
                       {whereLabel(svc) && <span className="mt-0.5 block text-[12px] font-semibold" style={{ color: C.ink600 }} data-testid={`solo-where-${svc.id}`}>{whereLabel(svc)}</span>}

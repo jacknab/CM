@@ -1,14 +1,14 @@
 /**
- * The website header (owner, 2026-11-11; plans/ai-site-widgets.md): name, cart, Book Now and the phone menu. Moved
+ * The website header (owner, 2026-11-11): name, cart, Book Now and the phone menu. Moved
  * unchanged from SoloTheme.tsx.
  */
 import { ArrowRight, Menu, ShoppingCart, Phone, X } from "lucide-react";
-import { C, HEADING_FONT } from "./shared";
+import { C } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** The fixed header with the mobile menu. */
 export function SiteHeader() {
-  const { pageLinks, store, services, portfolioLink, shopLinks, bookingOff, scrolled, menuOpen, setMenuOpen, cart, setCartOpen, cartCount, salonName, phoneHref, phoneLabel, bookNow } = useSite();
+  const { store, services, portfolioLink, shopLinks, bookingOff, scrolled, menuOpen, setMenuOpen, cart, setCartOpen, cartCount, salonName, phoneHref, phoneLabel, bookNow } = useSite();
   return (
     <>
       {/* ── HEADER ────────────────────────────────────────────────────────── */}
@@ -41,7 +41,7 @@ export function SiteHeader() {
             <a
               href="#top"
               className="min-w-0 text-xl font-semibold sm:text-2xl"
-              style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
+              style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
               aria-label={`${salonName} — home`}
             >
               <span className="flex min-w-0 items-center gap-2.5">
@@ -131,7 +131,10 @@ export function SiteHeader() {
             >
               <ul className="flex flex-col gap-1 px-5 py-4" style={{ maxHeight: "calc(100vh - 3.5rem)", overflowY: "auto" }}>
                 {[
-                  ...pageLinks,
+                  { label: "About", href: "#about" },
+                  { label: "Services", href: "#services" },
+                  ...portfolioLink,
+                  { label: "Contact", href: "#message" },
                   ...shopLinks,
                 ].map((link) => (
                   <li key={link.href}>

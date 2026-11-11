@@ -1,5 +1,5 @@
 /**
- * The bar at the bottom with the chosen services and Select Time (owner, 2026-11-11; plans/ai-site-widgets.md).
+ * The bar at the bottom with the chosen services and Select Time (owner, 2026-11-11).
  * Moved unchanged from SoloTheme.tsx.
  */
 import { ArrowRight } from "lucide-react";

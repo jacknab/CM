@@ -46,8 +46,6 @@ export const SOLO_API_ALLOW: string[] = [
   "/api/pro/*", "/api/reviews/*",
   // Google Business Profile, connected from the app's Settings (owner, 2026-11-11): connect, reviews and replies.
   "/api/google-business/*",
-  // AI Website Builder (owner, 2026-11-09): every account, Certxa Pro included.
-  "/api/ai-site/*",
   "/api/stores/*", "/api/user/delete-account", "/api/waitlist/*",
   // The Solo dashboard on the website (/solo): its plan (owner, 2026-11-07)
   "/api/plans/my-features",

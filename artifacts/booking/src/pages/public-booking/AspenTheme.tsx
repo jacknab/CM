@@ -4,7 +4,7 @@
  * Visit Us section. Everything else is Solo's; the server treats both designs the same
  * (lib/soloCategoryPages.ts isSoloDesign).
  *
- * Since 2026-11-11 (plans/ai-site-widgets.md) it is Solo's widget layout (SoloTheme.tsx SoloLayout) with design "aspen".
+ * Since 2026-11-11 it is Solo's widget layout (SoloTheme.tsx SoloLayout) with design "aspen".
  */
 import { SoloLayout } from "./SoloTheme";
 import type { BloomThemeProps } from "./widgets/shared";

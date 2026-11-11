@@ -1,5 +1,9 @@
 # AI Website Builder — plan (owner, 2026-11-09)
 
+> **Removed 2026-11-11 (owner):** the AI Website Builder was taken out of the Certxa Pro app, the salon dashboard,
+> the public websites and the server; websites are the regular designs again (Pick a design). Kept here as history.
+> Its database tables (ai_site_*) and locations.ai_site_live_version_id were left in place, unused.
+
 **Goal.** Every Certxa account (Certxa Pro *and* salons) can have Claude design a complete booking website for them:
 it learns the business, sketches **6 ideas**, the owner marks each **Love it / Not this**, and Claude builds the full site
 from the ideas they loved. Afterwards they change it by chatting ("make the header pink"), every change is a saved
