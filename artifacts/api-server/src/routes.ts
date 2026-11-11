@@ -24528,6 +24528,9 @@ or
   // ── Client Data Architecture (normalized CRM + export/import) ───────────────
   const { default: clientsRouter } = await import("./routes/clients.js");
   app.use("/api/clients", clientsRouter);
+  // Quick Notes after checkout (Certxa Pro, /nail, /barber; 2026-11-11).
+  const { default: quickNotesRouter } = await import("./routes/quickNotes.js");
+  app.use("/api/quick-notes", quickNotesRouter);
 
   // ── Online Booking Payment Policy ─────────────────────────────────────────
   const { publicBookingPaymentRouter, clientPaymentMethodsRouter } =

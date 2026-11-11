@@ -32,7 +32,7 @@ export const SOLO_API_ALLOW: string[] = [
   // The Certxa Pro app
   "/api/account/phone/*",
   "/api/addon-groups/*", "/api/addons/*", "/api/service-addons/*", "/api/service-addon-mappings/*",
-  "/api/appointments/*", "/api/quick-sales/*", "/api/time-blocks/*", "/api/calendar-settings/*",
+  "/api/appointments/*", "/api/quick-sales/*", "/api/quick-notes", "/api/quick-notes/*", "/api/time-blocks/*", "/api/calendar-settings/*",
   "/api/assistant/actions/*", "/api/pro-assistant/*",
   "/api/booking-ban-list/*", "/api/booking-policies/*", "/api/booking-requests/*", "/api/booking-site/*",
   "/api/business-hours/*", "/api/work-places/*",

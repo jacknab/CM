@@ -6613,11 +6613,137 @@ export const NAIL_PHRASES: Record<string, readonly [string, string]> = {
  "Finish later": [
   "Làm sau",
   "Terminar después"
- ]
+ ],
+ // Quick Notes after checkout (QuickNotesPopup.tsx, 2026-11-11).
+ "Last notes": [
+  "Ghi chú lần trước",
+  "Últimas notas"
+ ],
+ "Could not save the note.": [
+  "Không lưu được ghi chú.",
+  "No se pudo guardar la nota."
+ ],
+ "Quick Notes": [
+  "Ghi chú nhanh",
+  "Notas rápidas"
+ ],
+ "Additional Note": [
+  "Ghi chú thêm",
+  "Nota adicional"
+ ],
+ "Optional": [
+  "Không bắt buộc",
+  "Opcional"
+ ],
+ "Save Notes": [
+  "Lưu ghi chú",
+  "Guardar notas"
+ ],
+ "Nail Shape": [
+  "Dáng móng",
+  "Forma de uña"
+ ],
+ "Color Preference": [
+  "Màu ưa thích",
+  "Color preferido"
+ ],
+ "Remember for Next Time": [
+  "Nhớ cho lần sau",
+  "Recordar para la próxima"
+ ],
+ "Square": [
+  "Vuông",
+  "Cuadrada"
+ ],
+ "Round": [
+  "Tròn",
+  "Redonda"
+ ],
+ "Almond": [
+  "Hạnh nhân",
+  "Almendra"
+ ],
+ "Coffin": [
+  "Quan tài",
+  "Coffin"
+ ],
+ "Oval": [
+  "Oval",
+  "Ovalada"
+ ],
+ "Short": [
+  "Ngắn",
+  "Corta"
+ ],
+ "Medium": [
+  "Vừa",
+  "Mediana"
+ ],
+ "Long": [
+  "Dài",
+  "Larga"
+ ],
+ "Nude": [
+  "Màu nude",
+  "Nude"
+ ],
+ "Pink": [
+  "Hồng",
+  "Rosa"
+ ],
+ "Red": [
+  "Đỏ",
+  "Rojo"
+ ],
+ "White": [
+  "Trắng",
+  "Blanco"
+ ],
+ "Dark": [
+  "Tối màu",
+  "Oscuro"
+ ],
+ "No preference": [
+  "Không quan trọng",
+  "Sin preferencia"
+ ],
+ "Keep nails short": [
+  "Giữ móng ngắn",
+  "Mantener uñas cortas"
+ ],
+ "Keep nails long": [
+  "Giữ móng dài",
+  "Mantener uñas largas"
+ ],
+ "Gentle cuticles": [
+  "Làm da nhẹ tay",
+  "Cutículas con suavidad"
+ ],
+ "Thin natural nails": [
+  "Móng thật mỏng",
+  "Uñas naturales delgadas"
+ ],
+ "Sensitive skin": [
+  "Da nhạy cảm",
+  "Piel sensible"
+ ],
+ "Same technician": [
+  "Cùng thợ",
+  "Misma técnica"
+ ],
+ "Likes designs": [
+  "Thích vẽ móng",
+  "Le gustan los diseños"
+ ],
 };
 
 /** Sentences built around data: English pattern → [Vietnamese, Spanish] */
 export const NAIL_PATTERNS: ReadonlyArray<readonly [string, string, string]> = [
+ [
+  "Remember: {0}",
+  "Nhớ: {0}",
+  "Recordar: {0}"
+ ],
  [
   ", chuyển từ {0}",
   ", chuyển từ {0}",

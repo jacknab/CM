@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { salonTimeZone } from "@/lib/salonClock";
-import { Ban, CalendarDays, Check, Clock, Hand, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare } from "lucide-react";
+import { Ban, CalendarDays, Check, Clock, Hand, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare, StickyNote } from "lucide-react";
 import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./ticketDraft";
 import { ticketNo, type BoardTicket } from "./nailApi";
@@ -49,6 +49,18 @@ export function TicketPopup(p: Props) {
     const iv = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(iv);
   }, []);
+  // The client's last Quick Note and what to remember (owner, 2026-11-11; QuickNotesPopup.tsx), before their service.
+  const [lastNote, setLastNote] = useState<{ text: string; remember: string[] } | null>(null);
+  useEffect(() => {
+    const clientId = Number(t.client.id);
+    if (!(clientId > 0)) { setLastNote(null); return; }
+    let live = true;
+    fetch(`/api/quick-notes/client/${clientId}/latest`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live) setLastNote(d?.latest ? { text: String(d.latest.text), remember: Array.isArray(d.remember) ? d.remember : [] } : null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [t.client.id]);
 
   const dock: { icon: typeof Play; id: string; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
     ? [
@@ -114,6 +126,13 @@ export function TicketPopup(p: Props) {
               <UserRound size={18} />
               <div><small>Technician</small><strong>{t.staff ? techLabel(t.staff.name, t.staff.id) : "Not assigned"}</strong></div>
             </div>
+            {lastNote && (
+              <div className="checkin-modal-detail" data-testid="ticket-popup-last-note">
+                <StickyNote size={18} />
+                <div><small>Last notes</small><strong style={{ fontWeight: 500 }}>{lastNote.text}</strong>
+                  {lastNote.remember.length > 0 && <small style={{ display: "block", marginTop: 4 }}>{`Remember: ${lastNote.remember.join(", ")}`}</small>}</div>
+              </div>
+            )}
             {t.actualMinutes != null && (
               // DONE: how long the service really took, against the time planned for it.
               <div className="checkin-modal-detail" data-testid="nail-popup-service-time">

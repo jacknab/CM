@@ -100,6 +100,7 @@ import { PosSetupWizard } from "./PosSetupWizard";
 import { TechIdGate } from "./TechIdGate";
 import { OfflineQueueSheet } from "./OfflineQueueSheet";
 import { TurnEarnedPopup } from "./TurnEarnedPopup";
+import { QuickNotesPopup } from "./QuickNotesPopup";
 import { ChangeManagerPinSheet } from "./ChangeManagerPinSheet";
 import { TurnRotationSheet } from "./TurnRotationSheet";
 import { ServiceTimesSheet } from "./ServiceTimesSheet";
@@ -1568,11 +1569,17 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
   // The receipt has been handled (printed / texted / declined) for an already-paid ticket — now leave the checkout screen.
   // A walk-in ticket first shows the technician what it was worth in the turn rotation, then the screen locks.
   const finishCheckout = useCallback(() => {
+    const done = checkout;
     setCheckout(null); setTicketPaid(false);
     const turns = turnsEarned.current;
     turnsEarned.current = [];
-    if (turns.length > 0) setTurnNotice(turns); else lock();
-  }, [lock]);
+    const next = () => { if (turns.length > 0) setTurnNotice(turns); else lock(); };
+    // Quick Notes first, for a ticket with a client (owner, 2026-11-11; QuickNotesPopup.tsx skips itself otherwise).
+    if (done && Number(done.client.id) > 0 && done.service.id != null) setQuickNote({ appointmentId: done.id, then: next });
+    else next();
+  }, [lock, checkout]);
+  const [quickNote, setQuickNote] = useState<{ appointmentId: number; then: () => void } | null>(null);
+  const closeQuickNote = useCallback(() => { const then = quickNote?.then; setQuickNote(null); then?.(); }, [quickNote]);
   const closeTurnNotice = useCallback(() => { setTurnNotice(null); lock(); }, [lock]);
 
   // ── open a ticket by id (scanner, voucher) ───────────────────────────────
@@ -2344,6 +2351,7 @@ function NailScreen({ storeId, storeName, storeAddress, storeCityStateZip, store
           </div>
         </div>
       )}
+      {quickNote && <QuickNotesPopup appointmentId={quickNote.appointmentId} onDone={closeQuickNote} />}
       {turnNotice && <TurnEarnedPopup turns={turnNotice} onDone={closeTurnNotice} />}
       {assignedNotice && (
         <div className="nl-assigned" role="status" aria-live="polite" data-testid="nail-assigned-notice">
