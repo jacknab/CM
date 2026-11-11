@@ -16,6 +16,7 @@ import crypto from "node:crypto";
 import { pool } from "../db";
 import { sendTwilioSms } from "../sms";
 import { possessive } from "./salonSeo";
+import { CLAIM_PHONE } from "./preparedSalon";
 
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
 export const CLAIM_LINK_DAYS = 7;
@@ -215,6 +216,83 @@ export async function completeSalonClaim(link: LinkRow, userId: string): Promise
   } finally {
     client.release();
   }
+}
+
+// ── Claiming online, at the salon (owner, 2026-11-11) ───────────────────────────
+// certxa.com/claim/salon/<slug> (booking pages/ClaimAtSalon.tsx): the owner shares their location; at the salon they get
+// a claim link whose next step is the usual call to the salon's listed phone with a 6-digit code (callClaimCode), then
+// their Certxa Salon login (/claim/<token>). Being there plus answering the salon's own phone is the proof.
+
+/** How close counts as "at the salon": this, plus the device's own uncertainty up to CLAIM_HERE_SLACK_M. */
+export const CLAIM_HERE_M = 150;
+const CLAIM_HERE_SLACK_M = 150;
+/** A location less precise than this can't tell (a computer's Wi-Fi guess): use a phone at the salon. */
+const CLAIM_HERE_MAX_ACCURACY_M = 1000;
+const MAX_AT_SALON_LINKS_PER_DAY = 5;
+
+export type SalonAtSlug = {
+  jobId: number; storeId: number; name: string; address: string | null; phone: string | null;
+  latitude: number | null; longitude: number | null; state: "ready" | "claimed" | "unavailable";
+};
+
+/** The prepared salon behind <slug>.certxa.com, with where it is (its account, else the listing it was made from). */
+export async function preparedSalonBySlug(slug: string): Promise<SalonAtSlug | null> {
+  if (!/^[a-z0-9-]{2,80}$/i.test(slug)) return null;
+  const { rows: [r] } = await pool.query(
+    `SELECT j.id AS job_id, j.status, j.claimed_at, l.id AS store_id, l.name, l.address, l.phone,
+            -- the account's coordinates are text; a number only, else the listing's
+            coalesce(CASE WHEN l.store_latitude ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN l.store_latitude::double precision END, n.latitude) AS lat,
+            coalesce(CASE WHEN l.store_longitude ~ '^-?[0-9]+(\\.[0-9]+)?$' THEN l.store_longitude::double precision END, n.longitude) AS lng
+       FROM locations l JOIN salon_account_creation_jobs j ON j.store_id = l.id
+       LEFT JOIN nail_salons n ON n.id = j.source_salon_id
+      WHERE lower(l.booking_slug) = lower($1) ORDER BY j.id DESC LIMIT 1`, [slug]);
+  if (!r) return null;
+  return {
+    jobId: Number(r.job_id), storeId: Number(r.store_id), name: r.name, address: r.address ?? null, phone: r.phone ?? null,
+    latitude: r.lat == null ? null : Number(r.lat), longitude: r.lng == null ? null : Number(r.lng),
+    state: r.status === "claimed" || r.claimed_at ? "claimed" : r.status === "created" ? "ready" : "unavailable",
+  };
+}
+
+/** Metres between two points on the earth. */
+export function metersBetween(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const rad = (d: number) => (d * Math.PI) / 180;
+  const dLat = rad(b.latitude - a.latitude), dLng = rad(b.longitude - a.longitude);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.latitude)) * Math.cos(rad(b.latitude)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6_371_000 * Math.asin(Math.sqrt(h));
+}
+
+/** "about 2.3 miles" / "about 400 feet". */
+const howFar = (m: number) => (m >= 1609 ? `about ${(m / 1609.34).toFixed(m >= 16093 ? 0 : 1)} miles` : `about ${Math.round((m * 3.281) / 50) * 50} feet`);
+
+/** The device is at the salon: a claim link that goes on to the phone-code call. */
+export async function claimLinkAtSalon(slug: string, here: { latitude: number; longitude: number; accuracy: number }):
+  Promise<{ ok: true; token: string } | { ok: false; status: number; message: string; code?: "not_here" | "imprecise" }> {
+  const salon = await preparedSalonBySlug(slug);
+  if (!salon) return { ok: false, status: 404, message: "We couldn't find this salon's page." };
+  if (salon.state === "claimed") return { ok: false, status: 409, message: "This salon's page has already been claimed. If that wasn't you, contact support@certxa.com." };
+  if (salon.state !== "ready") return { ok: false, status: 409, message: `This page can't be claimed online. Call Certxa at ${CLAIM_PHONE}.` };
+  if (digits(salon.phone).length !== 10) return { ok: false, status: 409, message: `This salon has no phone number on file to call. Call Certxa at ${CLAIM_PHONE}.` };
+  if (salon.latitude == null || salon.longitude == null) return { ok: false, status: 409, message: `We can't check this salon's location online. Call Certxa at ${CLAIM_PHONE}.` };
+  const accuracy = Math.max(0, Number(here.accuracy) || 0);
+  if (accuracy > CLAIM_HERE_MAX_ACCURACY_M) {
+    return { ok: false, status: 422, code: "imprecise", message: "Your device couldn't find your location closely enough. Open this page on your phone at the salon, with location turned on." };
+  }
+  const distance = metersBetween(here, { latitude: salon.latitude, longitude: salon.longitude });
+  if (distance > CLAIM_HERE_M + Math.min(accuracy, CLAIM_HERE_SLACK_M)) {
+    return { ok: false, status: 403, code: "not_here", message: `You seem to be ${howFar(distance)} from ${salon.name}. To claim it online you need to be at the salon. Open this page again when you're there.` };
+  }
+  const today = (await pool.query(
+    `SELECT count(*)::int AS n FROM salon_claim_links WHERE job_id = $1 AND source = 'at_salon' AND created_at > now() - interval '1 day'`, [salon.jobId])).rows[0].n;
+  if (today >= MAX_AT_SALON_LINKS_PER_DAY) return { ok: false, status: 429, message: `Too many tries today. Try again tomorrow, or call Certxa at ${CLAIM_PHONE}.` };
+  const token = crypto.randomBytes(24).toString("base64url");
+  await pool.query(
+    `INSERT INTO salon_claim_links (token_hash, job_id, expires_at, source, located_m) VALUES ($1, $2, now() + interval '1 day', 'at_salon', $3)`,
+    [hashToken(token), salon.jobId, Math.round(distance)]);
+  await pool.query(`INSERT INTO salon_account_creation_logs (job_id, source_salon_id, event, message, details)
+                    SELECT id, source_salon_id, 'claim_at_salon', 'Someone at the salon started a claim online.', $2::jsonb FROM salon_account_creation_jobs WHERE id = $1`,
+    [salon.jobId, JSON.stringify({ metres: Math.round(distance), accuracy: Math.round(accuracy) })]).catch(() => {});
+  return { ok: true, token };
 }
 
 function escXml(s: string): string {
