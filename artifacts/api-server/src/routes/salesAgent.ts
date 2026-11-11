@@ -1402,11 +1402,11 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
             content: accountSupportHandoff && marilOpener === "transferred"
               ? `You have already said, and the caller has heard: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Do not greet them again or repeat it. Listen to the caller and help. Do not pitch sales or ask why they called again if they already said.`
               : accountSupportHandoff && marilOpener === "direct"
-              ? `You have already said, and the caller is hearing: "Thanks for calling ${CERTXA_SPOKEN_ALIAS} Account Services, this is Maril." Do not say it again or greet again. Speak now and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
+              ? `You have already said, and the caller is hearing: "Account Services! This is Maril." Do not say it again or greet again. Speak now and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
               : accountSupportHandoff
               ? marilContext?.transferred
                 ? `Speak first now: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Then listen carefully and help. Do not pitch sales or ask why they called again if they already said.`
-                : `Speak first now: "Thanks for calling ${CERTXA_SPOKEN_ALIAS} Account Services, this is Maril.${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
+                : `Speak first now: "Account Services! This is Maril.${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
               : agentProfile.id === "tom" && claimContext?.mode === "callback"
               ? `Speak first now. Say: "Hi, this is Tom from Certxa calling back for ${claimContext.callerName}. May I speak with ${claimContext.callerName}, please?" Then wait for them to come to the phone, and follow OUTBOUND OWNERSHIP CALL-BACK.`
               : agentProfile.id === "tom"

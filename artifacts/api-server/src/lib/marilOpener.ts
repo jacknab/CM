@@ -14,13 +14,16 @@ import { SHAVEZ_ACCOUNT_SUPPORT_GREETING } from "./salesAgentTransfer";
 export type MarilOpenerKind = "direct" | "transferred";
 /** What the caller hears first. "Sir-Tex-uh" is how the brand is spoken (CERTXA_SPOKEN_ALIAS). */
 export const MARIL_OPENER_TEXT: Record<MarilOpenerKind, string> = {
-  direct: "Thanks for calling Sir-Tex-uh Account Services, this is Maril.",
+  direct: "Account Services! This is Maril.", // owner, 2026-11-11; then a short pause
   transferred: SHAVEZ_ACCOUNT_SUPPORT_GREETING,
 };
 const VOICE = "marin";
 const STYLE = "Warm, relaxed and friendly phone voice, like a helpful account specialist answering a call. Natural, steady pace; not slow. Say the company name as three beats: Sir, Tex (as in Texas, stressed), uh.";
 const DIR = process.env.VOICE_CACHE_DIR || "/var/lib/certxa/voice-cache";
 const FRAME_BYTES = 160; // 20 ms of 8 kHz μ-law
+/** The short pause after "Account Services! This is Maril." before she goes on (owner, 2026-11-11). */
+const PAUSE_AFTER_MS: Record<MarilOpenerKind, number> = { direct: 500, transferred: 0 };
+const SILENCE_FRAME = Buffer.alloc(FRAME_BYTES, 0xff).toString("base64"); // μ-law 0xFF = silence
 
 const frames = new Map<MarilOpenerKind, string[]>();
 let holdMusic: string[] | null = null;
@@ -89,7 +92,7 @@ export async function warmMarilOpeners(): Promise<void> {
         fs.writeFileSync(`${file}.part-${process.pid}`, ulaw);
         fs.renameSync(`${file}.part-${process.pid}`, file);
       }
-      frames.set(kind, toFrames(ulaw));
+      frames.set(kind, [...toFrames(ulaw), ...Array<string>(Math.round(PAUSE_AFTER_MS[kind] / 20)).fill(SILENCE_FRAME)]);
     } catch (e: any) {
       console.warn(`[Sales Agent] Maril ${kind} opener not ready (calls start with her live greeting):`, e?.message ?? e);
     }
