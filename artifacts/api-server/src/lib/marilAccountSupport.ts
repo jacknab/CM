@@ -20,6 +20,7 @@ import { MAX_TRIAL_EXTENSION_DAYS, MAX_TRIAL_TOTAL_DAYS, latestTrialEnd } from "
 import { retryFailedCharge } from "../services/saas-billing";
 import { liftTrialSuspension } from "../services/trial-expiration";
 import { stripe, isStripeConfigured } from "./stripe";
+import { runHealthCheck, type SegmentId } from "./healthCheck";
 
 const SITE = () => (process.env.APP_URL ?? "https://certxa.com").replace(/\/+$/, "");
 const digits = (v: unknown) => String(v ?? "").replace(/\D/g, "").slice(-10);
@@ -183,6 +184,74 @@ export async function retryPayment(owner: VerifiedOwner): Promise<string> {
   return result.message;
 }
 
+/** The account in numbers, for a verified owner (owner, 2026-11-11): team, menu, clients and bookings. */
+export async function accountDetails(owner: VerifiedOwner) {
+  const s = owner.storeId;
+  const one = async (sql: string) => (await pool.query(sql, [s])).rows[0] ?? {};
+  const [store, team, menu, clients, bookings] = await Promise.all([
+    one(`SELECT l.name, l.category, l.timezone, l.booking_slug, l.account_status, u.created_at AS signed_up
+           FROM locations l LEFT JOIN users u ON u.id = l.user_id WHERE l.id = $1`),
+    one(`SELECT count(*) FILTER (WHERE status = 'active')::int AS active, count(*)::int AS total FROM staff WHERE store_id = $1`),
+    one(`SELECT count(*) FILTER (WHERE is_active IS NOT FALSE AND is_unpriced_placeholder IS NOT TRUE)::int AS active,
+                count(*) FILTER (WHERE is_active IS NOT FALSE AND is_unpriced_placeholder IS NOT TRUE AND hidden_from_public IS NOT TRUE)::int AS online,
+                count(DISTINCT category) FILTER (WHERE is_active IS NOT FALSE)::int AS categories
+           FROM services WHERE store_id = $1`),
+    one(`SELECT count(*) FILTER (WHERE archived_at IS NULL)::int AS clients,
+                count(*) FILTER (WHERE archived_at IS NULL AND created_at >= now() - interval '30 days')::int AS new_30
+           FROM clients WHERE store_id = $1`),
+    one(`SELECT count(*) FILTER (WHERE date >= now() AND status NOT IN ('cancelled', 'no_show'))::int AS upcoming,
+                count(*) FILTER (WHERE date >= date_trunc('month', now()) AND date < now() AND status NOT IN ('cancelled'))::int AS this_month,
+                count(*) FILTER (WHERE date >= now() - interval '30 days' AND date < now() AND status IN ('completed', 'paid'))::int AS completed_30,
+                count(*) FILTER (WHERE date >= now() - interval '30 days' AND date < now() AND status = 'cancelled')::int AS cancelled_30,
+                count(*) FILTER (WHERE date >= now() - interval '30 days' AND date < now() AND status = 'no_show')::int AS no_shows_30,
+                max(date) FILTER (WHERE date < now() AND status IN ('completed', 'paid')) AS last_completed
+           FROM appointments WHERE store_id = $1`),
+  ]);
+  await log(s, "maril_viewed_account_details");
+  return {
+    business: store.name ?? owner.businessName,
+    businessType: store.category ?? null,
+    accountType: owner.accountType === "certxa_pro" ? "Certxa Pro (independent professional)" : "Certxa Salon",
+    accountStatus: store.account_status ?? null,
+    customerSince: store.signed_up ? new Date(store.signed_up).toDateString() : null,
+    timeZone: store.timezone ?? null,
+    bookingPage: store.booking_slug ? `${store.booking_slug}.certxa.com` : null,
+    staff: { active: team.active ?? 0, total: team.total ?? 0 },
+    services: { active: menu.active ?? 0, bookableOnline: menu.online ?? 0, categories: menu.categories ?? 0 },
+    clients: { total: clients.clients ?? 0, newLast30Days: clients.new_30 ?? 0 },
+    bookings: {
+      upcoming: bookings.upcoming ?? 0, thisMonthSoFar: bookings.this_month ?? 0, completedLast30Days: bookings.completed_30 ?? 0,
+      cancelledLast30Days: bookings.cancelled_30 ?? 0, noShowsLast30Days: bookings.no_shows_30 ?? 0,
+      lastCompletedOn: bookings.last_completed ? new Date(bookings.last_completed).toDateString() : null,
+    },
+  };
+}
+
+/**
+ * The account's health: the same checks as isTeam › Account Diagnostics (lib/healthCheck), without the front desk and
+ * kiosk sections — hardware, screens, printers and networks are not Maril's (owner, 2026-11-11). Only what is wrong or
+ * needs attention comes back, in words an owner can act on.
+ */
+const MARIL_HEALTH_SEGMENTS: SegmentId[] = ["booking_readiness", "team_roster", "services_catalog", "features_settings", "sms_communications",
+  "payments_billing", "ai_receptionist", "online_presence", "commission_payroll"];
+export async function accountHealth(owner: VerifiedOwner) {
+  const run = await runHealthCheck({ accountId: owner.storeId, agentId: await marilAgent(), agentName: "Maril (AI)", segments: MARIL_HEALTH_SEGMENTS, pool: pool as any });
+  const problems: { area: string; status: string; issue: string; fix: string | null }[] = [];
+  for (const seg of Object.values(run.results)) {
+    for (const c of seg.checks) {
+      if (c.status === "pass" || c.ownerVisible === false || c.id === "runner_error") continue;
+      problems.push({ area: seg.label, status: c.status === "fail" ? "problem" : "needs attention", issue: `${c.label}: ${c.detail ?? ""}`.trim(), fix: c.action ?? null });
+    }
+  }
+  await log(owner.storeId, "maril_ran_account_health", { problems: problems.length });
+  return {
+    checked: Object.values(run.results).map((r) => r.label),
+    allGood: problems.length === 0,
+    problems: problems.slice(0, 15),
+    passedChecks: run.passCount,
+  };
+}
+
 /** The trial's end, whether it has ended, and the days still allowed: 14 at a time, never past 74 days (lib/trialLimit.ts). */
 async function trialFacts(userId: string, endsAt: Date) {
   const latest = await latestTrialEnd(userId);
@@ -192,6 +261,7 @@ async function trialFacts(userId: string, endsAt: Date) {
   return {
     [ended ? "endedOn" : "endsOn"]: endsAt.toDateString(),
     ended,
+    daysRemaining: ended ? 0 : Math.ceil((endsAt.getTime() - Date.now()) / 86_400_000),
     daysCanStillAdd: Math.max(0, Math.min(MAX_TRIAL_EXTENSION_DAYS, room)),
     latestPossibleEnd: latest ? latest.toDateString() : null,
   };
