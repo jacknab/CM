@@ -1537,6 +1537,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   const { startEmailTicketSync } = await import("./services/emailTicketSync");
   startEmailTicketSync();
 
+  // Call recordings: downloaded to this server, then deleted at Twilio (lib/callRecordingArchive.ts).
+  const { startCallRecordingArchive } = await import("./lib/callRecordingArchive");
+  startCallRecordingArchive();
+
   // Auto-close tickets: runs every hour, closes tickets with no customer response in 7 days
   const { runAutoCloseTickets } = await import("./routes/support");
   setInterval(() => runAutoCloseTickets(), 60 * 60 * 1000);

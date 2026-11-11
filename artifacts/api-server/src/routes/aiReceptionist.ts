@@ -67,6 +67,7 @@ import type { Express, Request, Response } from "express";
 import type { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import twilio from "twilio";
+import { archiveRecordingNow, localRecordingPath } from "../lib/callRecordingArchive";
 import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 import { db, pool } from "../db";
 import { mutateStorePreferences } from "../lib/storePreferences";
@@ -4774,6 +4775,14 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
       return res.status(404).json({ message: "Recording not found" });
     }
 
+    // Saved on this server (lib/callRecordingArchive.ts; Twilio's copy is deleted once it is here).
+    const localFile = localRecordingPath(row.recordingSid);
+    if (localFile) {
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Cache-Control", "private, max-age=0");
+      return res.sendFile(localFile);
+    }
+
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     if (!accountSid || !authToken) {
@@ -5616,6 +5625,9 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
     } catch (err) {
       console.error("[AI Receptionist] Failed to persist recording callback:", err);
     }
+
+    // A finished recording is downloaded to this server and deleted at Twilio (lib/callRecordingArchive.ts).
+    if (recordingStatus === "completed" && recordingSid) void archiveRecordingNow(recordingSid);
 
     return res.status(200).type("text/plain").send("ok");
   });
