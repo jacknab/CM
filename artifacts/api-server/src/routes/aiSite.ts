@@ -32,7 +32,7 @@ import { AI_CREDIT_PRICES, aiCreditBalance, chargeAiCredits, NotEnoughCreditsErr
 import { aiProvider } from "../lib/aiProvider";
 import { siteFacts } from "../lib/aiSiteFacts";
 import { sketchIdeas, type IdeaFeedback, type SiteIdea } from "../lib/aiSiteIdeas";
-import { buildSite, type SiteSpec } from "../lib/aiSiteBuild";
+import { buildSite, type SiteSpec, upgradeSpec } from "../lib/aiSiteBuild";
 import { changeSite } from "../lib/aiSiteChange";
 import { refundAiCredits } from "../lib/aiCredits";
 import { getJob, jobByKey, runningJob, startJob } from "../lib/aiSiteJobs";
@@ -340,7 +340,7 @@ router.get("/api/public/store/:slug/ai-site", previewLimiter, async (req: Reques
     res.setHeader("Cache-Control", "no-store");
     if (token) res.setHeader("X-Robots-Tag", "noindex");
     const { missing: _missing, sources: _sources, ...shown } = facts;
-    return res.json({ spec: v.spec, facts: { ...shown, photoUrls: photos.rows.map((p: any) => ({ url: p.image_url, caption: p.caption ?? null })) } });
+    return res.json({ spec: upgradeSpec(v.spec), facts: { ...shown, photoUrls: photos.rows.map((p: any) => ({ url: p.image_url, caption: p.caption ?? null })) } });
   } catch (err: any) {
     console.error("[ai-site] preview", err?.message ?? err);
     return res.status(500).json({ error: "The preview could not be opened." });

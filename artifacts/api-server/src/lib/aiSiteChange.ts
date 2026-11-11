@@ -7,7 +7,7 @@
 import { z } from "zod";
 import { generateJson } from "./aiProvider";
 import type { SiteFacts } from "./aiSiteFacts";
-import { siteSpecSchema, tidy, type SiteSpec } from "./aiSiteBuild";
+import { siteSpecSchema, tidy, upgradeSpec, type SiteSpec } from "./aiSiteBuild";
 
 const changeSchema = z.object({
   reply: z.string().min(1).max(500).describe("One or two plain sentences to the owner: what you changed, or why you couldn't"),
@@ -20,7 +20,9 @@ current site spec (JSON). Return the WHOLE spec with ONLY the requested change m
 colour and font exactly as it was.
 
 Rules:
-- Same block types and limits as before. Keep a hero first on Home and a callToAction last; no priceList, reviews or location on Home (the page already shows them); Menu keeps its priceList.
+- The site is pages of sections: widgets (Certxa's real parts: intro, services, portfolio, reviews, team, hours,
+  policy, contact, each with its looks) and words blocks. You may move, add, remove or restyle sections and pages, or
+  switch between tabs and one page, when asked. Each widget at most once; the services widget must stay.
 - Prices, durations, hours, reviews, photos, phone and address are filled in by Certxa, not written in the spec. If the
   owner wants to change one of those, leave the spec unchanged (changed: false) and tell them where: prices and services
   in Settings › Catalog, hours in Settings › Hours, phone and name in Settings › Business details, address in Settings ›
@@ -31,7 +33,7 @@ Rules:
 export async function changeSite(storeId: number, facts: SiteFacts, current: SiteSpec, request: string): Promise<{ reply: string; changed: boolean; spec: SiteSpec }> {
   const prompt = [
     `Business facts (JSON):\n${JSON.stringify(facts)}`,
-    `Current site spec (JSON):\n${JSON.stringify(current)}`,
+    `Current site spec (JSON):\n${JSON.stringify(upgradeSpec(current))}`,
     `The owner's request:\n${request}`,
   ].join("\n\n");
   const out = await generateJson({ storeId, kind: "change", system: SYSTEM, prompt, schema: changeSchema, maxTokens: 16000, effort: "medium" });

@@ -3,12 +3,12 @@
  * unchanged from SoloTheme.tsx.
  */
 import { ArrowRight, Menu, ShoppingCart, Phone, X } from "lucide-react";
-import { C } from "./shared";
+import { C, HEADING_FONT } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** The fixed header with the mobile menu. */
 export function SiteHeader() {
-  const { store, services, portfolioLink, shopLinks, bookingOff, scrolled, menuOpen, setMenuOpen, cart, setCartOpen, cartCount, salonName, phoneHref, phoneLabel, bookNow } = useSite();
+  const { pageLinks, store, services, portfolioLink, shopLinks, bookingOff, scrolled, menuOpen, setMenuOpen, cart, setCartOpen, cartCount, salonName, phoneHref, phoneLabel, bookNow } = useSite();
   return (
     <>
       {/* ── HEADER ────────────────────────────────────────────────────────── */}
@@ -41,7 +41,7 @@ export function SiteHeader() {
             <a
               href="#top"
               className="min-w-0 text-xl font-semibold sm:text-2xl"
-              style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+              style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
               aria-label={`${salonName} — home`}
             >
               <span className="flex min-w-0 items-center gap-2.5">
@@ -131,10 +131,7 @@ export function SiteHeader() {
             >
               <ul className="flex flex-col gap-1 px-5 py-4" style={{ maxHeight: "calc(100vh - 3.5rem)", overflowY: "auto" }}>
                 {[
-                  { label: "About", href: "#about" },
-                  { label: "Services", href: "#services" },
-                  ...portfolioLink,
-                  { label: "Contact", href: "#message" },
+                  ...pageLinks,
                   ...shopLinks,
                 ].map((link) => (
                   <li key={link.href}>

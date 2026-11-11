@@ -3,11 +3,12 @@
  * Moved unchanged from SoloTheme.tsx.
  */
 import { ArrowRight, ChevronLeft, ChevronRight, X, ZoomIn } from "lucide-react";
-import { C } from "./shared";
+import { C, HEADING_FONT } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** The pro's photos; shown only when there are any. */
-export function PortfolioWidget({ hidden }: { hidden?: boolean }) {
+/** look "masonry" (Solo) or "grid" (square photos), for an AI design (AiWidgetTheme.tsx). */
+export function PortfolioWidget({ hidden, look = "masonry" }: { hidden?: boolean; look?: string }) {
   const { services, gallery, bookingOff, lightboxIndex, setLightboxIndex, salonName, chooseService } = useSite();
   return (
     <>
@@ -18,7 +19,8 @@ export function PortfolioWidget({ hidden }: { hidden?: boolean }) {
             id="portfolio"
             hidden={hidden}
             aria-labelledby="portfolio-heading"
-            className="bg-white py-14 sm:py-20"
+            className="py-14 sm:py-20"
+            style={{ background: "var(--ai-section, #ffffff)" }}
           >
             <div className="mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-12">
               <div className="text-center">
@@ -26,7 +28,7 @@ export function PortfolioWidget({ hidden }: { hidden?: boolean }) {
                 <h2
                   id="portfolio-heading"
                   className="text-3xl font-semibold sm:text-4xl"
-                  style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+                  style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
                 >
                   Portfolio
                 </h2>
@@ -36,13 +38,13 @@ export function PortfolioWidget({ hidden }: { hidden?: boolean }) {
               </div>
 
               {/* Masonry grid */}
-              <div className="bloom-masonry mt-10 sm:mt-12">
+              <div className={look === "grid" ? "mt-10 grid grid-cols-2 gap-3 sm:mt-12 sm:grid-cols-3 lg:grid-cols-4" : "bloom-masonry mt-10 sm:mt-12"}>
                 {gallery.map((photo, index) => (
                   <button
                     key={`${photo.image_url}-${index}`}
                     type="button"
                     onClick={() => setLightboxIndex(index)}
-                    className="bloom-masonry-item group relative block w-full overflow-hidden rounded-2xl focus:outline-none"
+                    className={`${look === "grid" ? "aspect-square" : "bloom-masonry-item"} group relative block w-full overflow-hidden rounded-2xl focus:outline-none`}
                     style={{ background: C.cream100 }}
                     aria-label={`View ${photo.caption ?? `portfolio photo ${index + 1}`} larger`}
                   >
@@ -50,7 +52,7 @@ export function PortfolioWidget({ hidden }: { hidden?: boolean }) {
                       src={photo.image_url}
                       alt={photo.caption ?? `${salonName} nail art — photo ${index + 1}`}
                       loading="lazy"
-                      className="w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      className={`w-full object-cover transition-transform duration-500 group-hover:scale-105${look === "grid" ? " h-full" : ""}`}
                       onError={(e) => { e.currentTarget.closest("button")?.remove(); }}
                     />
                     <span className="absolute inset-0 flex items-center justify-center bg-black/0 text-white opacity-0 transition-all duration-300 group-hover:bg-black/30 group-hover:opacity-100">

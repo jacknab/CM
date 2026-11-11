@@ -3,7 +3,7 @@
  * cancellation policy, contact and reviews. Moved unchanged from SoloTheme.tsx.
  */
 import { Star, ExternalLink } from "lucide-react";
-import { C, ReviewPhotos, ReviewerAvatar, firstName } from "./shared";
+import { C, ReviewPhotos, ReviewerAvatar, firstName, HEADING_FONT } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** Photo, name, rating and the about text. */
@@ -14,7 +14,7 @@ export function AboutIntro() {
           {store.bookingSite?.aboutImage && (
             <img src={store.bookingSite.aboutImage} alt={salonName} data-testid="solo-about-photo" className="mx-auto mb-4 h-44 w-44 rounded-2xl object-cover shadow-sm" />
           )}
-          <h2 id="about-heading" className="text-3xl font-semibold sm:text-4xl" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }} itemProp="name">
+          <h2 id="about-heading" className="text-3xl font-semibold sm:text-4xl" style={{ fontFamily: HEADING_FONT, color: C.ink900 }} itemProp="name">
             {salonName}
           </h2>
 
@@ -149,14 +149,15 @@ export function ContactWidget() {
 }
 
 /** All the reviews, Google's or Certxa's. */
-export function ReviewsWidget() {
+/** look "list" (Solo) or "cards" (a grid of cards), for an AI design (AiWidgetTheme.tsx). */
+export function ReviewsWidget({ look = "list" }: { look?: string }) {
   const { store, reviews, salonName, isGoogleSourced } = useSite();
   return (
     <>
           {reviews.length > 0 && (
             <div id="about-reviews" className="mt-8 scroll-mt-32 border-t pt-7 text-left" style={{ borderColor: C.cream200 }}>
               <h3 className="text-center text-sm font-semibold uppercase tracking-[0.2em]" style={{ color: C.ink800 }}>{isGoogleSourced ? "Reviews from Google" : <>Ratings &amp; Reviews</>}</h3>
-              <div className="mt-2 divide-y" style={{ borderColor: C.cream200 }}>
+              <div className={look === "cards" ? "mt-5 grid gap-4 sm:grid-cols-2" : "mt-2 divide-y"} style={{ borderColor: C.cream200 }}>
                 {reviews.map((r) => {
                   const rating = Number(r.rating ?? 5);
                   const who = r.customerName?.trim() || "Verified client";
@@ -164,7 +165,7 @@ export function ReviewsWidget() {
                     ? new Date(r.reviewCreateTime).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: store.timezone || "UTC" })
                     : null;
                   return (
-                    <article key={r.id} className="py-5" data-testid="solo-review">
+                    <article key={r.id} className={look === "cards" ? "rounded-2xl border p-5" : "py-5"} style={look === "cards" ? { borderColor: C.cream200, background: C.cream50 } : undefined} data-testid="solo-review">
                       <div className="flex items-center gap-3">
                         <ReviewerAvatar name={who} photoUrl={r.reviewerPhotoUrl} />
                         <div className="min-w-0">

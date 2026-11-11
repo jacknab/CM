@@ -17,25 +17,29 @@ import { useHouseCall, HouseCallFields } from "../houseCall";
 
 // ── Color tokens (mapped from nail-salon-bloom tailwind.config.js) ─────────────
 export const C = {
-  // The business's accent colour when it picked one (SiteLook.tsx siteStyle), else Bloom's gold.
+  // The business's accent colour when it picked one (SiteLook.tsx siteStyle), else Bloom's gold. The other colours are
+  // CSS variables too, set by an AI design's palette (AiWidgetTheme.tsx); without one they are Solo's own.
   gold700: "var(--site-accent, #B45309)",
   gold600: "var(--site-accent, #D97706)",
-  gold50:  "#FFFBEB",
-  rose600: "#f39aad",
-  rose700: "#e9839d",
-  rose50:  "#FFF1F2",
-  rose100: "#FFE4E6",
-  cream50:  "#FDFCFA",
-  cream100: "#F8F5F0",
-  cream200: "#EDE8DF",
-  cream300: "#D8D0C4",
-  ink900:  "#1A1814",
-  ink800:  "#2C2925",
-  ink700:  "#4A4540",
-  ink600:  "#6B6560",
-  ink500:  "#8C8680",
-  ink400:  "#B0ABA5",
+  gold50:  "var(--ai-gold50, #FFFBEB)",
+  rose600: "var(--ai-rose600, #f39aad)",
+  rose700: "var(--ai-rose700, #e9839d)",
+  rose50:  "var(--ai-rose50, #FFF1F2)",
+  rose100: "var(--ai-rose100, #FFE4E6)",
+  cream50:  "var(--ai-cream50, #FDFCFA)",
+  cream100: "var(--ai-cream100, #F8F5F0)",
+  cream200: "var(--ai-cream200, #EDE8DF)",
+  cream300: "var(--ai-cream300, #D8D0C4)",
+  ink900:  "var(--ai-ink900, #1A1814)",
+  ink800:  "var(--ai-ink800, #2C2925)",
+  ink700:  "var(--ai-ink700, #4A4540)",
+  ink600:  "var(--ai-ink600, #6B6560)",
+  ink500:  "var(--ai-ink500, #8C8680)",
+  ink400:  "var(--ai-ink400, #B0ABA5)",
 };
+
+/** Headings: an AI design's font when it has one, else Solo's Playfair Display. */
+export const HEADING_FONT = "var(--ai-heading-font, 'Playfair Display', Georgia, serif)";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -339,7 +343,7 @@ export function VisitUs({ store, phoneHref, phoneLabel, hours }: { store: StoreD
   // An address saved on one line already holds the city: don't repeat it.
   const cityLine = city && !address.includes(city) ? city : "";
   const mapSrc = address ? `https://www.google.com/maps?q=${encodeURIComponent([address, cityLine].filter(Boolean).join(", "))}&z=15&hl=en&output=embed` : null;
-  const heading = "'Playfair Display', Georgia, serif";
+  const heading = HEADING_FONT;
   const iconBox = "grid h-12 w-12 shrink-0 place-items-center rounded-xl";
   return (
     <section id="visit" className="px-4 py-12 sm:px-6 sm:py-16 lg:py-24" style={{ background: C.cream100 }} data-testid="solo-visit-us">
@@ -735,7 +739,7 @@ export function BookingPanel({
             <div>
               <h2
                 className="text-lg font-semibold leading-tight"
-                style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+                style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
               >
                 {step === "success" ? (store.bookingApproval === "manual" ? "Request sent" : "You're booked!") : "Book an Appointment"}
               </h2>
@@ -780,7 +784,7 @@ export function BookingPanel({
           {/* STEP: staff — who does it (Aspen, owner 2026-11-07): "Anyone available" first, then each professional */}
           {staffFirst && step === "staff" && (
             <div className="px-5 py-5" data-testid="solo-step-staff">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ fontFamily: HEADING_FONT, color: C.ink900 }}>
                 <Users className="h-4 w-4" style={{ color: C.gold700 }} />
                 Choose your professional
               </h3>
@@ -821,7 +825,7 @@ export function BookingPanel({
           {/* STEP: place — where the visit is (owner, 2026-11-07: a step of its own) */}
           {step === "place" && (
             <div className="px-5 py-5" data-testid="solo-step-place">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ fontFamily: HEADING_FONT, color: C.ink900 }}>
                 <MapPin className="h-4 w-4" style={{ color: C.gold700 }} />
                 Where would you like your appointment?
               </h3>
@@ -845,7 +849,7 @@ export function BookingPanel({
             <div className="px-5 py-5" data-testid="solo-step-date">
               <h3
                 className="mb-4 flex items-center gap-2 text-base font-semibold"
-                style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+                style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
               >
                 <Calendar className="h-4 w-4" style={{ color: C.gold700 }} />
                 Pick a Date
@@ -942,7 +946,7 @@ export function BookingPanel({
             <div className="px-5 py-5" data-testid="solo-step-time">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="flex items-center gap-2 text-base font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
+                  <h3 className="flex items-center gap-2 text-base font-semibold" style={{ fontFamily: HEADING_FONT, color: C.ink900 }}>
                     <Clock className="h-4 w-4" style={{ color: C.gold700 }} />
                     Pick a Time
                   </h3>
@@ -1054,7 +1058,7 @@ export function BookingPanel({
 
               <h3
                 className="mb-4 text-base font-semibold"
-                style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+                style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
               >
                 Your Details
               </h3>
@@ -1178,7 +1182,7 @@ export function BookingPanel({
               </div>
               <h3
                 className="text-2xl font-semibold"
-                style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}
+                style={{ fontFamily: HEADING_FONT, color: C.ink900 }}
               >
                 {store.bookingApproval === "manual" ? "Request sent" : "You're all set!"}
               </h3>

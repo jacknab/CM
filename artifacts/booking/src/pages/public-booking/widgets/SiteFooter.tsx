@@ -4,12 +4,12 @@
  */
 import { Facebook, Instagram } from "lucide-react";
 import { facebookUrl, instagramUrl } from "../SiteLook";
-import { C } from "./shared";
+import { C, HEADING_FONT } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** The footer. */
 export function SiteFooter() {
-  const { store, services, portfolioLink, shop, shopLinks, bookingOff, barShown, salonName, bookNow } = useSite();
+  const { pageLinks, store, services, portfolioLink, shop, shopLinks, bookingOff, barShown, salonName, bookNow } = useSite();
   return (
     <>
       {/* ── FOOTER ────────────────────────────────────────────────────────── */}
@@ -20,7 +20,7 @@ export function SiteFooter() {
             <div>
               <p
                 className="text-xl font-semibold text-white"
-                style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+                style={{ fontFamily: HEADING_FONT }}
               >
                 {salonName}
               </p>
@@ -31,10 +31,7 @@ export function SiteFooter() {
             <nav aria-label="Footer navigation">
               <ul className="flex flex-wrap justify-center gap-x-6 gap-y-2">
                 {[
-                  { label: "About", href: "#about" },
-                  { label: "Services", href: "#services" },
-                  ...portfolioLink,
-                  { label: "Contact", href: "#message" },
+                  ...pageLinks,
                   ...shopLinks,
                 ].map((link) => (
                   <li key={link.href}>

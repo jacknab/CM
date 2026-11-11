@@ -18,7 +18,10 @@ import { ServiceEntry, ServiceCategoryEntry, GoogleReviewEntry, ServiceReviewEnt
 /** "aspen": booking starts with a Staff step and the chat shows (AspenTheme, owner 2026-11-07); "solo" otherwise. */
 export type SiteDesign = "solo" | "aspen";
 
-export function useSoloSite({ store, slug, preselectedStaffId, preselectedServiceId }: BloomThemeProps, design: SiteDesign = "solo") {
+/** An AI design's page (AiWidgetTheme.tsx): its address, tab name and the widgets on it. */
+export type SitePage = { id: string; title: string; widgets: string[] };
+
+export function useSoloSite({ store, slug, preselectedStaffId, preselectedServiceId }: BloomThemeProps, design: SiteDesign = "solo", pages?: SitePage[]) {
   // Page data
   const [services, setServices]   = useState<ServiceEntry[]>([]);
   const [serviceCategories, setServiceCategories] = useState<ServiceCategoryEntry[]>([]);
@@ -49,19 +52,39 @@ export function useSoloSite({ store, slug, preselectedStaffId, preselectedServic
   const closeShop = () => { setShopView(null); window.history.replaceState(null, "", window.location.pathname + window.location.search); };
 
   // Tabs under the header. Sections stay on the page when hidden, so a chosen category or form isn't lost.
-  const tabFromHash = (): SoloTab | null => {
-    const h = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
-    if (h === "visit") return "about"; // links shared before About replaced Visit Us
-    return SOLO_TABS.some((t) => t.id === h) ? (h as SoloTab) : null;
+  // An AI design's pages instead (owner, 2026-11-11): an address is a page, or a widget on one (#services opens the page
+  // with the services); #about is the page with the intro, else the first.
+  const pageFor = (id: string): string | null => {
+    if (!pages?.length) return SOLO_TABS.some((t) => t.id === id) ? id : null;
+    if (pages.some((p) => p.id === id)) return id;
+    const widget = id === "about" ? "intro" : id;
+    return pages.find((p) => p.widgets.includes(widget))?.id ?? (id === "about" ? pages[0].id : null);
   };
-  const [pickedTab, setPickedTab] = useState<SoloTab>(() => tabFromHash() ?? "services");
-  const tab: SoloTab = pickedTab === "portfolio" && gallery.length === 0 ? "services" : pickedTab;
+  const tabFromHash = (): string | null => {
+    const h = typeof window !== "undefined" ? window.location.hash.slice(1) : "";
+    if (h === "visit") return pageFor("about"); // links shared before About replaced Visit Us
+    return pageFor(h);
+  };
+  /** On a page of several widgets, bring the one asked for into view (#services, #portfolio). */
+  const showWidget = (id: string) => {
+    if (!pages?.length || pages.some((p) => p.id === id)) return false;
+    requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    return true;
+  };
+  const [pickedTab, setPickedTab] = useState<string>(() => tabFromHash() ?? (pages?.length ? pages[0].id : "services"));
+  const tab: string = !pages?.length && pickedTab === "portfolio" && gallery.length === 0 ? "services" : pickedTab;
+  const servicesTab = pages?.length ? pageFor("services") : "services";
+  // The links in the menu and footer: Solo's tabs, or the AI design's pages.
+  const pageLinks = pages?.length
+    ? [...pages.map((p) => ({ label: p.title, href: `#${p.id}` })), ...(pages.some((p) => p.id === "contact") ? [] : [{ label: "Contact", href: "#message" }])]
+    : [{ label: "About", href: "#about" }, { label: "Services", href: "#services" }, ...portfolioLink, { label: "Contact", href: "#message" }];
   const tabsTop = useRef<HTMLDivElement>(null);
   /** Where the tab bar sits under the fixed header. */
   const tabsY = () => (tabsTop.current?.getBoundingClientRect().top ?? 0) + window.scrollY - (document.querySelector("header")?.offsetHeight ?? 64);
-  const pickTab = (id: SoloTab) => {
-    setPickedTab(id);
+  const pickTab = (id: string) => {
+    setPickedTab(pageFor(id) ?? id);
     window.history.replaceState(null, "", `#${id}`);
+    if (showWidget(id)) return;
     // Scrolled down a long tab: start the new one from its top.
     if (window.scrollY > tabsY()) window.scrollTo({ top: tabsY() });
   };
@@ -73,6 +96,7 @@ export function useSoloSite({ store, slug, preselectedStaffId, preselectedServic
       const id = tabFromHash();
       if (!id) return;
       setPickedTab(id);
+      if (showWidget(h)) return;
       requestAnimationFrame(() => window.scrollTo({ top: tabsY(), behavior: "smooth" }));
     };
     open();
@@ -99,7 +123,7 @@ export function useSoloSite({ store, slug, preselectedStaffId, preselectedServic
   const [bookingOpen, setBookingOpen]                       = useState(false);
   // Services picked on the Services tab (up to two), booked together from the bar at the bottom.
   const [cart, setCart]                                     = useState<ServiceEntry[]>([]);
-  const barShown = !bookingOff && (tab === "services" || cart.length > 0);
+  const barShown = !bookingOff && (tab === servicesTab || cart.length > 0);
   const [cartAddons, setCartAddons]                         = useState<Record<number, number[]>>({});
   const [cartOpen, setCartOpen]                             = useState(false);
   /** The one service showing its add-ons. */
@@ -400,7 +424,7 @@ export function useSoloSite({ store, slug, preselectedStaffId, preselectedServic
     return serviceReviews[serviceId] ?? serviceReviews[String(serviceId)] ?? null;
   }
 
-  return { design, store, slug, preselectedStaffId, preselectedServiceId, services, setServices, serviceCategories, setServiceCategories, servicesLoading, setServicesLoading, reviews, setReviews, gallery, setGallery, portfolioLink, shop, setShop, knownClient, setKnownClient, shopView, setShopView, shopLinks, closeShop, tabFromHash, pickedTab, setPickedTab, tab, tabsTop, tabsY, pickTab, serviceReviews, setServiceReviews, team, setTeam, staffChoice, setStaffChoice, teamShown, priced, bookingOff, activeCategory, setActiveCategory, scrolled, setScrolled, menuOpen, setMenuOpen, bookingOpen, setBookingOpen, cart, setCart, barShown, cartAddons, setCartAddons, cartOpen, setCartOpen, expandedId, setExpandedId, addons, setAddons, serviceAddons, setServiceAddons, addonsFor, chosenFor, serviceQty, setServiceQty, qtyOf, inVisit, shownPrice, fromPrice, chosenAddons, cartTotal, cartFrom, cartCount, cartLines, visitPart, removeService, tooLong, setAddonQty, setServiceQuantity, expandService, tapService, toggleAddon, lightboxIndex, setLightboxIndex, photoLightbox, setPhotoLightbox, salonName, city, phoneHref, phoneDigits, phoneLabel, directionsUrl, isGoogleSourced, reviewCount, ratedReviews, avgRating, hours, cancelPolicyText, servicesBusy, setServicesBusy, servicesTry, setServicesTry, servicePages, setServicePages, preselectionApplied, selectTime, bookNow, chooseService, finishedBooking, whereLabel, categories, serviceCategoryNameById, filteredServices, getServiceReview };
+  return { design, pages, pageFor, pageLinks, servicesTab, store, slug, preselectedStaffId, preselectedServiceId, services, setServices, serviceCategories, setServiceCategories, servicesLoading, setServicesLoading, reviews, setReviews, gallery, setGallery, portfolioLink, shop, setShop, knownClient, setKnownClient, shopView, setShopView, shopLinks, closeShop, tabFromHash, pickedTab, setPickedTab, tab, tabsTop, tabsY, pickTab, serviceReviews, setServiceReviews, team, setTeam, staffChoice, setStaffChoice, teamShown, priced, bookingOff, activeCategory, setActiveCategory, scrolled, setScrolled, menuOpen, setMenuOpen, bookingOpen, setBookingOpen, cart, setCart, barShown, cartAddons, setCartAddons, cartOpen, setCartOpen, expandedId, setExpandedId, addons, setAddons, serviceAddons, setServiceAddons, addonsFor, chosenFor, serviceQty, setServiceQty, qtyOf, inVisit, shownPrice, fromPrice, chosenAddons, cartTotal, cartFrom, cartCount, cartLines, visitPart, removeService, tooLong, setAddonQty, setServiceQuantity, expandService, tapService, toggleAddon, lightboxIndex, setLightboxIndex, photoLightbox, setPhotoLightbox, salonName, city, phoneHref, phoneDigits, phoneLabel, directionsUrl, isGoogleSourced, reviewCount, ratedReviews, avgRating, hours, cancelPolicyText, servicesBusy, setServicesBusy, servicesTry, setServicesTry, servicePages, setServicePages, preselectionApplied, selectTime, bookNow, chooseService, finishedBooking, whereLabel, categories, serviceCategoryNameById, filteredServices, getServiceReview };
 }
 
 export type SoloSite = ReturnType<typeof useSoloSite>;
