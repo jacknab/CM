@@ -16,7 +16,7 @@ import { sendTwilioSms } from "../sms";
 import { sendEmail } from "../mail";
 import { emailButton, emailDetails, emailGreeting, emailNote, emailText } from "./emailLayout";
 import { creditRefusal, loadLimits, refundRefusal, spendSoFar } from "./supportPolicy";
-import { latestTrialEnd, trialEndRefusal } from "./trialLimit";
+import { MAX_TRIAL_EXTENSION_DAYS, MAX_TRIAL_TOTAL_DAYS, latestTrialEnd } from "./trialLimit";
 import { retryFailedCharge } from "../services/saas-billing";
 import { liftTrialSuspension } from "../services/trial-expiration";
 import { stripe, isStripeConfigured } from "./stripe";
@@ -115,7 +115,9 @@ export async function accountSummary(owner: VerifiedOwner) {
     business: owner.businessName,
     accountStatus: st.account_status ?? null,
     suspendedReason: st.suspended_reason ?? null,
-    trial: st.subscription_status === "trial" && st.trial_ends_at ? { endsOn: new Date(st.trial_ends_at).toDateString() } : null,
+    // A running or ended free trial, and how many more days Maril may still give (owner, 2026-11-11).
+    trial: (st.subscription_status === "trial" || st.subscription_status === "expired") && st.trial_ends_at
+      ? await trialFacts(owner.userId, new Date(st.trial_ends_at)) : null,
     plan: plan ? {
       name: plan.plan_name, status: plan.status, price: plan.price_cents != null ? `${money(plan.price_cents)} a ${plan.interval}` : null,
       nextChargeOn: plan.next_date ? new Date(plan.next_date).toDateString() : null, cancellingAtPeriodEnd: Boolean(plan.cancelling),
@@ -181,21 +183,44 @@ export async function retryPayment(owner: VerifiedOwner): Promise<string> {
   return result.message;
 }
 
-/** Up to 14 more days, never past the 74-day trial limit (lib/trialLimit.ts). */
+/** The trial's end, whether it has ended, and the days still allowed: 14 at a time, never past 74 days (lib/trialLimit.ts). */
+async function trialFacts(userId: string, endsAt: Date) {
+  const latest = await latestTrialEnd(userId);
+  const base = Math.max(Date.now(), endsAt.getTime());
+  const room = latest ? Math.floor((latest.getTime() - base) / 86_400_000) : MAX_TRIAL_EXTENSION_DAYS;
+  const ended = endsAt.getTime() <= Date.now();
+  return {
+    [ended ? "endedOn" : "endsOn"]: endsAt.toDateString(),
+    ended,
+    daysCanStillAdd: Math.max(0, Math.min(MAX_TRIAL_EXTENSION_DAYS, room)),
+    latestPossibleEnd: latest ? latest.toDateString() : null,
+  };
+}
+
+/**
+ * Extend the free trial: up to 14 days, never past 74 days from its start. Asking for more than is left gives what is
+ * left. An ended trial starts again from today, and its front desk, calendar, booking page and website open again.
+ */
 export async function extendTrial(owner: VerifiedOwner, days: number, reason: string): Promise<string> {
-  const add = Math.max(1, Math.min(14, Math.round(Number(days) || 0)));
+  const asked = Math.max(1, Math.min(MAX_TRIAL_EXTENSION_DAYS, Math.round(Number(days) || 0)));
   if (reason.trim().length < 5) return "Say why the trial is being extended.";
   const { rows: [u] } = await pool.query(`SELECT trial_ends_at, subscription_status FROM users WHERE id = $1`, [owner.userId]);
-  if (!u?.trial_ends_at) return "This account isn't on a trial.";
-  const base = Math.max(Date.now(), new Date(u.trial_ends_at).getTime());
-  const newEnd = new Date(base + add * 86_400_000);
-  const refusal = trialEndRefusal(newEnd, await latestTrialEnd(owner.userId));
-  if (refusal) return refusal;
+  if (!u?.trial_ends_at || (u.subscription_status !== "trial" && u.subscription_status !== "expired")) return "This account isn't on a free trial (it has a plan, or never had a trial), so there's nothing to extend.";
+  const facts = await trialFacts(owner.userId, new Date(u.trial_ends_at));
+  if (facts.daysCanStillAdd < 1) {
+    return `No days left to give: a free trial can run at most ${MAX_TRIAL_TOTAL_DAYS} days, and this one has reached it`
+      + `${facts.latestPossibleEnd ? ` (${facts.latestPossibleEnd})` : ""}. Offer the billing page link to choose a plan, or a ticket if there's a special reason for the team to review.`;
+  }
+  const add = Math.min(asked, facts.daysCanStillAdd);
+  const wasEnded = facts.ended;
+  const newEnd = new Date(Math.max(Date.now(), new Date(u.trial_ends_at).getTime()) + add * 86_400_000);
   await pool.query(`UPDATE users SET trial_ends_at = $1, subscription_status = 'trial' WHERE id = $2`, [newEnd, owner.userId]);
   await pool.query(`UPDATE store_subscriptions SET current_period_end = $1, status = 'trialing' WHERE store_id = $2 AND status IN ('trialing', 'trial', 'expired')`, [newEnd, owner.storeId]);
   await liftTrialSuspension(owner.storeId);
-  await log(owner.storeId, "trial_extended_by_support", { newTrialEnd: newEnd.toISOString(), reason });
-  return `Trial now ends ${newEnd.toDateString()}.`;
+  await log(owner.storeId, "trial_extended_by_support", { newTrialEnd: newEnd.toISOString(), days: add, asked, reason });
+  return `Added ${add} day${add === 1 ? "" : "s"}${add < asked ? ` (asked for ${asked}; that's all the ${MAX_TRIAL_TOTAL_DAYS}-day limit allows)` : ""}. `
+    + `The trial now ends ${newEnd.toDateString()}.${wasEnded ? " The front desk, calendar, online booking and website are open again now." : ""}`
+    + ` ${facts.daysCanStillAdd - add > 0 ? `${facts.daysCanStillAdd - add} more day(s) could still be added later.` : "That's the last extension this trial can have."}`;
 }
 
 export async function applyCredit(owner: VerifiedOwner, amount: number, reason: string): Promise<string> {

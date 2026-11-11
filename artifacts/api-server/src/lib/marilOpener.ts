@@ -12,13 +12,13 @@ import path from "node:path";
 import { SHAVEZ_ACCOUNT_SUPPORT_GREETING } from "./salesAgentTransfer";
 
 export type MarilOpenerKind = "direct" | "transferred";
-/** What the caller hears first. "Cert-ex-ah" is how the brand is spoken (CERTXA_SPOKEN_ALIAS). */
+/** What the caller hears first. "Sir-Tex-uh" is how the brand is spoken (CERTXA_SPOKEN_ALIAS). */
 export const MARIL_OPENER_TEXT: Record<MarilOpenerKind, string> = {
-  direct: "Thanks for calling Cert-ex-ah Account Services, this is Maril.",
+  direct: "Thanks for calling Sir-Tex-uh Account Services, this is Maril.",
   transferred: SHAVEZ_ACCOUNT_SUPPORT_GREETING,
 };
 const VOICE = "marin";
-const STYLE = "Warm, relaxed and friendly phone voice, like a helpful account specialist answering a call. Natural, steady pace; not slow.";
+const STYLE = "Warm, relaxed and friendly phone voice, like a helpful account specialist answering a call. Natural, steady pace; not slow. Say the company name as three beats: Sir, Tex (as in Texas, stressed), uh.";
 const DIR = process.env.VOICE_CACHE_DIR || "/var/lib/certxa/voice-cache";
 const FRAME_BYTES = 160; // 20 ms of 8 kHz μ-law
 

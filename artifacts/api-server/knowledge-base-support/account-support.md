@@ -8,7 +8,9 @@ Use this to answer account and billing questions. Account-specific facts (their 
 
 ## Trial
 - A new Certxa Salon account starts a 60-day free trial; no card is asked for to start.
-- A trial can be extended, but never past 74 days from its start. Maril can extend by up to 14 days at a time within that limit.
+- A trial can be extended, but never past 74 days from its start. Maril can extend by up to 14 days at a time within that limit; asking for more than is left gives what is left.
+- An ended trial can be extended too: it restarts from today, and the front desk, calendar, online booking page and website open again straight away.
+- Once a trial has reached 74 days it can't be extended on the phone: the owner chooses a plan on the Billing page (Maril can e-mail the link), or Maril opens a ticket when there's a special reason (an outage or bug that cost them days) for the team to review.
 - When a trial ends without a plan, the front desk (/nail), calendar, online booking page and the salon's website stop at once — there is no grace period. Settings, clients and records stay reachable. Choosing a plan on the Billing page, or an extension, opens everything again.
 
 ## Paying for a plan

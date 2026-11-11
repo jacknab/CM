@@ -28,6 +28,8 @@ const transcript = [
 describe("Tom sales caller memory", () => {
   it("keeps the written brand and domain canonical when sanitizing the spoken alias", () => {
     expect(canonicalizeSpokenBrandForText("Our salon uses Sir Text uh. Visit Sir Text uh dot com.")).toBe("Our salon uses Certxa. Visit Certxa.com.");
+    expect(canonicalizeSpokenBrandForText("Thanks for calling Sir-Tex-uh Account Services. Visit Sir-Tex-uh dot com.")).toBe("Thanks for calling Certxa Account Services. Visit Certxa.com.");
+    expect(canonicalizeSpokenBrandForText("Cert-ex-ah, Sir Tex a")).toBe("Certxa, Certxa");
     expect(canonicalizeSpokenBrandForText("It is spelled C-E-R-T-X-A.")).toBe("It is spelled C-E-R-T-X-A.");
     expect(canonicalizeSpokenBrandForText("The word textile is unrelated.")).toBe("The word textile is unrelated.");
   });

@@ -12,11 +12,12 @@ export function normalizeIdentity(value: unknown): string {
     : "";
 }
 
-/** Convert Tom's pronunciation-only alias back to Certxa in saved written transcripts. */
+/** Convert the pronunciation-only alias (Sir-Tex-uh; older Sir Text uh / Cert-ex-ah) back to Certxa in saved written transcripts. */
+const SPOKEN_BRAND = String.raw`(?:sir[\s-]+text?[\s-]+(?:uh|a)|cert[\s-]+ex[\s-]+ah)`;
 export function canonicalizeSpokenBrandForText(text: string): string {
   return text
-    .replace(/\bsir\s+text\s+uh\s*(?:dot|period)?\s*com\b/gi, "Certxa.com")
-    .replace(/\bsir\s+text\s+uh\b/gi, "Certxa");
+    .replace(new RegExp(String.raw`\b${SPOKEN_BRAND}\s*(?:dot|period)?\s*com\b`, "gi"), "Certxa.com")
+    .replace(new RegExp(String.raw`\b${SPOKEN_BRAND}\b`, "gi"), "Certxa");
 }
 
 /** Only caller-volunteered identity values are compared. Never reveal stored values to ask a challenge question. */

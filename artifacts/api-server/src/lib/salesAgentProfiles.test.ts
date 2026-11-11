@@ -29,7 +29,7 @@ describe("independent Certxa sales-agent profiles", () => {
     expect(greetings.size).toBe(SHAVEZ_SALES_AGENT.greetings.length);
     expect(SHAVEZ_SALES_AGENT.name).toBe("Shavez");
     expect(SHAVEZ_SALES_AGENT.spokenName).toBe("Maril");
-    expect([...greetings].every((greeting) => greeting.includes("Maril") && greeting.includes("Sir Text uh"))).toBe(true);
+    expect([...greetings].every((greeting) => greeting.includes("Maril") && greeting.includes("Sir-Tex-uh"))).toBe(true);
     expect([...greetings].some((greeting) => /Shavez|spell|S-H-A-V-E-Z/i.test(greeting))).toBe(false);
     expect(pickAgentGreeting(TOM_SALES_AGENT, () => 0)).toContain("Tom");
     expect(pickAgentGreeting(TOM_SALES_AGENT, () => 0)).toContain("May I ask who I'm speaking with?");
