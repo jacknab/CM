@@ -20,7 +20,7 @@ import { isSoloUser } from "./soloApiAllowList";
 /** First path segments a Solo account may open. */
 const SOLO_PAGES = new Set([
   // The Solo dashboard and what the app opens on the website
-  "solo", "pro-plus", "pro-credits", "pro-payments-setup",
+  "solo", "pro-plus", "pro-credits", "pro-payments-setup", "pro-google-connect",
   // Signing in and out
   "auth", "app-login", "forgot-password", "reset-password",
   // Public pages: booking sites, booking links, payments, check-in, receipts, reviews

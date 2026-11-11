@@ -4337,6 +4337,9 @@ export async function registerRoutes(
   // Claiming a Certxa-prepared salon page from the link Tom texts (routes/salonClaim.ts, lib/salonClaim.ts).
   const { default: salonClaimRouter } = await import("./routes/salonClaim.js");
   app.use(salonClaimRouter);
+  // Connecting Google Business Profile from the Certxa Pro app (routes/proGoogleConnect.ts).
+  const { default: proGoogleConnectRouter } = await import("./routes/proGoogleConnect.js");
+  app.use(proGoogleConnectRouter);
   // Native JSON contract after authentication, trial and suspension gates, but
   // before the older web endpoints. The router passes non-native calls through.
   const { default: certxaProRouter } = await import("./routes/certxaPro.js");

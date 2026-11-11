@@ -17,10 +17,15 @@ type AppWebLink = { scope: "billing"; storeId: number | null; lastSeen: number }
 
 /** Where a billing sign-in may go: its pages, and the data those pages read. Card payment setup (owner, 2026-11-10;
  *  routes/proPaymentsSetup.ts) uses the same sign-in for Stripe's embedded onboarding and nothing else. */
-const PAGE_PATHS = ["/solo/billing", "/pro-plus", "/pro-credits", "/pro-payments-setup"];
+const PAGE_PATHS = ["/solo/billing", "/pro-plus", "/pro-credits", "/pro-payments-setup", "/pro-google-connect"];
 const API_PATHS = [
   "/api/solo/plus", "/api/solo/credits", "/api/solo/billing/history", "/api/solo/billing/card",
   "/api/payments/stripe/status", "/api/payments/stripe/account-session", "/api/payments/stripe/sync",
+  // Connecting Google Business Profile from the app (owner, 2026-11-11; routes/proGoogleConnect.ts): Google's sign-in
+  // and choosing the business, nothing else of Google's.
+  "/api/google-business/auth-url", "/api/google-business/callback", "/api/google-business/connection-result",
+  "/api/google-business/locations", "/api/google-business/connect-location", "/api/google-business/retry-fetch-accounts",
+  "/api/google-business/sync-reviews",
   "/api/app-web-session/end", "/api/auth/user", "/api/auth/logout",
 ];
 /** Exactly these (method + address, nothing under them): Business Phone's billing, not its calls, texts or settings. */

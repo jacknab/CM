@@ -15,10 +15,18 @@ import { eq } from "drizzle-orm";
 import crypto from "crypto";
 import { resolveStorePlan } from "./featureAccess";
 
-/** Solo (Certxa Pro app) businesses always use Certxa's own reviews, never Google (owner, 2026-10-30). */
+/**
+ * Solo (Certxa Pro app) businesses use Certxa's own reviews (owner, 2026-10-30) — until they connect their Google
+ * Business Profile in the app (owner, 2026-11-11): then their Google reviews show on their website, review links send
+ * clients to Google, and they read and reply to them in the app, like any business with Google connected.
+ */
 export async function usesBuiltInReviewsOnly(storeId: number): Promise<boolean> {
   const plan = await resolveStorePlan(storeId).catch(() => null);
-  return isSoloPlanCode(plan?.planCode);
+  if (!isSoloPlanCode(plan?.planCode)) return false;
+  const connected = await pool.query(
+    `SELECT 1 FROM google_business_profiles WHERE store_id = $1 AND is_connected = true AND location_id IS NOT NULL
+     UNION ALL SELECT 1 FROM google_business_locations WHERE store_id = $1 AND is_selected = true LIMIT 1`, [storeId]).catch(() => ({ rowCount: 0 }));
+  return !connected.rowCount;
 }
 
 /**

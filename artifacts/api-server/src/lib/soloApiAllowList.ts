@@ -44,6 +44,8 @@ export const SOLO_API_ALLOW: string[] = [
   "/api/payments/overview", "/api/payments/stripe/*", "/api/payments/terminal/*", "/api/payments/transactions/*",
   "/api/pos/email-receipt", "/api/pos/sms-receipt", "/api/pos-settings/*", "/api/tip-presets/*",
   "/api/pro/*", "/api/reviews/*",
+  // Google Business Profile, connected from the app's Settings (owner, 2026-11-11): connect, reviews and replies.
+  "/api/google-business/*",
   // AI Website Builder (owner, 2026-11-09): every account, Certxa Pro included.
   "/api/ai-site/*",
   "/api/stores/*", "/api/user/delete-account", "/api/waitlist/*",
