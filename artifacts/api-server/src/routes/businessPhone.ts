@@ -75,6 +75,11 @@ function validTwilio(req: Request): boolean {
 function failed(res: Response, where: string, error: unknown) {
   // Never log request bodies, phone numbers or credentials.
   console.error(`[business-phone] ${where} failed:`, error instanceof Error ? error.message : "unknown error");
+  // Certxa's Twilio account itself is suspended or closed (Twilio 20003 "… is not active"): nothing the pro can retry.
+  const e = error as { code?: number; message?: string } | null;
+  if (e?.code === 20003 || /is not active/i.test(e?.message ?? "")) {
+    return res.status(503).json({ message: "Business Phone isn't available right now. Please try again later." });
+  }
   return res.status(500).json({ message: "Something went wrong. Try again." });
 }
 async function storeOf(req: Request, res: Response): Promise<number | null> {
