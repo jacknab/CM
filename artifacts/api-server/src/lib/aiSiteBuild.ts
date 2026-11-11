@@ -75,7 +75,7 @@ export const siteSpecSchema = z.object({
   tagline: z.string().max(80),
   layout: z.enum(["tabs", "one-page"]).describe("tabs: one page shows at a time; one-page: everything on one long page"),
   pages: z.array(pageSchema).min(1).max(5),
-  summary: z.string().max(700).describe("Two or three plain sentences telling the owner what you built and why"),
+  summary: z.string().min(40).max(700).describe("Two or three plain sentences telling the owner what you built and why: the pages and the feel"),
 });
 export type SiteSpec = z.infer<typeof siteSpecSchema>;
 export type SiteBlock = z.infer<typeof siteBlockSchema>;
