@@ -147,7 +147,9 @@ function ReviewPhotos({ urls, large }: { urls?: string[] | string | null; large?
     <div className="mt-3 flex flex-wrap gap-2" data-testid="solo-review-photos">
       {list.map((url) => (
         <a key={url} href={url} target="_blank" rel="noopener noreferrer" aria-label="Open the review photo" className={large ? "block w-full" : undefined}>
-          <img src={url} alt="Photo from the client's review" loading="lazy" className={large ? "aspect-[4/3] w-full rounded-xl object-cover" : "h-40 w-40 rounded-xl object-cover"} />
+          <img src={url} alt="Photo from the client's review" loading="lazy"
+            // A Google review photo link that no longer loads (they expire) is hidden, never shown broken (2026-11-11).
+            onError={(e) => { const box = e.currentTarget.closest("a") as HTMLElement | null; (box ?? e.currentTarget).style.display = "none"; }} className={large ? "aspect-[4/3] w-full rounded-xl object-cover" : "h-40 w-40 rounded-xl object-cover"} />
         </a>
       ))}
     </div>
