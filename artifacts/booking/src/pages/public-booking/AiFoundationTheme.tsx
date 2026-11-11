@@ -163,7 +163,7 @@ function ReviewerAvatar({ name, photoUrl }: { name: string; photoUrl?: string | 
 
 /** The photos a client added to their review, tap to see one full size. */
 function ReviewPhotos({ urls, large }: { urls?: string[] | string | null; large?: boolean }) {
-  const list = Array.isArray(urls) ? urls : urls ? [urls] : [];
+  const list = parseReviewImageUrls(urls);
   if (list.length === 0) return null;
   return (
     <div className="mt-3 flex flex-wrap gap-2" data-testid="solo-review-photos">
@@ -345,8 +345,9 @@ function formatTime12h(time: string): string {
   return m === 0 ? `${hour} ${period}` : `${hour}:${String(m).padStart(2,"0")} ${period}`;
 }
 
-function parseReviewImageUrls(input?: string | null): string[] {
+function parseReviewImageUrls(input?: string[] | string | null): string[] {
   if (!input) return [];
+  if (Array.isArray(input)) return input.filter((u) => typeof u === "string");
   try {
     const parsed = JSON.parse(input);
     return Array.isArray(parsed) ? parsed.filter((u) => typeof u === "string") : [];
@@ -2189,9 +2190,10 @@ export default function AiFoundationTheme({ store, slug, preselectedStaffId, pre
         itemScope
         itemType="https://schema.org/LocalBusiness"
       >
-        {/* The AI design's home blocks (AiSiteTheme.tsx AiBlocks); every booking button opens the Services tab. */}
+        {/* The AI design's home blocks (AiSiteTheme.tsx AiBlocks); every booking button opens the Services tab. No
+            services list here: the Services tab has them all (owner, 2026-11-11). */}
         <div className="mx-auto w-full max-w-5xl px-4 text-left" data-testid="ai-foundation-blocks">
-          <AiBlocks spec={ai.spec} facts={ai.facts} onBook={() => pickTab("services")} />
+          <AiBlocks spec={{ ...ai.spec, home: ai.spec.home.filter((b) => b.type !== "priceList") }} facts={ai.facts} onBook={() => pickTab("services")} />
         </div>
         <div className="mx-auto w-full max-w-2xl px-5 text-center sm:px-8">
           {cancelPolicyText && (

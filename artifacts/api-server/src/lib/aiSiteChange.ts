@@ -20,7 +20,7 @@ current site spec (JSON). Return the WHOLE spec with ONLY the requested change m
 colour and font exactly as it was.
 
 Rules:
-- Same block types and limits as before. Keep a hero first on Home and a callToAction last; Menu keeps its priceList.
+- Same block types and limits as before. Keep a hero first on Home and a callToAction last; no priceList on Home (the Services tab lists them); Menu keeps its priceList.
 - Prices, durations, hours, reviews, photos, phone and address are filled in by Certxa, not written in the spec. If the
   owner wants to change one of those, leave the spec unchanged (changed: false) and tell them where: prices and services
   in Settings › Catalog, hours in Settings › Hours, phone and name in Settings › Business details, address in Settings ›
