@@ -4,7 +4,7 @@
  */
 import { BusyError, getPublicJson } from "../publicFetch";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Calendar, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Loader2, MapPin, Phone, Star, X } from "lucide-react";
+import { ArrowLeft, Calendar, Check, CheckCircle2, ChevronLeft, ChevronRight, Clock, Loader2, MapPin, Phone, Star, Users, X } from "lucide-react";
 import { formatInTz } from "@/lib/timezone";
 import { TimeZoneNote } from "../TimeZoneNote";
 import { useCancellationPolicy } from "@/hooks/use-public-booking";
@@ -197,7 +197,7 @@ export interface GalleryPhoto {
 }
 
 // place, date and time are steps of their own (owner, 2026-11-07): where, then the month, then the times.
-export type BookingStep = "place" | "date" | "time" | "details" | "card" | "payment" | "success";
+export type BookingStep = "staff" | "place" | "date" | "time" | "details" | "card" | "payment" | "success";
 
 export interface BloomThemeProps {
   store: StoreData;
@@ -466,6 +466,8 @@ export interface BookingPanelProps {
   onStaffChoice: (staffId: number | null) => void;
   /** From a personal booking link (?c=…) the pro texted: the client's details, filled in on the form. */
   knownClient?: { name: string; phone: string; email: string } | null;
+  /** Aspen (owner, 2026-11-07): booking starts with a Staff step, "Anyone available" first, then each professional. */
+  staffFirst?: boolean;
 }
 
 export function BookingPanel({
@@ -482,8 +484,9 @@ export function BookingPanel({
   staffChoice,
   onStaffChoice,
   knownClient,
+  staffFirst = false,
 }: BookingPanelProps) {
-  const [step, setStep]                 = useState<BookingStep>("date");
+  const [step, setStep]                 = useState<BookingStep>(staffFirst ? "staff" : "date");
   // Up to two services on one visit (twoServices.ts); the first decides the visit's start.
   const selectedService = selected[0] ?? null;
   const picked = selected.map((x) => ({ id: x.id, duration: x.duration ?? 60 }));
@@ -496,6 +499,10 @@ export function BookingPanel({
   const priceIsFrom = priced && !selectedSlotForPrice && staffChoice == null && selected.some((x) => pricesVary(x, team));
   // Who can be chosen: the professionals who do the first service (another may do the second, as before).
   const choosable = selectedService ? team.filter((m) => m.serviceIds.includes(Number(selectedService.id))) : [];
+  // The Staff step (Aspen, owner 2026-11-07): everyone who does every service chosen; when nobody does them all, the
+  // ones who do the first (another professional may then do the second, as before).
+  const doesAll = team.filter((m) => selected.every((x) => m.serviceIds.includes(Number(x.id))));
+  const staffOptions = doesAll.length ? doesAll : choosable;
   const staffFilter = staffChoice ?? preselectedStaffId;
   const addonCounts = chosenAddons.reduce((map, a) => map.set(a.name, (map.get(a.name) ?? 0) + 1), new Map<string, number>());
   const summary = [...selected.map((x) => x.name), ...[...addonCounts].map(([label, n]) => (n > 1 ? `${label} × ${n}` : label))].join(" + ");
@@ -562,7 +569,7 @@ export function BookingPanel({
   // Reset on open
   useEffect(() => {
     if (!isOpen) return;
-    setStep(needsPlace ? "place" : "date");
+    setStep(staffFirst ? "staff" : needsPlace ? "place" : "date");
     setHold(null);
     setSelectedDate(firstWorkingDay());
     setSlots([]);
@@ -707,7 +714,7 @@ export function BookingPanel({
           style={{ borderColor: C.cream200, background: "#fff" }}
         >
           <div className="flex items-center gap-3">
-            {(step === "place" || step === "date" || step === "time" || step === "details" || step === "card") && (
+            {(step === "staff" || step === "place" || step === "date" || step === "time" || step === "details" || step === "card") && (
               <button
                 type="button"
                 onClick={() => {
@@ -715,6 +722,7 @@ export function BookingPanel({
                   else if (step === "details") setStep("time");
                   else if (step === "time") setStep("date");
                   else if (step === "date" && needsPlace) setStep("place");
+                  else if (staffFirst && (step === "date" || step === "place")) setStep("staff");
                   else onClose();
                 }}
                 data-testid="solo-booking-back"
@@ -752,7 +760,7 @@ export function BookingPanel({
         {step !== "success" && (
           <div className="flex gap-2 px-5 pt-3">
             {(() => {
-              const shown: [BookingStep | "service", string][] = [["service", "Service"], ...(needsPlace ? [["place", "Location"] as [BookingStep, string]] : []), ["date", "Date"], ["time", "Time"], ["details", "Your details"]];
+              const shown: [BookingStep | "service", string][] = [["service", "Service"], ...(staffFirst ? [["staff", "Staff"] as [BookingStep, string]] : []), ...(needsPlace ? [["place", "Location"] as [BookingStep, string]] : []), ["date", "Date"], ["time", "Time"], ["details", "Your details"]];
               const order = [...shown.map(([k]) => k), step === "card" ? "card" : "payment"];
               return shown.map(([key, label], i) => ({ key, label, reached: order.indexOf(step) >= i }));
             })().map(({ key, label, reached }) => {
@@ -768,6 +776,47 @@ export function BookingPanel({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto">
+
+          {/* STEP: staff — who does it (Aspen, owner 2026-11-07): "Anyone available" first, then each professional */}
+          {staffFirst && step === "staff" && (
+            <div className="px-5 py-5" data-testid="solo-step-staff">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-semibold" style={{ fontFamily: "'Playfair Display', Georgia, serif", color: C.ink900 }}>
+                <Users className="h-4 w-4" style={{ color: C.gold700 }} />
+                Choose your professional
+              </h3>
+              <div className="space-y-2.5" role="radiogroup" aria-label="Choose a professional">
+                {[{ id: null as number | null, name: "Anyone available", role: "First available professional", avatarUrl: null as string | null },
+                  ...staffOptions.map((m) => ({ id: m.id as number | null, name: m.name, role: m.role, avatarUrl: m.avatarUrl }))].map((o) => {
+                  const on = (staffChoice ?? null) === o.id;
+                  const price = priced && o.id != null ? selected.reduce((sum, x) => sum + proPrice(x, team, o.id), 0) + chosenAddons.reduce((sum, a) => sum + (Number(a.price) || 0), 0) : null;
+                  return (
+                    <button
+                      key={o.id ?? "any"}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => { onStaffChoice(o.id); setStep(needsPlace ? "place" : "date"); }}
+                      data-testid={`solo-staff-${o.id ?? "any"}`}
+                      className="flex w-full items-center gap-3 rounded-2xl border bg-white p-3.5 text-left transition-colors"
+                      style={{ borderColor: on ? C.gold700 : C.cream200, boxShadow: on ? `0 0 0 1px ${C.gold700}` : undefined }}
+                    >
+                      {o.id == null
+                        ? <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full" style={{ background: C.cream100 }} aria-hidden="true"><Users className="h-5 w-5" style={{ color: C.ink700 }} /></span>
+                        : o.avatarUrl
+                          ? <img src={o.avatarUrl} alt="" loading="lazy" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                          : <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-lg font-semibold" style={{ background: C.cream100, color: C.ink700 }} aria-hidden="true">{o.name.trim().charAt(0).toUpperCase()}</span>}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[15px] font-semibold" style={{ color: C.ink900 }}>{o.name}</span>
+                        {o.role && <span className="block truncate text-xs" style={{ color: C.ink500 }}>{o.role}</span>}
+                      </span>
+                      {price != null && <span className="shrink-0 text-sm font-semibold" style={{ color: C.ink800 }}>{formatPrice(price + hc.travelFee)}</span>}
+                      <ChevronRight className="h-4 w-4 shrink-0" style={{ color: C.ink400 }} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* STEP: place — where the visit is (owner, 2026-11-07: a step of its own) */}
           {step === "place" && (
@@ -801,7 +850,7 @@ export function BookingPanel({
                 <Calendar className="h-4 w-4" style={{ color: C.gold700 }} />
                 Pick a Date
               </h3>
-              {choosable.length >= 2 && (
+              {!staffFirst && choosable.length >= 2 && (
                 <div className="mb-5" data-testid="solo-pro-choice">
                   <p className="mb-2 text-xs font-semibold uppercase tracking-widest" style={{ color: C.ink400 }}>Professional</p>
                   <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Choose a professional">

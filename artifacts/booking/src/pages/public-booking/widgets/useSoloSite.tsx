@@ -15,7 +15,10 @@ import { MAX_VISIT_MINUTES, canAddService } from "../twoServices";
 import { AddonData, ServiceAddonData } from "../types";
 import { ServiceEntry, ServiceCategoryEntry, GoogleReviewEntry, ServiceReviewEntry, TeamMember, proPrice, pricesVary, SoloTab, SOLO_TABS, GalleryPhoto, extractCity, formatBusinessHours, buildDirectionsUrl, type BloomThemeProps } from "./shared";
 
-export function useSoloSite({ store, slug, preselectedStaffId, preselectedServiceId }: BloomThemeProps) {
+/** "aspen": booking starts with a Staff step and the chat shows (AspenTheme, owner 2026-11-07); "solo" otherwise. */
+export type SiteDesign = "solo" | "aspen";
+
+export function useSoloSite({ store, slug, preselectedStaffId, preselectedServiceId }: BloomThemeProps, design: SiteDesign = "solo") {
   // Page data
   const [services, setServices]   = useState<ServiceEntry[]>([]);
   const [serviceCategories, setServiceCategories] = useState<ServiceCategoryEntry[]>([]);
@@ -397,7 +400,7 @@ export function useSoloSite({ store, slug, preselectedStaffId, preselectedServic
     return serviceReviews[serviceId] ?? serviceReviews[String(serviceId)] ?? null;
   }
 
-  return { store, slug, preselectedStaffId, preselectedServiceId, services, setServices, serviceCategories, setServiceCategories, servicesLoading, setServicesLoading, reviews, setReviews, gallery, setGallery, portfolioLink, shop, setShop, knownClient, setKnownClient, shopView, setShopView, shopLinks, closeShop, tabFromHash, pickedTab, setPickedTab, tab, tabsTop, tabsY, pickTab, serviceReviews, setServiceReviews, team, setTeam, staffChoice, setStaffChoice, teamShown, priced, bookingOff, activeCategory, setActiveCategory, scrolled, setScrolled, menuOpen, setMenuOpen, bookingOpen, setBookingOpen, cart, setCart, barShown, cartAddons, setCartAddons, cartOpen, setCartOpen, expandedId, setExpandedId, addons, setAddons, serviceAddons, setServiceAddons, addonsFor, chosenFor, serviceQty, setServiceQty, qtyOf, inVisit, shownPrice, fromPrice, chosenAddons, cartTotal, cartFrom, cartCount, cartLines, visitPart, removeService, tooLong, setAddonQty, setServiceQuantity, expandService, tapService, toggleAddon, lightboxIndex, setLightboxIndex, photoLightbox, setPhotoLightbox, salonName, city, phoneHref, phoneDigits, phoneLabel, directionsUrl, isGoogleSourced, reviewCount, ratedReviews, avgRating, hours, cancelPolicyText, servicesBusy, setServicesBusy, servicesTry, setServicesTry, servicePages, setServicePages, preselectionApplied, selectTime, bookNow, chooseService, finishedBooking, whereLabel, categories, serviceCategoryNameById, filteredServices, getServiceReview };
+  return { design, store, slug, preselectedStaffId, preselectedServiceId, services, setServices, serviceCategories, setServiceCategories, servicesLoading, setServicesLoading, reviews, setReviews, gallery, setGallery, portfolioLink, shop, setShop, knownClient, setKnownClient, shopView, setShopView, shopLinks, closeShop, tabFromHash, pickedTab, setPickedTab, tab, tabsTop, tabsY, pickTab, serviceReviews, setServiceReviews, team, setTeam, staffChoice, setStaffChoice, teamShown, priced, bookingOff, activeCategory, setActiveCategory, scrolled, setScrolled, menuOpen, setMenuOpen, bookingOpen, setBookingOpen, cart, setCart, barShown, cartAddons, setCartAddons, cartOpen, setCartOpen, expandedId, setExpandedId, addons, setAddons, serviceAddons, setServiceAddons, addonsFor, chosenFor, serviceQty, setServiceQty, qtyOf, inVisit, shownPrice, fromPrice, chosenAddons, cartTotal, cartFrom, cartCount, cartLines, visitPart, removeService, tooLong, setAddonQty, setServiceQuantity, expandService, tapService, toggleAddon, lightboxIndex, setLightboxIndex, photoLightbox, setPhotoLightbox, salonName, city, phoneHref, phoneDigits, phoneLabel, directionsUrl, isGoogleSourced, reviewCount, ratedReviews, avgRating, hours, cancelPolicyText, servicesBusy, setServicesBusy, servicesTry, setServicesTry, servicePages, setServicePages, preselectionApplied, selectTime, bookNow, chooseService, finishedBooking, whereLabel, categories, serviceCategoryNameById, filteredServices, getServiceReview };
 }
 
 export type SoloSite = ReturnType<typeof useSoloSite>;

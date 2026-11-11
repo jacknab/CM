@@ -6,13 +6,14 @@ import SoloShop from "../SoloShop";
 import SiteLegal from "../SiteLegal";
 import SiteBalance from "../SiteBalance";
 import SiteMessage from "../SiteMessage";
+import SiteChat from "../SiteChat";
 import { SoloCart } from "../SoloCart";
 import { BookingPanel } from "./shared";
 import { useSite } from "./useSoloSite";
 
 /** Pages that open over the site: legal, balances, message, booking, cart and shop. */
 export function SiteOverlays() {
-  const { store, slug, preselectedStaffId, shop, knownClient, shopView, closeShop, team, staffChoice, setStaffChoice, bookingOpen, setBookingOpen, cart, setCart, barShown, setCartAddons, cartOpen, setCartOpen, setServiceQty, inVisit, chosenAddons, cartTotal, cartLines, removeService, salonName, phoneHref, phoneLabel, directionsUrl, selectTime, bookNow, finishedBooking } = useSite();
+  const { design, store, slug, preselectedStaffId, shop, knownClient, shopView, closeShop, team, staffChoice, setStaffChoice, bookingOpen, setBookingOpen, cart, setCart, barShown, setCartAddons, cartOpen, setCartOpen, setServiceQty, inVisit, chosenAddons, cartTotal, cartLines, removeService, salonName, phoneHref, phoneLabel, directionsUrl, selectTime, bookNow, finishedBooking } = useSite();
   return (
     <>
       <SiteLegal store={store} />
@@ -20,10 +21,11 @@ export function SiteOverlays() {
       {/* Send a message (#message): to the pro's inbox in the app (SiteMessage.tsx). */}
       <SiteMessage store={store} slug={slug} />
       {/* Chat with the pro, while they're available for live chat (SiteChat.tsx); above the booking bar when it shows.
-          Hidden on Solo for now (owner, 2026-11-07): put the line below back to show it again.
-      <SiteChat store={store} slug={slug} raised={barShown} /> */}
+          Aspen only: hidden on Solo for now (owner, 2026-11-07). */}
+      {design === "aspen" && <SiteChat store={store} slug={slug} raised={barShown} />}
       {/* ── BOOKING PANEL ─────────────────────────────────────────────────── */}
       <BookingPanel
+        staffFirst={design === "aspen"}
         knownClient={knownClient}
         isOpen={bookingOpen}
         onClose={() => {

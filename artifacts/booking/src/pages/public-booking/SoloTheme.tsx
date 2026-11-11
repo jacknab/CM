@@ -13,7 +13,7 @@
 import { siteStyle } from "./SiteLook";
 import { PreparedNotice } from "./PreparedNotice";
 import { C, SOLO_TABS, VisitUs, type BloomThemeProps } from "./widgets/shared";
-import { SoloSiteContext, useSoloSite } from "./widgets/useSoloSite";
+import { SoloSiteContext, useSoloSite, type SiteDesign } from "./widgets/useSoloSite";
 import { SiteOverlays } from "./widgets/SiteOverlays";
 import { SiteHeader } from "./widgets/SiteHeader";
 import { ServicesWidget } from "./widgets/ServicesWidget";
@@ -23,7 +23,12 @@ import { BookingBar } from "./widgets/BookingBar";
 import { SiteFooter } from "./widgets/SiteFooter";
 
 export default function SoloTheme(props: BloomThemeProps) {
-  const site = useSoloSite(props);
+  return <SoloLayout {...props} design="solo" />;
+}
+
+/** Solo's order of the widgets; Aspen uses it too, without Visit Us (AspenTheme.tsx). */
+export function SoloLayout({ design, ...props }: BloomThemeProps & { design: SiteDesign }) {
+  const site = useSoloSite(props, design);
   const { store, gallery, tab, tabsTop, pickTab, salonName, city, phoneHref, phoneLabel, hours } = site;
   return (
     <SoloSiteContext.Provider value={site}>
@@ -95,8 +100,8 @@ export default function SoloTheme(props: BloomThemeProps) {
 
       <BookingBar />
 
-      {/* ── VISIT US (copied from the Lacquer template, owner 2026-11-07) ──── */}
-      <VisitUs store={store} phoneHref={phoneHref} phoneLabel={phoneLabel} hours={hours} />
+      {/* ── VISIT US (copied from the Lacquer template, owner 2026-11-07); not on Aspen ──── */}
+      {design === "solo" && <VisitUs store={store} phoneHref={phoneHref} phoneLabel={phoneLabel} hours={hours} />}
 
       <SiteFooter />
     </div>
