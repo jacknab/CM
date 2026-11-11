@@ -274,6 +274,11 @@ export default function PortalScreen() {
     void AsyncStorage.setItem(KIOSK_SLUG_KEY, s).catch(() => {});
   }, []);
   const webViewRef          = useRef<React.ElementRef<typeof WebView>>(null);
+  // When Android stops the page's engine (out of memory or a crash) the WebView can't be used again and, unhandled,
+  // Android closes the whole app (2026-11-11: the customer screen kept closing). Handled: a fresh WebView loads the
+  // page again. Each time is counted for the device health report (DEVICE_INFO webviewRestarts).
+  const [webViewKey, setWebViewKey] = useState(0);
+  const webViewGone = useRef<{ count: number; lastAt: string | null; crashed: boolean | null }>({ count: 0, lastAt: null, crashed: null });
   const rpcMap              = useRef<Map<string, { resolve: (d: any) => void; reject: (e: Error) => void }>>(new Map());
   const router              = useRouter();
 
@@ -608,7 +613,7 @@ export default function PortalScreen() {
                 reply({ ok: true, info: {
                   updateId: Updates.updateId ?? null, updateCreatedAt: Updates.createdAt?.toISOString?.() ?? null,
                   channel: Updates.channel ?? null, runtimeVersion: Updates.runtimeVersion ?? null, embedded: Updates.isEmbeddedLaunch,
-                  appBuild: APP_BUILD_LABEL, db: await checkDatabase(),
+                  appBuild: APP_BUILD_LABEL, db: await checkDatabase(), webviewRestarts: webViewGone.current,
                   printer: saved ? { type: saved.type, address: saved.address, name: saved.name ?? null } : null,
                 } });
                 return;
@@ -987,6 +992,7 @@ export default function PortalScreen() {
       <StatusBar hidden />
       {/* WebView — always mounted, even when POS modal is showing */}
       <WebView
+        key={webViewKey}
         ref={webViewRef}
         source={{ uri: deviceRole === 'frontdesk' ? ROLE_URL.frontdesk
           : surface === 'kiosk' && kioskSlug ? `${PORTAL_ORIGIN}/kiosk/${kioskSlug}`
@@ -1007,6 +1013,16 @@ export default function PortalScreen() {
           setNavError(e.nativeEvent.description || 'Failed to load portal');
         }}
         onMessage={onMessage}
+        onRenderProcessGone={(e) => {
+          webViewGone.current = { count: webViewGone.current.count + 1, lastAt: new Date().toISOString(), crashed: e.nativeEvent?.didCrash ?? null };
+          console.warn('[webview] page engine stopped', webViewGone.current);
+          setLoading(true);
+          setWebViewKey((k) => k + 1);
+        }}
+        onContentProcessDidTerminate={() => {
+          webViewGone.current = { count: webViewGone.current.count + 1, lastAt: new Date().toISOString(), crashed: null };
+          webViewRef.current?.reload();
+        }}
         sharedCookiesEnabled={true}
         thirdPartyCookiesEnabled={true}
         allowsBackForwardNavigationGestures={true}

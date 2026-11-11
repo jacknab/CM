@@ -15,5 +15,5 @@
  */
 export const APP_VERSION = '1.0.4';
 export const APP_BUILD = 25;
-export const APP_UPDATE = '11-02';
+export const APP_UPDATE = '11-11';
 export const APP_BUILD_LABEL = `v${APP_VERSION} · build ${APP_BUILD}${APP_UPDATE ? ` · update ${APP_UPDATE}` : ''}`;
