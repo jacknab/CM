@@ -37,6 +37,7 @@ import { TrialService } from "../services/trial-service";
 import { toE164US } from "../lib/phoneUtils";
 import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgentGreeting, salesAgentFactCheckProductGuidance, salesAgentProductFitGuidance, type SalesAgentProfile } from "../lib/salesAgentProfiles";
 import { salesAgentConnectionOpening, tomOpeningInstructions, TOM_SALES_DISCOVERY } from "../lib/salesAgentOpening";
+import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
 import { MARIL_OPENER_TEXT, marilHoldMusicFrames, marilOpenerFrames, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
 import { isExistingCustomerAccountSupportRequest, mayTransferToAccountServices, SHAVEZ_ACCOUNT_SUPPORT_GREETING, shavezHandoffTwiML, TOM_ACCOUNT_SUPPORT_HANDOFF } from "../lib/salesAgentTransfer";
 import {
@@ -737,6 +738,8 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   let interruptStreak = 0;
   const outQueue: string[] = [];
   let pacer: ReturnType<typeof setInterval> | null = null;
+  /** Call-centre background under Tom and Maril, like Autumn's salon ambience (owner, 2026-11-11). */
+  let ambience: AutumnBackgroundAudioCursor | null = null;
   const transcript: { role: "caller" | "tom"; text: string; at: string }[] = [];
   const smsEvents: { at: string; to: string; body: string; sid: string | null; status: string }[] = [];
   const pendingActions = new Set<Promise<unknown>>();
@@ -757,14 +760,19 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
 
   const sendNextAudioFrame = () => {
     const frame = outQueue.shift();
-    if (!frame) {
-      if (pacer) clearInterval(pacer);
-      pacer = null;
+    // The background plays all call long (not under Maril's hold music), quieter while she or Tom talks.
+    const bed = ambience && Date.now() >= holdUntil ? ambience : null;
+    if (!frame && !bed) {
+      if (!ambience) {
+        if (pacer) clearInterval(pacer);
+        pacer = null;
+      }
       return;
     }
     if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
-      twilioWs.send(JSON.stringify({ event: "media", streamSid, media: { payload: frame } }));
-      if (agentProfile.id === "tom" && !firstAssistantAudioSentAt) {
+      const payload = bed ? mixTwilioOutboundFrame(frame ? Buffer.from(frame, "base64") : null, bed, frame ? 0.25 : 1).toString("base64") : frame!;
+      twilioWs.send(JSON.stringify({ event: "media", streamSid, media: { payload } }));
+      if (frame && agentProfile.id === "tom" && !firstAssistantAudioSentAt) {
         firstAssistantAudioSentAt = Date.now();
         console.log(`${LOG} first assistant audio frame sent call=${callSid ?? "unknown"} first_audio_sent_ms=${firstAssistantAudioSentAt - twilioStartAt} generated_to_sent_ms=${firstAssistantAudioSentAt - firstAssistantAudioAt}`);
         // Twilio echoes this after the first queued frame finishes playback (or after a clear).
@@ -778,7 +786,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     // Keep 20 ms pacing after the first frame, but do not make TOM's first frame wait for the first interval tick.
     if (agentProfile.id === "tom" && !firstAssistantAudioSentAt) {
       sendNextAudioFrame();
-      if (!outQueue.length) return;
+      if (!outQueue.length && !ambience) return;
     }
     pacer = setInterval(sendNextAudioFrame, 20);
   };
@@ -1502,6 +1510,12 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         console.log(`${LOG} stream ready call=${callSid ?? "unknown"} webhook_to_stream_ready_ms=${webhookToStreamReadyMs} ws_to_stream_ready_ms=${twilioStartAt - startedAt}`);
       }
       const from = String(msg.start?.customParameters?.from ?? "");
+      // Call-centre background, as soon as the stream is up (decoded once at startup; a call never waits for it).
+      void createSalesAgentBackgroundAudioCursor().then((cursor) => {
+        if (closed || !cursor) return;
+        ambience = cursor;
+        startPacer();
+      }).catch((e) => console.warn(`${LOG} call-centre background unavailable:`, e?.message ?? e));
       // Maril is Account Services on every call (owner, 2026-11-10): transferred by Tom, or on her own line.
       const transferredByTom = agentProfile.id === "shavez" && String(msg.start?.customParameters?.handoff ?? "") === TOM_ACCOUNT_SUPPORT_HANDOFF;
       accountSupportHandoff = agentProfile.id === "shavez";
@@ -2004,5 +2018,6 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
   });
 
   void warmMarilOpeners();
+  if (readSalesAgentBackgroundAudioConfig().enabled) void createSalesAgentBackgroundAudioCursor().catch(() => undefined); // decode before the first call
   console.log(`${LOG} ready — Tom POST ${TOM_SALES_AGENT.webhookPath} WSS ${TOM_SALES_AGENT.streamBase}; Shavez POST ${SHAVEZ_SALES_AGENT.webhookPath} WSS ${SHAVEZ_SALES_AGENT.streamBase}`);
 }

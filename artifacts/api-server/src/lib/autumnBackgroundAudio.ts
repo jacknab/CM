@@ -22,7 +22,14 @@ export interface AutumnBackgroundAudioCursor {
   volume: number;
 }
 
-let preparedAmbiencePromise: Promise<PreparedAmbience | null> | null = null;
+/** Decoded once per recording (Autumn's salon, Tom and Maril's call centre) and shared by every call. */
+const preparedByFile = new Map<string, Promise<PreparedAmbience | null>>();
+const AUTUMN_CACHE_FILE = () => process.env.AUTUMN_BACKGROUND_AUDIO_CACHE_FILE?.trim() || "/var/cache/certxa/autumn-ambience-8khz-mono-s16le.pcm";
+function preparedFor(file: string, cacheFile: string): Promise<PreparedAmbience | null> {
+  let prepared = preparedByFile.get(file);
+  if (!prepared) { prepared = prepareAmbience(file, cacheFile); preparedByFile.set(file, prepared); }
+  return prepared;
+}
 
 export function readAutumnBackgroundAudioConfig(): AutumnBackgroundAudioConfig {
   const enabled = /^(1|true|yes|on)$/i.test(process.env.AUTUMN_BACKGROUND_AUDIO_ENABLED?.trim() ?? "");
@@ -43,8 +50,25 @@ export async function createAutumnBackgroundAudioCursor(
   config = readAutumnBackgroundAudioConfig(),
 ): Promise<AutumnBackgroundAudioCursor | null> {
   if (!config.enabled || config.volume <= 0) return null;
-  if (!preparedAmbiencePromise) preparedAmbiencePromise = prepareAmbience(config.file);
-  const prepared = await preparedAmbiencePromise;
+  const prepared = await preparedFor(config.file, AUTUMN_CACHE_FILE());
+  return prepared ? { prepared, position: randomAmbienceStart(prepared), volume: config.volume } : null;
+}
+
+/**
+ * Tom and Maril's call-centre background (owner, 2026-11-11), prepared and mixed exactly like Autumn's salon ambience.
+ * SALES_AGENT_BACKGROUND_AUDIO_ENABLED=0 turns it off; _FILE and _VOLUME (default 0.11, at most 0.3) change it.
+ */
+export function readSalesAgentBackgroundAudioConfig(): AutumnBackgroundAudioConfig {
+  const requestedVolume = Number(process.env.SALES_AGENT_BACKGROUND_AUDIO_VOLUME ?? "0.11");
+  return {
+    enabled: !/^(0|false|no|off)$/i.test(process.env.SALES_AGENT_BACKGROUND_AUDIO_ENABLED?.trim() ?? ""),
+    file: path.resolve(process.env.SALES_AGENT_BACKGROUND_AUDIO_FILE?.trim() || "/apps/CM/CallCenter.mp3"),
+    volume: Number.isFinite(requestedVolume) ? Math.max(0, Math.min(0.3, requestedVolume)) : 0.11,
+  };
+}
+export async function createSalesAgentBackgroundAudioCursor(config = readSalesAgentBackgroundAudioConfig()): Promise<AutumnBackgroundAudioCursor | null> {
+  if (!config.enabled || config.volume <= 0) return null;
+  const prepared = await preparedFor(config.file, "/var/cache/certxa/sales-agent-ambience-8khz-mono-s16le.pcm");
   return prepared ? { prepared, position: randomAmbienceStart(prepared), volume: config.volume } : null;
 }
 
@@ -75,10 +99,8 @@ export async function warmAutumnBackgroundAudio(): Promise<void> {
   if (cursor) console.log(`[Autumn ambience] Prewarmed and enabled at volume=${config.volume}`);
 }
 
-async function prepareAmbience(file: string): Promise<PreparedAmbience | null> {
+async function prepareAmbience(file: string, cacheFile: string): Promise<PreparedAmbience | null> {
   try {
-    const cacheFile = process.env.AUTUMN_BACKGROUND_AUDIO_CACHE_FILE?.trim()
-      || "/var/cache/certxa/autumn-ambience-8khz-mono-s16le.pcm";
     const cached = await readPreparedCache(file, cacheFile);
     if (cached) {
       const cacheNormalizationGain = normalizeQuietPcmInPlace(cached);
