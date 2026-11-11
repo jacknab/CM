@@ -1465,6 +1465,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   const { seedNailSalonLacquerTemplate } = await import("./startup/seedNailSalonLacquerTemplate");
   await seedNailSalonLacquerTemplate();
 
+  // Register the "Nail Salon — Luxe" website template into wb_templates (owner, 2026-11-11: from a Bolt.new design)
+  const { seedSalonLuxeTemplate } = await import("./startup/seedSalonLuxeTemplate");
+  await seedSalonLuxeTemplate();
+
   // Register the "Nail Salon — Bloom" website template into wb_templates
   const { seedNailSalonBloomTemplate } = await import("./startup/seedNailSalonBloomTemplate");
   await seedNailSalonBloomTemplate();
