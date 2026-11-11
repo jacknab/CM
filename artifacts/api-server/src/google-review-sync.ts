@@ -26,6 +26,7 @@ import { encryptToken, decryptToken } from "./lib/googleTokenCrypto";
  *   • Auto   : startGoogleReviewSyncScheduler() — every 6 hours per active location
  */
 
+import { pool } from "./db";
 import { OAuth2Client } from "google-auth-library";
 import { db } from "./db";
 import { isQuotaCoolingDown, recordQuota429 } from "./google-quota-guard";
@@ -320,6 +321,32 @@ async function fetchReviewsWithRetry(
 }
 
 const THREE_WEEKS_MS = 21 * 24 * 60 * 60 * 1000;
+
+/**
+ * Refresh the photo links of reviews already saved, however old (2026-11-11): Google's review-photo and profile-photo
+ * links expire, and the 3-week filter below keeps older reviews out of upsertReviews, so their stored links went dead
+ * and showed as broken images on salon websites. Only rows that exist are touched, and only when a link changed; no
+ * review is added and no activity is logged.
+ */
+async function refreshStoredReviewMedia(reviews: ReviewRaw[], storeId: number): Promise<number> {
+  let refreshed = 0;
+  for (const review of reviews) {
+    const googleReviewId = review.name.split("/").pop() ?? review.name;
+    const reviewMediaItems = Array.isArray(review.reviewMediaItems) ? review.reviewMediaItems : [];
+    const reviewImageUrls = reviewMediaItems
+      .map((item) => typeof item.thumbnailUrl === "string" ? item.thumbnailUrl : null)
+      .filter((url): url is string => Boolean(url));
+    const result = await pool.query(
+      `UPDATE google_reviews SET review_image_urls = $3, review_media_items = $4::jsonb, reviewer_photo_url = $5, updated_at = now()
+        WHERE store_id = $1 AND google_review_id = $2
+          AND (review_image_urls IS DISTINCT FROM $3 OR reviewer_photo_url IS DISTINCT FROM $5)`,
+      [storeId, googleReviewId, JSON.stringify(reviewImageUrls), JSON.stringify(reviewMediaItems), review.reviewer?.profilePhotoUrl ?? null],
+    ).catch((err) => { console.warn(`[ReviewSync] photo refresh failed for ${googleReviewId}: ${err?.message ?? err}`); return null; });
+    refreshed += result?.rowCount ?? 0;
+  }
+  if (refreshed) console.log(`[ReviewSync] refreshed photo links on ${refreshed} saved review(s) for store ${storeId}`);
+  return refreshed;
+}
 
 /**
  * Drop reviews older than 3 weeks based on createTime.
@@ -680,6 +707,7 @@ export async function syncReviewsForStore(storeId: number): Promise<SyncResult> 
     }
 
     console.log(`[ReviewSync] fetched ${reviews.length} review(s) for location "${activeLocationResourceName}"`);
+    await refreshStoredReviewMedia(reviews, storeId);
     reviews = filterRecentReviews(reviews);
 
     const activeLeafId = extractLocationLeafId(activeLocationResourceName) ?? location.locationId;
@@ -829,6 +857,7 @@ export async function syncReviewsForStore(storeId: number): Promise<SyncResult> 
   }
 
   console.log(`[ReviewSync] LEGACY fetched ${reviews.length} review(s)`);
+  await refreshStoredReviewMedia(reviews, storeId);
   reviews = filterRecentReviews(reviews);
 
   // Try to find the gbLocationId by resource name (for FK tagging)
