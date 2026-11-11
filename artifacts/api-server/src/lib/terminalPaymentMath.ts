@@ -11,6 +11,8 @@ export interface TerminalContext {
   tipCents: number;
   discountCents: number;
   priorTenderedCents: number;
+  /** The client's card fee (Pro app Card reader & Checkout setting), part of this charge. */
+  clientFeeCents: number;
 }
 
 export type ParseResult =
@@ -33,7 +35,9 @@ export function parseTerminalContext(body: Record<string, unknown> | undefined |
   if (!discount.ok) return discount;
   const prior = cents(body?.priorTenderedCents, "priorTenderedCents");
   if (!prior.ok) return prior;
-  return { ok: true, ctx: { tipCents: tip.value, discountCents: discount.value, priorTenderedCents: prior.value } };
+  const fee = cents(body?.clientFeeCents, "clientFeeCents");
+  if (!fee.ok) return fee;
+  return { ok: true, ctx: { tipCents: tip.value, discountCents: discount.value, priorTenderedCents: prior.value, clientFeeCents: fee.value } };
 }
 
 export function terminalContextMetadata(ctx: TerminalContext): Record<string, string> {
@@ -41,6 +45,7 @@ export function terminalContextMetadata(ctx: TerminalContext): Record<string, st
   if (ctx.tipCents > 0) md.tip_cents = String(ctx.tipCents);
   if (ctx.discountCents > 0) md.discount_cents = String(ctx.discountCents);
   if (ctx.priorTenderedCents > 0) md.prior_tendered_cents = String(ctx.priorTenderedCents);
+  if (ctx.clientFeeCents > 0) md.client_fee_cents = String(ctx.clientFeeCents);
   return md;
 }
 
@@ -55,6 +60,7 @@ export interface TerminalRecord {
   /** Undefined when the sheet sent no tip, so an existing value is never overwritten. */
   tipAmount?: string;
   discountAmount?: string;
+  clientFeeAmount?: string;
 }
 
 export function computeTerminalRecord(
@@ -64,11 +70,13 @@ export function computeTerminalRecord(
   const prior = intMeta(md, "prior_tendered_cents");
   const tip = intMeta(md, "tip_cents");
   const discount = intMeta(md, "discount_cents");
+  const fee = intMeta(md, "client_fee_cents");
   const paid = amountCents + prior;
   const fmt = (c: number) => (c / 100).toFixed(2);
   return {
     totalPaid: fmt(paid),
     ...(tip > 0 ? { tipAmount: fmt(Math.min(tip, paid)) } : {}),
     ...(discount > 0 ? { discountAmount: fmt(discount) } : {}),
+    ...(fee > 0 ? { clientFeeAmount: fmt(Math.min(fee, amountCents)) } : {}),
   };
 }

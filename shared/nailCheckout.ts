@@ -22,7 +22,11 @@ export interface Tender { id: number; method: "cash" | "card" | "m2" | "tap" | "
 export type DiscountInput = { type: "percent" | "dollar"; value: number } | null;
 
 /** The store's POS tax settings (locations.sales_tax_rate / tax_services_taxable / tax_products_taxable). */
-export interface SalesTaxSettings { rate: number; services: boolean; products: boolean }
+export interface SalesTaxSettings {
+  rate: number; services: boolean; products: boolean;
+  /** Retail's own rate (locations.retail_tax_rate, 2026-11-11). Left out, retail is taxed at `rate`. */
+  productRate?: number;
+}
 export const NO_SALES_TAX: SalesTaxSettings = { rate: 0, services: false, products: false };
 
 /**
@@ -31,15 +35,16 @@ export const NO_SALES_TAX: SalesTaxSettings = { rate: 0, services: false, produc
  * product revenue is retail. The discount comes off every line in proportion before tax.
  */
 export function salesTaxCents(serviceRevenue: number, productRevenue: number, discount: number, tax: SalesTaxSettings): number {
-  const rate = Number(tax.rate);
-  if (!Number.isFinite(rate) || rate <= 0) return 0;
+  const pos = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+  const rate = pos(tax.rate);
+  const productRate = tax.productRate === undefined || tax.productRate === null ? rate : pos(tax.productRate);
+  if (rate <= 0 && productRate <= 0) return 0;
   const svc = Math.max(0, Math.round(serviceRevenue * 100));
   const prod = Math.max(0, Math.round(productRevenue * 100));
   const subtotal = svc + prod;
   if (subtotal <= 0) return 0;
-  const taxable = (tax.services ? svc : 0) + (tax.products ? prod : 0);
-  const afterDiscount = taxable * Math.max(0, subtotal - Math.round(discount * 100)) / subtotal;
-  return Math.round(afterDiscount * rate);
+  const share = Math.max(0, subtotal - Math.round(discount * 100)) / subtotal;
+  return Math.round(((tax.services ? svc : 0) * rate + (tax.products ? prod : 0) * productRate) * share);
 }
 
 export interface CheckoutInput {

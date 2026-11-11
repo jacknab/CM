@@ -104,6 +104,15 @@ describe("sales tax (POS settings)", () => {
     const t = computeCheckout({ ...base, extras: [{ id: 1, label: "Retail Item", price: 20, kind: "retail" }], discount: { type: "percent", value: 15 }, salesTax: productsOnly });
     expect(salesTaxCents(t.serviceRevenue, t.productRevenue, t.discount, productsOnly)).toBe(Math.round(t.tax * 100));
   });
+  test("retail can have its own rate (Card reader & Checkout)", () => {
+    const both = { rate: 0.05, services: true, products: true };
+    expect(salesTaxCents(100, 20, 0, both)).toBe(600);
+    expect(salesTaxCents(100, 20, 0, { ...both, productRate: 0.1 })).toBe(700);
+    // No service tax, retail taxed at its own rate.
+    expect(salesTaxCents(100, 20, 0, { rate: 0, services: false, products: true, productRate: 0.08 })).toBe(160);
+    // The discount still comes off both in proportion: $12 off $120 = 90%.
+    expect(salesTaxCents(100, 20, 12, { ...both, productRate: 0.1 })).toBe(630);
+  });
 });
 
 const r = (n: number) => Math.round(n * 100) / 100;

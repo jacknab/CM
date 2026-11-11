@@ -158,7 +158,7 @@ export default function BarberHome() {
       storeCityStateZip={storeCityStateZip}
       storePhone={st.phone || undefined}
       timezone={st.timezone ?? "UTC"}
-      salesTax={{ rate: Number(st.salesTaxRate ?? 0) || 0, services: st.taxServicesTaxable === true, products: st.taxProductsTaxable !== false }}
+      salesTax={{ rate: Number(st.salesTaxRate ?? 0) || 0, services: st.taxServicesTaxable === true, products: st.taxProductsTaxable !== false, ...((st as any).retailTaxRate != null ? { productRate: Number((st as any).retailTaxRate) || 0 } : {}) }}
       cashDiscountPct={Number((st as any).cashDiscountPercent ?? 0) || 0}
       bookingSlug={st.bookingSlug ?? ""}
     />

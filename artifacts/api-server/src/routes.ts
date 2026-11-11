@@ -3047,6 +3047,8 @@ export async function registerRoutes(
       if (!storeId) return res.status(403).json({ error: "No store context" });
       const [row] = await db.select({
         salesTaxRate: locations.salesTaxRate,
+        retailTaxRate: locations.retailTaxRate,
+        clientFeeRate: locations.clientFeeRate,
         taxServicesTaxable: locations.taxServicesTaxable,
         taxAddonsTaxable: locations.taxAddonsTaxable,
         taxProductsTaxable: locations.taxProductsTaxable,
@@ -3057,6 +3059,10 @@ export async function registerRoutes(
       return res.json({
         quickAreaCodes: readQuickAreaCodes(row?.quickAreaCodes),
         salesTaxRate: row?.salesTaxRate ?? "0.0000",
+        // Retail's own rate; null = retail is taxed at salesTaxRate (migration 0344).
+        retailTaxRate: row?.retailTaxRate ?? null,
+        // The client's card fee in the Pro app, 0 to 0.03.
+        clientFeeRate: row?.clientFeeRate ?? "0.0000",
         taxServicesTaxable: row?.taxServicesTaxable ?? false,
         taxAddonsTaxable: row?.taxAddonsTaxable ?? false,
         taxProductsTaxable: row?.taxProductsTaxable ?? true,
@@ -3106,7 +3112,7 @@ export async function registerRoutes(
     try {
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ error: "No store context" });
-      const { salesTaxRate, taxServicesTaxable, taxAddonsTaxable, taxProductsTaxable, taxGiftCardsTaxable } = req.body;
+      const { salesTaxRate, retailTaxRate, clientFeeRate, taxServicesTaxable, taxAddonsTaxable, taxProductsTaxable, taxGiftCardsTaxable } = req.body;
       // The rate changes only when it is sent: a save that leaves it out used to set the salon's tax to 0%.
       const updates: Record<string, any> = {};
       let rate: number | null = null;
@@ -3114,6 +3120,18 @@ export async function registerRoutes(
         rate = parseFloat(String(salesTaxRate));
         if (isNaN(rate) || rate < 0 || rate > 1) return res.status(400).json({ error: "salesTaxRate must be between 0 and 1" });
         updates.salesTaxRate = rate.toFixed(4);
+      }
+      // Retail's own rate: null (or "") goes back to the one rate for everything.
+      if (retailTaxRate === null || retailTaxRate === "") updates.retailTaxRate = null;
+      else if (retailTaxRate !== undefined) {
+        const r = parseFloat(String(retailTaxRate));
+        if (isNaN(r) || r < 0 || r > 1) return res.status(400).json({ error: "retailTaxRate must be between 0 and 1" });
+        updates.retailTaxRate = r.toFixed(4);
+      }
+      if (clientFeeRate !== undefined && clientFeeRate !== null && clientFeeRate !== "") {
+        const f = parseFloat(String(clientFeeRate));
+        if (isNaN(f) || f < 0 || f > 0.03) return res.status(400).json({ error: "The card fee must be between 0% and 3%." });
+        updates.clientFeeRate = f.toFixed(4);
       }
       if (typeof taxServicesTaxable === "boolean") updates.taxServicesTaxable = taxServicesTaxable;
       if (typeof taxAddonsTaxable === "boolean") updates.taxAddonsTaxable = taxAddonsTaxable;
@@ -20480,7 +20498,11 @@ or
       const storeId = await resolveSessionStoreId(req);
       if (!storeId) return res.status(403).json({ message: "No store context" });
       const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
-      return res.json({ presets: sanitizeTipPresets(safeParsePreferences(row?.preferences as string | undefined).tipPresets) });
+      const prefs: any = safeParsePreferences(row?.preferences as string | undefined);
+      const presets = sanitizeTipPresets(prefs.tipPresets);
+      // The tip picked before the client chooses (Certxa Pro Card reader & Checkout); null = none picked.
+      const defaultPreset = presets.includes(Number(prefs.tipDefault)) ? Number(prefs.tipDefault) : null;
+      return res.json({ presets, defaultPreset });
     } catch (err) {
       console.error("[tip-presets get]", err);
       return res.status(500).json({ message: "Could not load the tip presets" });
@@ -20496,9 +20518,15 @@ or
         return res.status(400).json({ message: "Enter one to four whole percentages from 1 to 100." });
       }
       const presets = sanitizeTipPresets(raw);
-      await mutateStorePreferences(storeId, (current) => ({ ...current, tipPresets: presets }));
+      // defaultPreset is changed only when sent (the /nail settings don't send it): null clears it.
+      const sent = req.body?.defaultPreset;
+      if (sent !== undefined && sent !== null && !presets.includes(Number(sent))) {
+        return res.status(400).json({ message: "The tip selected by default must be one of the tips." });
+      }
+      const saved: any = await mutateStorePreferences(storeId, (current: any) => (
+        { ...current, tipPresets: presets, ...(sent !== undefined ? { tipDefault: sent === null ? null : Number(sent) } : {}) }));
       broadcastNotification({ type: "settings_changed", storeId, scope: "/api/tip-presets" } as any);
-      return res.json({ presets });
+      return res.json({ presets, defaultPreset: presets.includes(Number(saved.tipDefault)) ? Number(saved.tipDefault) : null });
     } catch (err) {
       console.error("[tip-presets put]", err);
       return res.status(500).json({ message: "Could not save the tip presets" });
@@ -21567,6 +21595,7 @@ or
         rate: Number(taxStore?.salesTaxRate ?? 0) || 0,
         services: taxStore?.taxServicesTaxable === true,
         products: taxStore?.taxProductsTaxable !== false,
+        ...(taxStore?.retailTaxRate != null ? { productRate: Number(taxStore.retailTaxRate) || 0 } : {}),
       });
       // The station's drawer took this cash: its Day Close counts it (2026-10-29).
       if (saleDrawer && outcome.appointmentIds.length) {

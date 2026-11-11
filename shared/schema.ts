@@ -240,6 +240,10 @@ export const locations = pgTable("locations", {
   // key shared across every store on the platform).
   nextTicketNumber: integer("next_ticket_number").notNull().default(1),
   salesTaxRate: decimal("sales_tax_rate", { precision: 5, scale: 4 }).notNull().default("0.0000"),
+  /** Retail's own sales tax rate (migration 0344); null = retail uses salesTaxRate. */
+  retailTaxRate: decimal("retail_tax_rate", { precision: 5, scale: 4 }),
+  /** Fee the client pays on a Pro app card payment, 0 to 0.03 (migration 0344). */
+  clientFeeRate: decimal("client_fee_rate", { precision: 5, scale: 4 }).notNull().default("0"),
   /** Percent off a ticket paid entirely in cash (catalog prices are card prices). 0 = off. */
   cashDiscountPercent: decimal("cash_discount_percent", { precision: 5, scale: 2 }).notNull().default("0"),
   taxServicesTaxable: boolean("tax_services_taxable").notNull().default(false),
@@ -668,6 +672,8 @@ export const appointments = pgTable("appointments", {
   // Sales tax charged on this sale (its share of the visit's tax; migration 0269).
   taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }),
+  // The client's card fee on this sale (migration 0344): part of totalPaid, never commissioned.
+  clientFeeAmount: decimal("client_fee_amount", { precision: 10, scale: 2 }),
   totalPaid: decimal("total_paid", { precision: 10, scale: 2 }),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -1611,7 +1617,7 @@ export const insertCustomerSchema = z.object({
   loyaltyPoints: z.number().int().nullish(),
   storeId: z.number().int().nullish(),
 });
-export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, cashDrawerId: true, taxAmount: true });
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({ id: true, cashDrawerId: true, taxAmount: true, clientFeeAmount: true });
 export const insertProductSchema = createInsertSchema(products).omit({ id: true });
 export const insertBusinessHoursSchema = createInsertSchema(businessHours).omit({ id: true });
 export const insertCalendarSettingsSchema = createInsertSchema(calendarSettings).omit({ id: true });

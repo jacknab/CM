@@ -1341,6 +1341,14 @@ router.post("/terminal/create-payment-intent", async (req: Request, res: Respons
     const ctx = parseTerminalContext(req.body);
     if (!ctx.ok) return res.status(400).json({ error: ctx.error });
 
+    // The client's card fee can't be more than the salon's own rate on the rest of this charge.
+    if (ctx.ctx.clientFeeCents > 0) {
+      const [loc] = await db.select({ rate: locations.clientFeeRate }).from(locations).where(eq(locations.id, storeId));
+      const rate = Number(loc?.rate ?? 0) || 0;
+      const allowed = Math.round((normalizedAmountCents - ctx.ctx.clientFeeCents - ctx.ctx.tipCents) * rate);
+      if (ctx.ctx.clientFeeCents > allowed + 1) return res.status(400).json({ error: "The card fee doesn't match this salon's setting. Refresh the checkout." });
+    }
+
     const account = await getPaymentAccount(storeId);
     if (!account || account.status === "disconnected") {
       return res.status(400).json({ error: "Store has no connected Stripe account" });
@@ -1608,6 +1616,7 @@ export async function finalizeCapturedTerminalPayment(
         totalPaid:     rec.totalPaid,
         ...(rec.tipAmount      !== undefined ? { tipAmount:      rec.tipAmount }      : {}),
         ...(rec.discountAmount !== undefined ? { discountAmount: rec.discountAmount } : {}),
+        ...(rec.clientFeeAmount !== undefined ? { clientFeeAmount: rec.clientFeeAmount } : {}),
         completedAt:   new Date(),
         // Kept so the payment can be refunded later (Certxa Pro Refund).
         stripePaymentIntentId: pi.id,
