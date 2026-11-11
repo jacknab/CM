@@ -4,6 +4,8 @@ import {
   TOM_SALES_AGENT,
   agentKnowledgeForPrompt,
   pickAgentGreeting,
+  salesAgentFactCheckProductGuidance,
+  salesAgentProductFitGuidance,
 } from "./salesAgentProfiles";
 
 describe("independent Certxa sales-agent profiles", () => {
@@ -30,10 +32,44 @@ describe("independent Certxa sales-agent profiles", () => {
     expect([...greetings].every((greeting) => greeting.includes("Maril") && greeting.includes("Sir Text uh"))).toBe(true);
     expect([...greetings].some((greeting) => /Shavez|spell|S-H-A-V-E-Z/i.test(greeting))).toBe(false);
     expect(pickAgentGreeting(TOM_SALES_AGENT, () => 0)).toContain("Tom");
+    expect(pickAgentGreeting(TOM_SALES_AGENT, () => 0)).toContain("May I ask who I'm speaking with?");
   });
 
   it("adapts sales knowledge wording to the active agent", () => {
     expect(agentKnowledgeForPrompt("Tom can help with this.", SHAVEZ_SALES_AGENT)).toBe("Maril can help with this.");
     expect(agentKnowledgeForPrompt("Tom can help with this.", TOM_SALES_AGENT)).toBe("Tom can help with this.");
+  });
+
+  it("routes independent professionals to Certxa Pro and keeps salon-team fit and Maril isolated", () => {
+    const tomGuidance = salesAgentProductFitGuidance(TOM_SALES_AGENT);
+    expect(tomGuidance).toContain("Recommend it naturally when the caller works independently");
+    expect(tomGuidance).toContain("home-based, booth-renting, or mobile professional");
+    expect(tomGuidance).toContain("free offering with limitations");
+    expect(tomGuidance).toContain("$5/month");
+    expect(tomGuidance).toContain("a request is not confirmed and does not reserve the time");
+    expect(tomGuidance).toContain("approve, decline, or offer up to eight alternative times");
+    expect(tomGuidance).toContain("the deposit is requested after approval");
+    expect(tomGuidance).toContain("only backend-listed booking/visit notification types free");
+    expect(tomGuidance).toContain("Apple's managed entitlement is currently only in the development provisioning profile");
+    expect(tomGuidance).toContain("Tap to Pay has a 2.7% Stripe processing rate plus a $0.60 Certxa platform connection fee");
+    expect(tomGuidance).toContain("Manually entered card payments have a 2.9% Stripe processing rate plus a $1 Certxa platform connection fee");
+    expect(tomGuidance).toContain("do not apply either to M2, payment links, booking deposits, or other paths");
+    expect(tomGuidance).toContain("100 for $4.99, 250 for $7.99, and 500 for $11.99");
+    expect(tomGuidance).toContain("the product owner will provide the store URLs after publication");
+    expect(tomGuidance).toContain("Do not automatically introduce Certxa Salon to an independent professional");
+    expect(tomGuidance).toContain("Certxa Salon's main browser platform does not support Stripe card payments");
+    expect(tomGuidance).toContain("requires its Android app, which is not currently available on iOS");
+    expect(tomGuidance).not.toMatch(/\bSolo\b|\bFree plan\b/i);
+    const factCheckGuidance = salesAgentFactCheckProductGuidance(TOM_SALES_AGENT);
+    expect(factCheckGuidance).toContain("must not be flagged just because the caller did not ask about Certxa Pro first");
+    expect(factCheckGuidance).toContain("Manual approval is verified");
+    expect(factCheckGuidance).toContain("offer up to eight alternative times");
+    expect(factCheckGuidance).toContain("Tap to Pay is 2.7% Stripe processing plus a $0.60 Certxa platform connection fee");
+    expect(factCheckGuidance).toContain("manually entered card payments are 2.9% Stripe processing plus a $1 Certxa platform connection fee");
+    expect(factCheckGuidance).toContain("100 for $4.99, 250 for $7.99, and 500 for $11.99");
+    expect(factCheckGuidance).toContain("do not apply them to M2, payment links, booking deposits");
+    expect(salesAgentProductFitGuidance(SHAVEZ_SALES_AGENT)).toBe("");
+    expect(salesAgentFactCheckProductGuidance(SHAVEZ_SALES_AGENT)).toContain("legacy internal product/plan terminology");
+    expect(salesAgentProductFitGuidance(SHAVEZ_SALES_AGENT, true)).toBe("");
   });
 });
