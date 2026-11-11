@@ -41,7 +41,7 @@ import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSale
 import { scheduleFollowUp } from "../lib/agentFollowUps";
 import { reviewReasons } from "../lib/salesCallReview";
 import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, tomNoteForPrompt, tomTransferNote, transferGreetingInstruction, type MarelLastCall, type TomTransferNote } from "../lib/marelLastCall";
-import { isSilentUlaw, marilHoldMusicFrames, marilOpenerFrames, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
+import { isSilentUlaw, marilHoldMusicFrames, MARIL_OPENER_TEXTS, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
 import { isExistingCustomerAccountSupportRequest, mayTransferToAccountServices, SHAVEZ_ACCOUNT_SUPPORT_GREETING, shavezHandoffTwiML, TOM_ACCOUNT_SUPPORT_HANDOFF } from "../lib/salesAgentTransfer";
 import {
   finalizeAfterInsert,
@@ -765,6 +765,8 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   /** Marel's ready-made opener, already playing when GPT-Live starts (lib/marilOpener.ts). */
   let marilOpener: MarilOpenerKind | null = null;
   let marilOpenerText = "Account services, this is Marel.";
+  /** A transfer from Tom: hold music plays until her live voice starts (owner, 2026-11-11). */
+  let musicUntilVoice = false;
   /** After the opener, her first live words follow at once: the silence GPT-Live puts before them is dropped. */
   let trimReplyLeadIn = false;
   /** Hold music before Marel (her own number): until then the AI neither hears the caller nor speaks. */
@@ -1496,10 +1498,10 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
                 : `You have already said, and the caller is hearing: "${marilOpenerText}" Do not say it again or greet again. Carry straight on, with no pause or filler, and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
               : accountSupportHandoff
               ? marilContext?.transferred
-                ? `Speak first now: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" ${transferGreetingInstruction(marilContext?.tomNote ?? null)} Do not pitch sales.`
+                ? `Speak first now, warmly and naturally: "${marilOpenerText}" ${transferGreetingInstruction(marilContext?.tomNote ?? null)} Do not pitch sales.`
                 : marilContext?.lastCall
-                ? `Speak first now: "Account services, this is Marel." ${callbackGreetingInstruction(marilContext.lastCall)}`
-                : `Speak first now: "Account services, this is Marel.${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
+                ? `Speak first now, relaxed and natural like picking up a busy office phone: "${marilOpenerText}" ${callbackGreetingInstruction(marilContext.lastCall)}`
+                : `Speak first now, relaxed and natural like picking up a busy office phone, in one breath: "${marilOpenerText}${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
               : agentProfile.id === "tom" && claimContext?.mode === "callback"
               ? `Speak first now. Say: "Hi, this is Tom from Certxa calling back for ${claimContext.callerName}. May I speak with ${claimContext.callerName}, please?" Then wait for them to come to the phone, and follow OUTBOUND OWNERSHIP CALL-BACK.`
               : agentProfile.id === "tom"
@@ -1509,7 +1511,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
           : `Speak first now. Say exactly: "${pickAgentGreeting(agentProfile)}" Use the pronunciation guidance in your instructions. The caller has already selected sales in the phone menu; don't ask what they are calling about again. If they immediately ask a question, answer it naturally instead of insisting on a name. Then listen.`,
           }));
         };
-        const holdLeft = holdUntil - Date.now();
+        const holdLeft = holdUntil === Number.MAX_SAFE_INTEGER ? 0 : holdUntil - Date.now() - 1_500;
         if (holdLeft > 0) setTimeout(speakFirst, holdLeft); else speakFirst();
         return;
       }
@@ -1533,6 +1535,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         return;
       }
       if (type === "session.output_audio.delta") {
+        if (musicUntilVoice) { musicUntilVoice = false; outQueue.length = 0; holdUntil = 0; } // her voice replaces the hold music
         if (!firstAssistantAudioAt) {
           firstAssistantAudioAt = Date.now();
           if (agentProfile.id === "tom") {
@@ -1624,20 +1627,22 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
       callerPhoneE164 = canonicalCallerE164(from);
       // Marel: a call from an account owner's mobile on file is that owner (lib/marilAccountSupport.ts).
       if (agentProfile.id === "shavez") {
-        // Her opening line plays at once; GPT-Live picks up after it (about two seconds to connect).
+        // She greets live, in her own voice (owner, 2026-11-11: the pre-recorded line sounded computerized). GPT-Live takes
+        // about two seconds to start, so hold music covers it: 8 seconds on her own number, and on a transfer from Tom
+        // until her voice comes in. Her own-number greeting rotates (MARIL_OPENER_TEXTS).
         const kind: MarilOpenerKind = transferredByTom ? "transferred" : "direct";
-        const opener = marilOpenerFrames(kind);
-        if (opener && streamSid) {
-          marilOpener = kind;
-          marilOpenerText = opener.text;
-          trimReplyLeadIn = true;
-          // A call to her own number hears 8 seconds of hold music first; GPT-Live gets ready while it plays.
-          const music = kind === "direct" ? marilHoldMusicFrames() : null;
-          if (music) { outQueue.push(...music); holdUntil = Date.now() + music.length * 20; }
-          outQueue.push(...opener.frames);
+        const pick = MARIL_OPENER_TEXTS[kind];
+        marilOpenerText = pick[Math.floor(Math.random() * pick.length)] ?? pick[0];
+        trimReplyLeadIn = true;
+        const music = marilHoldMusicFrames();
+        if (music && streamSid) {
+          outQueue.push(...music);
+          if (kind === "direct") holdUntil = Date.now() + music.length * 20;
+          else {
+            musicUntilVoice = true; holdUntil = Number.MAX_SAFE_INTEGER;
+            setTimeout(() => { if (musicUntilVoice) { musicUntilVoice = false; holdUntil = 0; } }, 10_000); // never stuck on music
+          }
           startPacer();
-          transcript.push({ role: "tom", text: canonicalizeSpokenBrandForText(opener.text), at: new Date().toISOString() });
-          console.log(`${LOG} Marel ${kind} opener playing call=${callSid ?? "unknown"} ms=${Date.now() - twilioStartAt}`);
         }
         // Calling her back: what was said on this number's last call to her today (lib/marelLastCall.ts).
         const lastCall = transferredByTom ? Promise.resolve(null) : marelLastCall(callerPhoneE164, callSid);

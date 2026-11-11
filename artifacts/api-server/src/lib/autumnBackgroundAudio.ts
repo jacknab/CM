@@ -57,14 +57,14 @@ export async function createAutumnBackgroundAudioCursor(
 /**
  * Tom and Marel's office background (owner, 2026-11-11; office.mp3 since 23:20), mixed exactly like Autumn's salon ambience.
  * The 2-hour recording is cut to 15 minutes of ready 8 kHz PCM by scripts/make-agent-ambience.mjs (decoding the MP3 here
- * would take gigabytes). SALES_AGENT_BACKGROUND_AUDIO_ENABLED=0 turns it off; _FILE and _VOLUME (default 0.11, at most 0.3) change it.
+ * would take gigabytes). SALES_AGENT_BACKGROUND_AUDIO_ENABLED=0 turns it off; _FILE and _VOLUME (default 0.08, at most 0.3) change it.
  */
 export function readSalesAgentBackgroundAudioConfig(): AutumnBackgroundAudioConfig {
-  const requestedVolume = Number(process.env.SALES_AGENT_BACKGROUND_AUDIO_VOLUME ?? "0.11");
+  const requestedVolume = Number(process.env.SALES_AGENT_BACKGROUND_AUDIO_VOLUME ?? "0.08"); // owner, 2026-11-11: "a little" quieter than 0.11
   return {
     enabled: !/^(0|false|no|off)$/i.test(process.env.SALES_AGENT_BACKGROUND_AUDIO_ENABLED?.trim() ?? ""),
     file: path.resolve(process.env.SALES_AGENT_BACKGROUND_AUDIO_FILE?.trim() || "/var/lib/certxa/voice-cache/agent-ambience-8khz-mono-s16le.pcm"),
-    volume: Number.isFinite(requestedVolume) ? Math.max(0, Math.min(0.3, requestedVolume)) : 0.11,
+    volume: Number.isFinite(requestedVolume) ? Math.max(0, Math.min(0.3, requestedVolume)) : 0.08,
   };
 }
 export async function createSalesAgentBackgroundAudioCursor(config = readSalesAgentBackgroundAudioConfig()): Promise<AutumnBackgroundAudioCursor | null> {
