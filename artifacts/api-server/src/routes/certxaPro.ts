@@ -560,6 +560,42 @@ router.delete("/portfolio/:id", async (req, res) => {
   } catch (error) { return unexpected(res, error); }
 });
 
+// Portfolio › Share my portfolio to Google (owner, 2026-11-11): shown only once Google Business Profile is connected.
+// The switch is the photo engine's on/off (gbp_photo_settings.enabled, on by default). Off cancels what's waiting, so
+// nothing more goes to Google; on queues the portfolio again (client photos never go).
+const googleConnectedSQL = `SELECT 1 FROM google_business_profiles WHERE store_id = $1 AND is_connected = true AND location_id IS NOT NULL
+  UNION ALL SELECT 1 FROM google_business_locations WHERE store_id = $1 AND is_selected = true LIMIT 1`;
+router.get("/portfolio/google", async (req, res) => {
+  try {
+    const storeId = await store(req, res); if (!storeId) return;
+    const connected = Boolean((await pool.query(googleConnectedSQL, [storeId])).rowCount);
+    const s = await pool.query(`SELECT enabled FROM gbp_photo_settings WHERE store_id=$1`, [storeId]);
+    return res.json({ connected, sharing: s.rows[0]?.enabled ?? true });
+  } catch (error) { return unexpected(res, error); }
+});
+router.put("/portfolio/google", async (req, res) => {
+  const body = z.object({ sharing: z.boolean() }).strict().safeParse(req.body ?? {});
+  if (!body.success) return invalid(res, body.error);
+  try {
+    const storeId = await store(req, res); if (!storeId) return;
+    if (!(await pool.query(googleConnectedSQL, [storeId])).rowCount) return res.status(409).json({ error: "Connect your Google Business Profile first." });
+    const sharing = body.data.sharing;
+    await pool.query(`INSERT INTO gbp_photo_settings (store_id, enabled) VALUES ($1,$2)
+      ON CONFLICT (store_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()`, [storeId, sharing]);
+    if (sharing) {
+      void import("../services/gbpPhotoEngine.js").then(({ reQueueOrphanGalleryPhotos }) => reQueueOrphanGalleryPhotos(storeId))
+        .catch((e) => console.warn("[Pro portfolio] Google photo queue failed:", e?.message));
+    } else {
+      const cancelled = await pool.query(`UPDATE gbp_photo_queue SET status='cancelled', error_message='Sharing to Google turned off', updated_at=now()
+        WHERE store_id=$1 AND status='pending' RETURNING id`, [storeId]);
+      // Cancelled photos lose their queue link, so turning sharing back on sends them again.
+      if (cancelled.rowCount) await pool.query(`UPDATE wb_gallery_photos SET gbp_queue_id=NULL WHERE store_id=$1 AND gbp_queue_id = ANY($2::int[])`,
+        [storeId, cancelled.rows.map((r) => r.id)]);
+    }
+    return res.json({ connected: true, sharing });
+  } catch (error) { return unexpected(res, error); }
+});
+
 // Delete a client for good: the app's press-and-hold button is the confirmation (lib/deleteClient.ts).
 router.delete("/pro/clients/:id", async (req, res) => {
   const parsedId = id.safeParse(req.params.id);
