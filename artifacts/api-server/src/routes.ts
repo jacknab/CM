@@ -14467,6 +14467,10 @@ or
         fetchAndStoreReviewLink(connectedProfile.storeId).catch((e: any) =>
           console.warn(`[GBP] connect-location — review link fetch failed (non-fatal): ${e?.message ?? e}`),
         );
+        // Portfolio photos already on the website go to Google too, paced by the photo engine (owner, 2026-11-11).
+        import("./services/gbpPhotoEngine")
+          .then(({ reQueueOrphanGalleryPhotos }) => reQueueOrphanGalleryPhotos(connectedProfile.storeId))
+          .catch((e: any) => console.warn(`[GBP] connect-location — portfolio photo queue failed (non-fatal): ${e?.message ?? e}`));
       });
 
       // Strip tokens before sending — never expose access/refresh tokens to the frontend

@@ -18,7 +18,7 @@ import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { storage } from "../storage";
 import { memoryUpload, uploadToR2, extractR2KeyFromUrl } from "../lib/r2";
-import { detectAndEnqueuePhoto } from "../services/gbpPhotoEngine";
+import { cancelQueuedPhoto, detectAndEnqueuePhoto } from "../services/gbpPhotoEngine";
 import multer from "multer";
 
 const router = Router();
@@ -196,7 +196,8 @@ router.delete("/:id", async (req, res) => {
   if (!result) return;
 
   try {
-    await db.delete(wbGalleryPhotos).where(eq(wbGalleryPhotos.id, photoId));
+    const removed = await db.delete(wbGalleryPhotos).where(eq(wbGalleryPhotos.id, photoId)).returning({ gbpQueueId: wbGalleryPhotos.gbpQueueId });
+    await cancelQueuedPhoto(removed[0]?.gbpQueueId);
     return res.json({ success: true });
   } catch (err: any) {
     console.error("[Gallery Photos] DELETE error:", err);

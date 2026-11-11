@@ -521,6 +521,12 @@ router.post("/portfolio", async (req, res) => {
     const url = await uploadToR2(buffer, "gallery", parsed.data.mimeType === "image/png" ? "photo.png" : "photo.jpg", parsed.data.mimeType);
     const r = await pool.query(`INSERT INTO wb_gallery_photos (store_id, image_url, caption, show_on_website, sort_order)
       VALUES ($1,$2,$3,true,(SELECT COALESCE(MIN(sort_order),0)-1 FROM wb_gallery_photos WHERE store_id=$1)) RETURNING *`, [storeId, url, parsed.data.caption || null]);
+    // Connected to Google Business Profile: the photo is shared there too, paced by the photo engine (owner, 2026-11-11).
+    const photoId = r.rows[0].id;
+    void import("../services/gbpPhotoEngine.js")
+      .then(({ detectAndEnqueuePhoto }) => detectAndEnqueuePhoto(storeId, "gallery_photo", { imageUrl: url, entityName: parsed.data.caption || undefined }))
+      .then((queueId) => queueId ? pool.query(`UPDATE wb_gallery_photos SET gbp_queue_id=$2 WHERE id=$1`, [photoId, queueId]) : undefined)
+      .catch((e) => console.warn("[Pro portfolio] Google photo queue failed:", e?.message));
     return res.status(201).json(portfolioJson(r.rows[0]));
   } catch (error) { return unexpected(res, error); }
 });
@@ -546,9 +552,10 @@ router.delete("/portfolio/:id", async (req, res) => {
   if (!parsedId.success) return invalid(res, parsedId.error);
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const r = await pool.query(`DELETE FROM wb_gallery_photos WHERE id=$1 AND store_id=$2`, [parsedId.data, storeId]);
+    const r = await pool.query(`DELETE FROM wb_gallery_photos WHERE id=$1 AND store_id=$2 RETURNING gbp_queue_id`, [parsedId.data, storeId]);
     if (!r.rowCount) return res.status(404).json({ error: "Not found" });
     await pool.query(`UPDATE client_photos SET gallery_photo_id=NULL WHERE gallery_photo_id=$1`, [parsedId.data]);
+    await (await import("../services/gbpPhotoEngine.js")).cancelQueuedPhoto(r.rows[0].gbp_queue_id);
     return res.status(204).end();
   } catch (error) { return unexpected(res, error); }
 });

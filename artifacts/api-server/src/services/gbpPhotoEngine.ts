@@ -684,15 +684,21 @@ async function markPhotoFailed(queueId: number, reason: string) {
  * Safe to call on every startup — it only touches rows with gbp_queue_id IS NULL
  * and skips stores with no GBP connection or disabled photo engine.
  */
-export async function reQueueOrphanGalleryPhotos(): Promise<void> {
+export async function reQueueOrphanGalleryPhotos(storeId?: number): Promise<void> {
   try {
     const { wbGalleryPhotos } = await import("@shared/schema");
     const { isNull } = await import("drizzle-orm");
 
+    // Client photos shown on the website stay off Google (owner, 2026-11-03); only the business's own portfolio goes.
     const orphans = await db
       .select()
       .from(wbGalleryPhotos)
-      .where(isNull(wbGalleryPhotos.gbpQueueId));
+      .where(and(
+        isNull(wbGalleryPhotos.gbpQueueId),
+        eq(wbGalleryPhotos.showOnWebsite, true),
+        sql`NOT EXISTS (SELECT 1 FROM client_photos c WHERE c.gallery_photo_id = ${wbGalleryPhotos.id})`,
+        storeId ? eq(wbGalleryPhotos.storeId, storeId) : undefined,
+      ));
 
     if (!orphans.length) return;
 
@@ -719,6 +725,15 @@ export async function reQueueOrphanGalleryPhotos(): Promise<void> {
   } catch (err: any) {
     console.warn("[GBP Photos] Re-queue sweep error:", err?.message);
   }
+}
+
+/** A photo removed from the portfolio before its turn never goes to Google. */
+export async function cancelQueuedPhoto(queueId: number | null | undefined): Promise<void> {
+  if (!queueId) return;
+  await db.update(gbpPhotoQueue)
+    .set({ status: "cancelled", errorMessage: "Photo removed before upload", updatedAt: new Date() })
+    .where(and(eq(gbpPhotoQueue.id, queueId), eq(gbpPhotoQueue.status, "pending")))
+    .catch((e) => console.warn(`[GBP Photos] cancel queueId=${queueId} failed:`, e?.message));
 }
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────
