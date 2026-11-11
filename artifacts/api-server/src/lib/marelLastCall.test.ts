@@ -21,6 +21,12 @@ describe("Marel remembers the caller's last call", () => {
     expect(callbackGreetingInstruction(c!)).toContain("hello again");
   });
 
+  it("doesn't count a call where the caller never said anything", async () => {
+    state.row = { started_at: new Date(), ended_at: new Date(), summary: null, transcript: [{ role: "tom", text: "Account services, this is Marel." }, { role: "caller", text: "  " }] };
+    expect(await marelLastCall("+15205550111", "CA_NOW")).toBeNull();
+    expect(state.sql).toContain("t->>'role' = 'caller'");
+  });
+
   it("is quiet for a first-time caller or an unknown number", async () => {
     state.row = null;
     expect(await marelLastCall("+15205550111", "CA_NOW")).toBeNull();

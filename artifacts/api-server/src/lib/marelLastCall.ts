@@ -21,7 +21,9 @@ export async function marelLastCall(callerE164: string | null, currentCallSid: s
       `SELECT started_at, ended_at, summary, transcript FROM sales_call_logs
         WHERE sales_agent_id = 'shavez' AND caller_phone_e164 = $1 AND call_sid IS DISTINCT FROM $2
           AND ended_at IS NOT NULL AND ended_at > now() - ($3 || ' hours')::interval
-          AND jsonb_typeof(transcript) = 'array' AND jsonb_array_length(transcript) > 0
+          AND jsonb_typeof(transcript) = 'array'
+          -- A call where the caller never said anything isn't a previous call (owner, 2026-11-11).
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements(transcript) t WHERE t->>'role' = 'caller' AND t->>'text' ~ '[[:alpha:]]')
         ORDER BY started_at DESC LIMIT 1`,
       [callerE164, currentCallSid, String(WINDOW_HOURS)],
     );
@@ -30,7 +32,7 @@ export async function marelLastCall(callerE164: string | null, currentCallSid: s
       .filter((t) => typeof t?.text === "string" && t.text.trim())
       .slice(-MAX_TURNS)
       .map((t) => ({ who: t.role === "caller" ? "caller" as const : "Marel" as const, text: canonicalizeSpokenBrandForText(t.text!.trim()).slice(0, MAX_TURN_CHARS) }));
-    if (!turns.length) return null;
+    if (!turns.some((t) => t.who === "caller" && /\p{L}/u.test(t.text))) return null;
     return { minutesAgo: Math.max(1, Math.round((Date.now() - new Date(r.ended_at).getTime()) / 60_000)), summary: r.summary ?? null, turns };
   } catch (e: any) {
     console.warn("[Sales Agent] Marel last-call lookup failed:", e?.message ?? e);
