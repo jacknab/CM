@@ -1544,6 +1544,10 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Auto-close tickets: runs every hour, closes tickets with no customer response in 7 days
   const { runAutoCloseTickets } = await import("./routes/support");
   setInterval(() => runAutoCloseTickets(), 60 * 60 * 1000);
+  // Marel's follow-up texts, when a caller said yes on the call (lib/agentFollowUps.ts).
+  const { startAgentFollowUps } = await import("./lib/agentFollowUps");
+  startAgentFollowUps();
+
   // Run once at startup (after a short delay so DB is ready)
   setTimeout(() => runAutoCloseTickets(), 30_000);
 

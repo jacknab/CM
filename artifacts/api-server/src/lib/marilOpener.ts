@@ -13,16 +13,18 @@ import { SHAVEZ_ACCOUNT_SUPPORT_GREETING } from "./salesAgentTransfer";
 
 export type MarilOpenerKind = "direct" | "transferred";
 /** What the caller hears first. "Sir-Tex-uh" is how the brand is spoken (CERTXA_SPOKEN_ALIAS). */
-export const MARIL_OPENER_TEXT: Record<MarilOpenerKind, string> = {
-  direct: "Account services, this is Marel.", // owner, 2026-11-11: natural, no pause after
-  transferred: SHAVEZ_ACCOUNT_SUPPORT_GREETING,
+/** What the caller hears first: her own line rotates between close variants so regular callers don't hear the identical line
+ * every time (owner, 2026-11-11). A transfer from Tom has one line. "Sir-Tex-uh" is how the brand is spoken. */
+export const MARIL_OPENER_TEXTS: Record<MarilOpenerKind, string[]> = {
+  direct: ["Account services, this is Marel.", "Account services, Marel speaking.", "Hi, account services, this is Marel."],
+  transferred: [SHAVEZ_ACCOUNT_SUPPORT_GREETING],
 };
 const VOICE = "marin";
 const STYLE = "A real person casually picking up the phone at a busy office: relaxed, warm and a little upbeat, quick and conversational, like she says it fifty times a day. Not an announcer, not a recording, no dramatic emphasis or long pauses. Say the company name as three beats: Sir, Tex (as in Texas, stressed), uh.";
 const DIR = process.env.VOICE_CACHE_DIR || "/var/lib/certxa/voice-cache";
 const FRAME_BYTES = 160; // 20 ms of 8 kHz μ-law
 
-const frames = new Map<MarilOpenerKind, string[]>();
+const frames = new Map<string, string[]>(); // by opener text
 let holdMusic: string[] | null = null;
 const toFrames = (ulaw: Buffer) => { const list: string[] = []; for (let i = 0; i < ulaw.length; i += FRAME_BYTES) list.push(ulaw.subarray(i, i + FRAME_BYTES).toString("base64")); return list; };
 
@@ -83,18 +85,18 @@ async function render(text: string): Promise<Buffer> {
 
 /** Load (or make once) both openers. Never awaited on a call; a call without one just waits for Marel as before. */
 export async function warmMarilOpeners(): Promise<void> {
-  for (const kind of Object.keys(MARIL_OPENER_TEXT) as MarilOpenerKind[]) {
+  for (const [kind, text] of (Object.keys(MARIL_OPENER_TEXTS) as MarilOpenerKind[]).flatMap((k) => MARIL_OPENER_TEXTS[k].map((t) => [k, t] as const))) {
     try {
-      const file = cacheFile(MARIL_OPENER_TEXT[kind]);
+      const file = cacheFile(text);
       let ulaw: Buffer;
       if (fs.existsSync(file)) ulaw = fs.readFileSync(file);
       else {
-        ulaw = await render(MARIL_OPENER_TEXT[kind]);
+        ulaw = await render(text);
         fs.mkdirSync(DIR, { recursive: true });
         fs.writeFileSync(`${file}.part-${process.pid}`, ulaw);
         fs.renameSync(`${file}.part-${process.pid}`, file);
       }
-      frames.set(kind, toFrames(ulaw));
+      frames.set(text, toFrames(ulaw));
     } catch (e: any) {
       console.warn(`[Sales Agent] Marel ${kind} opener not ready (calls start with her live greeting):`, e?.message ?? e);
     }
@@ -109,7 +111,10 @@ export function marilHoldMusicFrames(): string[] | null {
   return holdMusic;
 }
 
-/** The opener's 20 ms frames, or null if it isn't ready. */
-export function marilOpenerFrames(kind: MarilOpenerKind): string[] | null {
-  return frames.get(kind) ?? null;
+/** One ready opener of this kind (picked at random among its variants): its words and 20 ms frames, or null. */
+export function marilOpenerFrames(kind: MarilOpenerKind, random = Math.random): { text: string; frames: string[] } | null {
+  const ready = MARIL_OPENER_TEXTS[kind].filter((t) => frames.has(t));
+  if (!ready.length) return null;
+  const text = ready[Math.min(ready.length - 1, Math.floor(random() * ready.length))];
+  return { text, frames: frames.get(text)! };
 }

@@ -1,5 +1,5 @@
 export const TOM_ACCOUNT_SUPPORT_HANDOFF = "tom-account-support";
-export const SHAVEZ_ACCOUNT_SUPPORT_GREETING = "Thanks for holding. This is Marel with Account Services. Tom connected us about your account question. How can I help?";
+export const SHAVEZ_ACCOUNT_SUPPORT_GREETING = "Thanks for holding, this is Marel with Account Services."; // then Tom's note (lib/marelLastCall.ts)
 
 export interface TransferTranscriptTurn {
   role: string;

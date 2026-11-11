@@ -14,7 +14,7 @@ describe("Tom to Shavez account-support handoff", () => {
     expect(twiml).toContain("</Redirect>");
     expect(twiml.indexOf("<Play>")).toBeLessThan(twiml.indexOf("<Redirect"));
     expect(SHAVEZ_ACCOUNT_SUPPORT_GREETING).toContain("Marel with Account Services");
-    expect(SHAVEZ_ACCOUNT_SUPPORT_GREETING).toContain("Tom connected us");
+    expect(SHAVEZ_ACCOUNT_SUPPORT_GREETING).toContain("Thanks for holding");
   });
 
   it("uses a real ten-second hold-music asset", () => {

@@ -12,8 +12,9 @@ describe("Marel remembers the caller's last call", () => {
       { role: "caller", text: "This is Kevin, I can't sign in." }, { role: "tom", text: "I've sent a password reset e-mail to the address on file." }] };
     const c = await marelLastCall("+15205550111", "CA_NOW");
     expect(state.values.slice(0, 2)).toEqual(["+15205550111", "CA_NOW"]);
-    expect(state.sql).toContain("sales_agent_id = 'shavez'");
-    expect(c).toMatchObject({ minutesAgo: 20, turns: [{ who: "caller", text: "This is Kevin, I can't sign in." }, { who: "Marel" }] });
+    expect(state.sql).toContain("sales_agent_id = $4");
+    expect(state.values[3]).toBe("shavez");
+    expect(c).toMatchObject({ minutesAgo: 20, turns: [{ who: "caller", text: "This is Kevin, I can't sign in." }, { who: "you" }] });
     const prompt = lastCallForPrompt(c!);
     expect(prompt).toContain("20 minutes ago");
     expect(prompt).toContain("Marel sent a password reset e-mail.");

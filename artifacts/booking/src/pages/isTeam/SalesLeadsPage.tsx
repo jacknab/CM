@@ -41,10 +41,13 @@ const STAGES: [string, string, boolean][] = [
 const OUTCOMES: Record<string, string> = {
   trial_link_sent: "Trial link texted", lead_saved: "Lead saved", caller_hung_up: "Caller hung up", ended_by_tom: "Ended", ended_by_shavez: "Ended",
   silence: "Silent line", max_duration: "Time limit", in_progress: "In progress", ai_closed: "Ended", ai_error: "AI error", ai_timeout: "AI did not start",
+  no_response: "No response · disconnected", transferred_to_shavez: "Transferred to Marel",
 };
+const outcomeLabel = (o: string) => OUTCOMES[o] ?? OUTCOMES[o.replace(/^account_services_/, "")] ?? o;
+type ReviewData = { days: number; checked: number; calls: (Call & { reasons: string[] })[] };
 
 const phone = (p: string | null) => (p && /^\d{10}$/.test(p) ? `(${p.slice(0, 3)}) ${p.slice(3, 6)}-${p.slice(6)}` : p ?? "—");
-const agentName = (id: string | null | undefined) => id === "shavez" ? "Shavez" : "Tom";
+const agentName = (id: string | null | undefined) => id === "shavez" ? "Marel" : "Tom";
 const mins = (s: number | null) => (s == null ? "—" : s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`);
 function displayStage(lead: Lead): string {
   const stage = lead.profile_data?.sales?.currentStage;
@@ -64,6 +67,11 @@ async function get(): Promise<SalesData> {
 export default function SalesLeadsPage() {
   const qc = useQueryClient();
   const { data, isLoading, error, refetch, isFetching } = useQuery<SalesData>({ queryKey: ["support-sales-leads"], queryFn: get, refetchInterval: 30_000 });
+  // The weekly call review (owner, 2026-11-11): calls with warning signs, from GET /api/support/sales-calls/review.
+  const { data: review } = useQuery<ReviewData>({
+    queryKey: ["support-sales-call-review"], refetchInterval: 60_000,
+    queryFn: () => fetch("/api/support/sales-calls/review?days=7", { credentials: "include" }).then((r) => { if (!r.ok) throw new Error("review"); return r.json(); }),
+  });
   const [openCall, setOpenCall] = useState<number | null>(null);
   const { data: callDetail } = useQuery<any>({
     queryKey: ["support-sales-call", openCall],
@@ -166,6 +174,52 @@ export default function SalesLeadsPage() {
               )}
             </div>
 
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-4" data-testid="sales-call-review">
+              <div className="px-4 py-3 border-b border-slate-100">
+                <h3 className="text-sm font-semibold text-slate-700">Calls to review · last 7 days ({review?.calls.length ?? 0})</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Tom and Marel calls with a warning sign. Read the transcript to see what to improve.</p>
+              </div>
+              {!review ? <p className="p-4 text-sm text-slate-400">Loading…</p> : review.calls.length === 0 ? (
+                <p className="p-4 text-sm text-slate-400">Nothing to review — {review.checked} call{review.checked === 1 ? "" : "s"} checked.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-left text-slate-500">
+                        <th className="px-4 py-2 font-medium">When</th>
+                        <th className="px-4 py-2 font-medium">Agent</th>
+                        <th className="px-4 py-2 font-medium">Caller</th>
+                        <th className="px-4 py-2 font-medium">Length</th>
+                        <th className="px-4 py-2 font-medium">Why</th>
+                        <th className="px-4 py-2 font-medium">Summary</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {review.calls.map((c) => (
+                        <tr key={c.id} className="border-t border-slate-100 align-top hover:bg-slate-50 cursor-pointer" onClick={() => setOpenCall(openCall === c.id ? null : c.id)}>
+                          <td className="px-4 py-2 text-slate-700 whitespace-nowrap">{format(new Date(c.started_at), "MMM d, h:mm a")}</td>
+                          <td className="px-4 py-2 text-slate-700">{agentName(c.sales_agent_id)}</td>
+                          <td className="px-4 py-2 text-slate-700">{phone(c.caller_phone)}</td>
+                          <td className="px-4 py-2 text-slate-700">{mins(c.duration_seconds)}</td>
+                          <td className="px-4 py-2 text-slate-700">{c.reasons.join(" · ")}</td>
+                          <td className="px-4 py-2 text-slate-600">
+                            {c.summary || "—"}
+                            {openCall === c.id && Array.isArray(callDetail?.transcript) && (
+                              <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                                {callDetail.transcript.map((t: any, i: number) => (
+                                  <p key={i}><span className="font-medium text-slate-700">{t.role === "tom" ? agentName(c.sales_agent_id) : "Caller"}:</span> {t.text}</p>
+                                ))}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-100">
                 <h3 className="text-sm font-semibold text-slate-700">Calls ({data.calls.length})</h3>
@@ -193,7 +247,7 @@ export default function SalesLeadsPage() {
                           <td className="px-4 py-2 text-slate-700">{agentName(c.sales_agent_id)}</td>
                           <td className="px-4 py-2 text-slate-700">{phone(c.caller_phone)}</td>
                           <td className="px-4 py-2 text-slate-700">{mins(c.duration_seconds)}</td>
-                          <td className="px-4 py-2 text-slate-700">{OUTCOMES[c.outcome] ?? c.outcome}</td>
+                          <td className="px-4 py-2 text-slate-700">{outcomeLabel(c.outcome)}</td>
                           <td className="px-4 py-2">
                             {c.fact_check_ok == null ? <span className="text-slate-400">—</span>
                               : c.fact_check_ok ? <span className="text-slate-600">Passed</span>
@@ -218,7 +272,7 @@ export default function SalesLeadsPage() {
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (
                               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
                                 {callDetail.transcript.map((t: any, i: number) => (
-                                  <p key={i}><span className="font-medium text-slate-700">{t.role === "tom" ? "Tom" : "Caller"}:</span> {t.text}</p>
+                                  <p key={i}><span className="font-medium text-slate-700">{t.role === "tom" ? agentName(c.sales_agent_id) : "Caller"}:</span> {t.text}</p>
                                 ))}
                               </div>
                             )}

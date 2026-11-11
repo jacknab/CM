@@ -38,8 +38,10 @@ import { toE164US } from "../lib/phoneUtils";
 import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgentGreeting, salesAgentFactCheckProductGuidance, salesAgentProductFitGuidance, type SalesAgentProfile } from "../lib/salesAgentProfiles";
 import { salesAgentConnectionOpening, tomOpeningInstructions, TOM_SALES_DISCOVERY } from "../lib/salesAgentOpening";
 import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
-import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, type MarelLastCall } from "../lib/marelLastCall";
-import { MARIL_OPENER_TEXT, isSilentUlaw, marilHoldMusicFrames, marilOpenerFrames, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
+import { scheduleFollowUp } from "../lib/agentFollowUps";
+import { reviewReasons } from "../lib/salesCallReview";
+import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, tomNoteForPrompt, tomTransferNote, transferGreetingInstruction, type MarelLastCall, type TomTransferNote } from "../lib/marelLastCall";
+import { isSilentUlaw, marilHoldMusicFrames, marilOpenerFrames, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
 import { isExistingCustomerAccountSupportRequest, mayTransferToAccountServices, SHAVEZ_ACCOUNT_SUPPORT_GREETING, shavezHandoffTwiML, TOM_ACCOUNT_SUPPORT_HANDOFF } from "../lib/salesAgentTransfer";
 import {
   finalizeAfterInsert,
@@ -69,6 +71,12 @@ const LIVE_URL = "wss://api.openai.com/v1/live/sessions";
 const BACKEND_MODEL = process.env.SALES_AGENT_BACKEND_MODEL || process.env.AI_RECEPTIONIST_BACKEND_MODEL || "gpt-5.6-luna";
 const MAX_CALL_MS = 10 * 60_000;
 const SILENCE_HANGUP_MS = 60_000;
+/** Owner, 2026-11-11: after 8 s of silence ask "Are you still there?"; 10 s more with no answer, say so and hang up. */
+const STILL_THERE_AFTER_MS = 8_000;
+const NO_RESPONSE_HANGUP_MS = 10_000;
+const NO_RESPONSE_LINE = "There is no response from the caller at this time. I am disconnecting the call.";
+/** A lookup longer than this gets a short holding phrase ("one sec…") instead of dead air. */
+const HOLDING_PHRASE_AFTER_MS = 1_500;
 const MAX_CONCURRENT = Number(process.env.SALES_AGENT_MAX_CONCURRENT || 3);
 const DAILY_MINUTES = Number(process.env.SALES_AGENT_DAILY_MINUTES || 300);
 const SIGNUP_URL = "https://certxa.com/auth?mode=register&ref=phone";
@@ -116,7 +124,7 @@ async function voiceForCall(agent: SalesAgentProfile): Promise<{ voice: string |
 }
 
 /** Who Marel is talking to, as known when the call starts. */
-type MarilCallContext = { transferred: boolean; owner: VerifiedOwner | null; lastCall?: MarelLastCall | null };
+type MarilCallContext = { transferred: boolean; owner: VerifiedOwner | null; lastCall?: MarelLastCall | null; tomNote?: TomTransferNote | null };
 
 function marilGuidance(c: MarilCallContext): string {
   const who = c.owner
@@ -127,7 +135,7 @@ function marilGuidance(c: MarilCallContext): string {
 WHAT YOU DON'T DO — TECH SUPPORT: You are Account Services, not tech support. You can't fix or troubleshoot hardware or devices: card readers, receipt printers, cash drawers, tablets or iPads, the customer-facing screen, the check-in kiosk, the front-desk station itself, Wi-Fi, internet or network problems, phone or app crashes, or anything that needs someone to look at a device. When the problem is one of these, say kindly that it's for Certxa's technical support team, not Account Services, and offer to open a ticket (open_ticket) with a clear description (what device, what happens, since when) so the team follows up. Don't guess at fixes, don't walk them through device steps, and never promise when the team will call. If they're not sure whether it's the account or a device, check get_account_health first: if the account side is fine, it's a ticket for tech support.
 
 ${who}
-${c.lastCall ? `\n${lastCallForPrompt(c.lastCall)}\n` : ""}
+${c.lastCall ? `\n${lastCallForPrompt(c.lastCall)}\n` : ""}${c.tomNote ? `\n${tomNoteForPrompt(c.tomNote)}\n` : ""}
 HOW TO HELP:
 - Listen to the actual problem first, then use the account tools to answer from their real account — never from public prices or guesses. Say dates and amounts plainly.
   · get_account_summary: plan, free trial (end date, daysRemaining, or ended), next charge, card on file, recent charges, credits, open tickets. When they ask how long their trial has left, say the days remaining and the end date.
@@ -135,6 +143,7 @@ HOW TO HELP:
   · get_account_health: checks the account for real problems (booking page, team and hours, services, settings, texts and text credits, payments and billing, AI receptionist, website). Use it when something isn't working ("clients can't book", "texts aren't going out", "card payments don't work"). Tell them what it found in plain words and what they can do about it (the fix it gives, or a link/action you can take). If it finds nothing, say the account side looks fine.
 - Use the fixes you have: e-mail the billing page (send_billing_link) for card updates, invoices, plan changes or cancelling; send_password_reset for sign-in trouble; send_receipt for a receipt; retry_payment after they've updated a declined card; extend_trial when they ask for more trial time (see FREE TRIAL MORE TIME); apply_credit or refund_charge only with a clear reason, within the limits the system enforces. Say what you did once it succeeds.
 - FREE TRIAL MORE TIME: When a verified owner asks for more trial time, or their trial has ended and the front desk, calendar or booking page stopped, try to extend it for them. First get_account_summary: trial shows when it ends (or endedOn and ended: true), daysCanStillAdd and latestPossibleEnd. Ask briefly what they still need the time for (setting up, staff training, waiting on hardware, busy season, travel — any honest reason is fine) and use that as the reason. Offer what they need, up to daysCanStillAdd (14 at most at a time); if they don't say, offer the full daysCanStillAdd. Say the new end date and get a yes before calling extend_trial. Then say what the tool says: the new end date, and when the trial had ended, that everything is open again right now. If daysCanStillAdd is 0, explain kindly that a free trial can run at most 74 days and theirs has reached it; offer to e-mail the billing page link (send_billing_link) to choose a plan, and if there's a special reason (an outage, a bug that cost them days) open a ticket so the team can review it. Never promise days the tool hasn't given, and don't offer extensions to callers who didn't raise their trial.
+- FOLLOW-UP TEXT: after you've done something whose result they'll only see later (a reset or billing e-mail, a retried payment, a trial extension), you may offer once, naturally: "Want me to text you in about twenty minutes to make sure it worked?" Only if they clearly say yes, call schedule_follow_up_text with what to check on. Don't offer it for questions you simply answered, and don't push if they say no.
 - Before a refund or credit, confirm the amount and the reason with the caller. Never promise one before the tool succeeds. If the tool says it's over the limit, explain kindly that the team needs to review it and open a ticket.
 - If you can't solve it on the call (a bug, data question, account changes you can't make, anything over your limits), open a ticket (open_ticket) with a clear summary of what they need, then tell them the ticket number and that the Certxa team will follow up. Never promise a response time.
 - Things you can't do: change a plan or cancel for them (that's on the Billing page — offer the link), change their e-mail or phone, see or move client card payments or Stripe payouts, delete an account.
@@ -327,6 +336,7 @@ async function buildAgentInstructions(
   claimContext: ClaimCallContext | null = null,
   marilContext: MarilCallContext | null = null,
   knownCustomer: VerifiedOwner | null = null,
+  tomLastCall: MarelLastCall | null = null,
 ): Promise<{ voice: string; backend: string }> {
   const maril = accountSupportHandoff && agent.id === "shavez";
   // These live facts are warmed/cached off the call path; never make a caller wait on HTTP/DB reads before the greeting.
@@ -352,10 +362,11 @@ async function buildAgentInstructions(
   const hardwareForPrompt = accountSupportHandoff
     ? "Not applicable to this support call. Do not list or pitch hardware."
     : hardware;
+  // Each agent's written character (lib/salesAgentProfiles.ts) plus the rules for their role (owner, 2026-11-11).
   const personality = accountSupportHandoff && agent.id === "shavez"
-    ? "Be a warm, attentive Account Services representative. Listen carefully, respond directly to the issue, and avoid repeated acknowledgements, sales language, and unnecessary questions."
+    ? `${agent.personality}\nIn this role you're Account Services: respond directly to the issue, no sales language, no unnecessary questions. English by default; if the caller speaks Vietnamese, Spanish or another language, or asks you to, switch and stay in it.`
     : agent.id === "tom"
-    ? "Be friendly, approachable, curious and confidently helpful. Sound genuinely interested in the caller's business and focused on helping them find a good fit. Keep the warmth natural and calm: no exaggerated excitement, canned compliments, pressure, desperation to close, or sales clichés. Use plain language and explain unfamiliar terms patiently. Use the caller's name naturally, not repeatedly. English by default; if the caller speaks Vietnamese, Spanish or another language, or asks to, switch and stay in it."
+    ? `${agent.personality}\nFocus on helping them find a good fit: no pressure, desperation to close or sales clichés. Use plain language and explain unfamiliar terms patiently. English by default; if the caller speaks Vietnamese, Spanish or another language, or asks to, switch and stay in it.`
     : `${agent.personality} English by default; if the caller speaks Vietnamese, Spanish or another language, or asks you to, switch and stay in it.`;
   const accountSupportGuidance = maril
     ? marilGuidance(marilContext ?? { transferred: false, owner: null })
@@ -389,14 +400,22 @@ Use business-specific language only after learning the business type: nail salon
     : `\n\nCALLER-FACING NAME: When introducing yourself or answering what name the caller should use, say "${agent.spokenName}". Do not spell your name aloud.`;
   const naturalConversationGuidance = agent.id === "tom"
     ? `NATURAL PHONE DELIVERY: Be a warm, confident sales representative leading one continuous conversation, not reading a form. Keep replies concise, calm and plainspoken; avoid filler, repeated acknowledgements, unnecessary explanations and repeated use of the caller's name. Ask one guided discovery question at a time, listen to the answer, and respond before moving to the next useful topic. If interrupted or asked a direct question, address that first, then naturally resume useful unanswered discovery rather than abandoning the sales conversation. Never repeat known questions, talk over the caller, pressure someone who declines discovery, or narrate background work. If they say they called before, handle any required identity check without restarting discovery.`
-    : `NATURAL PHONE DELIVERY: Sound like a helpful person having one continuous conversation, not a form or script. Acknowledge a caller's name once, then do not use it again until a natural closing unless needed for clarity. Do not begin consecutive turns with "Sure", "Okay", or "Thanks, [name]"; vary or omit acknowledgements and answer the point directly. Never narrate background work with phrases like "I'll check quickly" or "let me look"—continue naturally and state only the result. If the caller says they called before, do not restart the discovery sequence or repeat questions they already answered; complete any required identity check silently first. If identity verification returns no usable history, acknowledge that once without blaming the caller or repeating a name, then ask what they need help with now instead of restarting the entire intake.`;
+    : `NATURAL PHONE DELIVERY: Sound like a helpful person having one continuous conversation, not a form or script. Acknowledge a caller's name once, then do not use it again until a natural closing unless needed for clarity. Do not begin consecutive turns with "Sure", "Okay", or "Thanks, [name]"; vary or omit acknowledgements and answer the point directly. Don't describe background work ("I'm checking the system", "I'll save that"); a short holding phrase is fine when the system asks for one. State the result naturally when it arrives. If the caller says they called before, do not restart the discovery sequence or repeat questions they already answered; complete any required identity check silently first. If identity verification returns no usable history, acknowledge that once without blaming the caller or repeating a name, then ask what they need help with now instead of restarting the entire intake.`;
+  // How a person handles a phone call (owner, 2026-11-11): both agents.
+  const humanCallHandling = `HANDLING THE CALL LIKE A PERSON:
+- One thing at a time. Answer what they asked first, then the next step.
+- Interruptions: if the caller starts talking while you're speaking, stop, listen, and answer what they just said. Don't restart the sentence you were on; pick up only what still matters, in fewer words.
+- Holding: when something takes a moment to look up, the system may ask you to say a short holding phrase. Say just that — a few natural words, different each time ("one sec…", "bear with me, pulling that up", "okay, just a moment") — and never name tools or systems.
+- Spelling and numbers: read e-mails, codes and numbers back in small chunks ("k-e-v… at gmail") and check they're right.
+- Silence: the system may ask "Are you still there?" for you. If the caller comes back, carry on naturally from where you were.
+- Wrapping up: before you say goodbye, give a short spoken recap of what was actually done on this call and what happens next (only things the system confirmed — never something that failed or wasn't done), e.g. "So, I've sent the reset e-mail to the address ending in gmail, and your trial now runs to December fourth." Then a warm, normal goodbye. Don't drag it out, and don't ask "is there anything else" more than once.`;
   const roleIntroduction = maril
     ? `You are Marel, Certxa's Account Services representative${marilContext?.transferred ? ", handling a caller Tom transferred to you" : ""}.`
     : accountSupportHandoff && agent.id === "shavez"
     ? "You are Marel, Certxa's Account Services triage representative, handling a caller transferred by Tom."
     : `You are ${agentName}, a sales specialist at Certxa, answering Certxa's sales line.`;
   const backendVoiceGuidance = maril
-    ? `YOUR BACKEND does the account work, and you must hand it over: finding the account and the verification code, reading the account, sending links and receipts, retries, trial extensions, credits, refunds and tickets, and ending the call after goodbye. Backend work is silent: never narrate it ("let me check"); carry on naturally when the result arrives. Never claim something was sent, changed or refunded unless the backend says it succeeded.`
+    ? `YOUR BACKEND does the account work, and you must hand it over: finding the account and the verification code, reading the account, sending links and receipts, retries, trial extensions, credits, refunds and tickets, and ending the call after goodbye. Don't describe backend work or name tools; a short holding phrase is fine when the system asks for one. Carry on naturally when the result arrives. Never claim something was sent, changed or refunded unless the backend says it succeeded.`
     : accountSupportHandoff
     ? `ACCOUNT SERVICES MODE: This caller has already requested account support and has been transferred. Do not ask for their name again, restart discovery, repeat acknowledgements, pitch plans, quote sales-plan prices, list hardware, offer a trial, or claim to inspect/update their account. Address the specific issue they raised. For a specific balance/invoice/charge lookup, briefly explain you cannot see that account's billing data and give the live chat or support@certxa.com route. The only available tool is end_call, and only after the caller is finished.`
     : `YOUR BACKEND does three things, and you must hand them to it:
@@ -406,12 +425,14 @@ Use business-specific language only after learning the business type: nail salon
 - Every time a verified caller tells you their name, salon name, salon type, team size, locations, city, e-mail, operating process, problem, what software they use, or plan interest, hand supported details to the backend to save while you continue helping.
 - When the caller agrees to have the free-trial sign-up link texted to them, hand that to the backend to send.
 - After you say goodbye and the caller is done, hand off ending the call.
-Backend work is silent: never say "let me check", "I'll save that" or narrate tools. When a result arrives, carry on naturally.`;
+Don't describe backend work ("I'll save that") or name tools; a short holding phrase is fine when the system asks for one. When a result arrives, carry on naturally.`;
   const voice = `${roleIntroduction} You are an AI built by Certxa — if anyone asks, say so plainly.
 
 CERTXA PRONUNCIATION: This voice engine mispronounces the spelling "Certxa" when it is fed as speech text. In spoken response text, say the pronunciation-only alias "${CERTXA_SPOKEN_ALIAS}" (three clear beats: Sir / Tex / uh — "Tex" as in Texas, stressed, and a soft "uh" at the end) instead of the brand spelling, and say "${CERTXA_SPOKEN_ALIAS} dot com" for the domain. Never add a T sound ("Sir Text uh", "Sir Tex-tuh"), never say "Cert-ex-ah", and never compress it to "Sir-tza". When spelling aloud, say C-E-R-T-X-A. The application converts this narrowly scoped alias back to Certxa/Certxa.com in saved transcripts. Never use the alias in SMS, URLs, saved profile data, or written answers.
 ${namePronunciation}
 ${naturalConversationGuidance}
+
+${humanCallHandling}
 
 YOUR PERSONALITY: ${personality}
 
@@ -463,6 +484,7 @@ ${backendVoiceGuidance}`;
 - Verification first: unless the call is verified by caller ID (see below), call find_account with what the caller said, then send_verification_code for the account they confirm, then check_verification_code with the code they read back. Account tools refuse until verification succeeds.
 - get_account_summary for any question about their plan, trial (days remaining), charges, card, credits or tickets.
 - get_account_details for how the account is set up and used: staff, services, clients, bookings, booking page.
+- schedule_follow_up_text only after the caller said yes to a check-in text.
 - get_account_health when something on the account isn't working: it finds real account problems (not hardware or network ones — those go to a tech-support ticket).
 - send_billing_link, send_password_reset, send_receipt, retry_payment, extend_trial, apply_credit, refund_charge, open_ticket when the conversation calls for them (see the guidance below). Credits and refunds need the caller's agreement on amount and reason first.
 - end_call only after goodbye, when the caller is done.
@@ -486,8 +508,12 @@ The caller's number is ${callerPhone ?? "unknown"}.`;
   const claimBlock = (agent.id === "tom" && !accountSupportHandoff ? `\n\n${claimCallGuidance(claimContext)}` : "")
     + (agent.id === "tom" && !accountSupportHandoff && knownCustomer
       ? `\n\nKNOWN CUSTOMER BY CALLER ID: This number belongs to ${knownCustomer.firstName ?? "the owner"}, owner of ${knownCustomer.businessName}, an existing Certxa customer (their mobile on file, or a number they verified with Account Services). Once they've said who they are, you can use their first name. Don't pitch a free trial or sign-up as if they were new; ask how you can help. For anything about their account, billing, sign-in or subscription, transfer them to Account Services as usual. Don't read out account details yourself.`
-      : "");
-  return { voice: `${voice}\n\nCALLER MEMORY PRIVACY:\n${memoryBlock}${claimBlock}`, backend: `${backend}${claimBlock}` };
+      : "")
+    + (agent.id === "tom" && !accountSupportHandoff && tomLastCall ? `\n\n${lastCallForPrompt(tomLastCall)}` : "");
+  const sameDay = agent.id === "tom" && !accountSupportHandoff && tomLastCall
+    ? " Exception: the CALLING BACK record below is this same phone number's call to you today; you may use it (their name included) without verify_caller_identity."
+    : "";
+  return { voice: `${voice}\n\nCALLER MEMORY PRIVACY:\n${memoryBlock}${sameDay}${claimBlock}`, backend: `${backend}${claimBlock}` };
 }
 
 // ─── Limits (shared across pm2 workers through the call log) ──────────────────
@@ -567,8 +593,8 @@ const TOOLS = [
   {
     type: "function",
     name: "transfer_to_account_services",
-    description: "When a caller asks for Account Services or describes an account-support issue, immediately transfer the call to the Account Services AI triage webhook. Do not ask an additional permission or hold question.",
-    parameters: { type: "object", properties: {}, required: [] },
+    description: "When a caller asks for Account Services or describes an account-support issue, immediately transfer the call to the Account Services AI triage webhook. Do not ask an additional permission or hold question. Give Marel a one-line reason in the caller's own terms so she can open with it.",
+    parameters: { type: "object", properties: { reason: { type: "string", description: "One short line for Marel: what the caller needs, e.g. \"can't sign in, forgot password\" or \"card declined, wants to update it\"." } }, required: ["reason"] },
   },
   {
     type: "function",
@@ -654,6 +680,7 @@ const MARIL_TOOLS = [
   { type: "function", name: "send_verification_code", description: "Text a 6-digit code to the mobile on file for the account the caller confirmed (accountRef from find_account).", parameters: { type: "object", properties: { accountRef: { type: "string" } }, required: ["accountRef"] } },
   { type: "function", name: "check_verification_code", description: "Check the 6-digit code the caller read back.", parameters: { type: "object", properties: { code: { type: "string", description: "Digits only." } }, required: ["code"] } },
   { type: "function", name: "get_account_summary", description: "The verified caller's plan, free trial (end date, daysRemaining, daysCanStillAdd), next charge, card on file, recent charges (with chargeRef), credit balance and open tickets.", parameters: { type: "object", properties: {}, required: [] } },
+  { type: "function", name: "schedule_follow_up_text", description: "Only after the caller said yes on the call: text them in 10-60 minutes to check that what you did worked. checkingOn is a short question in plain words, e.g. \"did the password reset e-mail arrive and work\". One per call.", parameters: { type: "object", properties: { checkingOn: { type: "string" }, minutes: { type: "number" } }, required: ["checkingOn"] } },
   { type: "function", name: "get_account_details", description: "The verified caller's account in numbers: business type, active staff, services (bookable online), clients, bookings (upcoming, this month, last 30 days completed/cancelled/no-shows), booking page, customer since.", parameters: { type: "object", properties: {}, required: [] } },
   { type: "function", name: "get_account_health", description: "Check the verified caller's account for real problems (booking readiness, team, services, settings, texts, payments and billing, AI receptionist, website). Returns only what is wrong or needs attention, with the fix. Not for hardware, devices or networks.", parameters: { type: "object", properties: {}, required: [] } },
   { type: "function", name: "send_billing_link", description: "E-mail the owner their billing page link (update card, invoices, change or cancel plan).", parameters: { type: "object", properties: {}, required: [] } },
@@ -711,6 +738,13 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   let trialSent = false;
   let claimLinkSent = false;
   let toolsRunning = 0;
+  /** Dead air and silence (owner, 2026-11-11): when a lookup started, whether its holding phrase was asked for, the
+   * last time her/his voice went out, and where the "still there?" sequence is. */
+  let toolStartedAt = 0;
+  let holdingAsked = false;
+  let lastToolDoneAt = 0;
+  let lastAiFrameAt = 0;
+  let stillThere: { stage: 0 | 1 | 2; at: number } = { stage: 0, at: 0 };
   // Marel (Account Services): who the caller is verified as, and a code texted to an account's owner mobile.
   let marilContext: MarilCallContext | null = null;
   let verifiedOwner: VerifiedOwner | null = null;
@@ -724,10 +758,13 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   /** Tom: the account this caller's number belongs to (owner's mobile or a number verified before), if any. */
   let knownCustomer: VerifiedOwner | null = null;
   let knownCustomerPromise: Promise<void> = Promise.resolve();
+  /** Tom: this number's last call to him today where the caller spoke (lib/marelLastCall.ts). */
+  let tomLastCall: MarelLastCall | null = null;
   let callbackScheduled = false;
   let accountSupportHandoff = false;
   /** Marel's ready-made opener, already playing when GPT-Live starts (lib/marilOpener.ts). */
   let marilOpener: MarilOpenerKind | null = null;
+  let marilOpenerText = "Account services, this is Marel.";
   /** After the opener, her first live words follow at once: the silence GPT-Live puts before them is dropped. */
   let trimReplyLeadIn = false;
   /** Hold music before Marel (her own number): until then the AI neither hears the caller nor speaks. */
@@ -781,6 +818,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     }
     if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
       const payload = bed ? mixTwilioOutboundFrame(frame ? Buffer.from(frame, "base64") : null, bed, frame ? 0.25 : 1).toString("base64") : frame!;
+      if (frame) lastAiFrameAt = Date.now();
       twilioWs.send(JSON.stringify({ event: "media", streamSid, media: { payload } }));
       if (frame && agentProfile.id === "tom" && !firstAssistantAudioSentAt) {
         firstAssistantAudioSentAt = Date.now();
@@ -806,6 +844,40 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     if (Date.now() - lastCallerVoice > SILENCE_HANGUP_MS) finish("silence");
   }, 5_000);
 
+  /** Tell the voice to say something now (same channel as the greeting). */
+  const sayNow = (content: string) => {
+    if (closed || !started || !openAi || openAi.readyState !== WebSocket.OPEN) return;
+    openAi.send(JSON.stringify({ type: "session.instructions.append", delegation_id: null, content }));
+  };
+  // Every half second: a holding phrase when a lookup runs long, and the "still there?" sequence on silence.
+  const presenceTimer = setInterval(() => {
+    if (closed || !started || (!firstAssistantAudioAt && !marilOpener)) return;
+    const now = Date.now();
+    const quiet = !aiSpeaking && outQueue.length === 0 && now >= holdUntil;
+    if (toolsRunning > 0) {
+      if (!holdingAsked && quiet && now - toolStartedAt >= HOLDING_PHRASE_AFTER_MS) {
+        holdingAsked = true;
+        sayNow(`Something is taking a moment to load. Say one short, natural holding phrase now — a few words, different from any you've used on this call (like "one sec…", "bear with me, pulling that up", "okay, just a moment") — then stay quiet until the result arrives. Don't name tools or systems.`);
+      }
+      return;
+    }
+    if (stillThere.stage > 0 && lastCallerVoice > stillThere.at) { stillThere = { stage: 0, at: 0 }; return; } // they answered
+    if (!quiet) return;
+    const lastSound = Math.max(lastCallerVoice, lastAiFrameAt, lastToolDoneAt);
+    if (stillThere.stage === 0 && now - lastSound >= STILL_THERE_AFTER_MS) {
+      stillThere = { stage: 1, at: now };
+      sayNow(`The caller has gone silent. Say only: "Are you still there?" Then wait.`);
+    } else if (stillThere.stage === 1 && ((lastAiFrameAt > stillThere.at && now - lastAiFrameAt >= NO_RESPONSE_HANGUP_MS) || now - stillThere.at >= NO_RESPONSE_HANGUP_MS + 6_000)) {
+      stillThere = { stage: 2, at: now };
+      console.log(`${LOG} no response from the caller; disconnecting call=${callSid ?? "unknown"}`);
+      sayNow(`The caller still isn't answering. Say exactly: "${NO_RESPONSE_LINE}" Nothing else.`);
+    } else if (stillThere.stage === 2 && lastAiFrameAt > stillThere.at && now - lastAiFrameAt >= 700) {
+      finish("no_response");
+    } else if (stillThere.stage === 2 && now - stillThere.at > 12_000) {
+      finish("no_response"); // the line was never spoken: hang up anyway
+    }
+  }, 500);
+
   function scheduleAccountSupportTransfer(): void {
     if (accountSupportTransferScheduled || closed) return;
     accountSupportTransferScheduled = true;
@@ -819,6 +891,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     closed = true;
     clearTimeout(maxTimer);
     clearInterval(silenceTimer);
+    clearInterval(presenceTimer);
     if (accountSupportTransferTimer) clearTimeout(accountSupportTransferTimer);
     if (pacer) clearInterval(pacer);
     flush("caller"); flush("tom");
@@ -1299,6 +1372,9 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
       if (agentProfile.id !== "tom" || !mayTransferToAccountServices(transferTurns)) {
         return { success: false, message: "Transfer not authorized. Continue helping unless the caller has asked for account support or Account Services." };
       }
+      // Marel opens with it (migration 0349).
+      const reason = String(args.reason ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+      if (reason && callLogId) await pool.query(`UPDATE sales_call_logs SET transfer_reason = $2 WHERE id = $1`, [callLogId, reason]).catch(() => undefined);
       scheduleAccountSupportTransfer();
       return { success: true, message: "Transfer accepted. Tell the caller you are connecting them to Account Services now; do not ask for another confirmation." };
     }
@@ -1336,6 +1412,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         return { success: true, verified: true, message: `Verified: the owner of ${verifiedOwner.businessName}. You can use the account tools now.` };
       }
       case "get_account_summary": return verifiedOwner ? { success: true, account: await accountSummary(verifiedOwner) } : needOwner;
+      case "schedule_follow_up_text": return { success: true, message: await scheduleFollowUp({ callSid, phoneE164: callerPhoneE164, storeId: verifiedOwner?.storeId ?? null, firstName: verifiedOwner?.firstName ?? null, checkingOn: String(args.checkingOn ?? ""), minutes: Number(args.minutes) }) };
       case "get_account_details": return verifiedOwner ? { success: true, details: await accountDetails(verifiedOwner) } : needOwner;
       case "get_account_health": return verifiedOwner ? { success: true, health: await accountHealth(verifiedOwner) } : needOwner;
       case "send_billing_link": return verifiedOwner ? { success: true, message: await sendBillingLink(verifiedOwner) } : needOwner;
@@ -1361,7 +1438,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     if (!key) { console.error(`${LOG} OPENAI_API_KEY is missing`); finish("no_ai_key"); return; }
     if (closed) return;
     openAi = new WebSocket(LIVE_URL, { headers: { Authorization: `Bearer ${key}` } });
-    const instructionsPromise = Promise.all([claimContextPromise, marilContextPromise, knownCustomerPromise]).then(() => buildAgentInstructions(agentProfile, callerPhone, false, accountSupportHandoff, claimContext, marilContext, knownCustomer));
+    const instructionsPromise = Promise.all([claimContextPromise, marilContextPromise, knownCustomerPromise]).then(() => buildAgentInstructions(agentProfile, callerPhone, false, accountSupportHandoff, claimContext, marilContext, knownCustomer, tomLastCall));
     const voicePromise = callLogPromise.then(() => voiceForCall(agentProfile)).catch(() => ({ voice: agentProfile.voice as string | { id: string }, label: agentProfile.voice }));
     openAi.on("open", () => {
       const socketOpenedAt = Date.now();
@@ -1412,21 +1489,23 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
             type: "session.instructions.append",
             delegation_id: null,
             content: accountSupportHandoff && marilOpener === "transferred"
-              ? `You have already said, and the caller has heard: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Do not greet them again or repeat it. Listen to the caller and help. Do not pitch sales or ask why they called again if they already said.`
+              ? `You have already said, and the caller is hearing: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Do not say it again. ${transferGreetingInstruction(marilContext?.tomNote ?? null)} Do not pitch sales.`
               : accountSupportHandoff && marilOpener === "direct"
               ? marilContext?.lastCall
-                ? `You have already said, and the caller is hearing: "Account services, this is Marel." Do not say it again. ${callbackGreetingInstruction(marilContext.lastCall)}`
-                : `You have already said, and the caller is hearing: "Account services, this is Marel." Do not say it again or greet again. Carry straight on, with no pause or filler, and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
+                ? `You have already said, and the caller is hearing: "${marilOpenerText}" Do not say it again. ${callbackGreetingInstruction(marilContext.lastCall)}`
+                : `You have already said, and the caller is hearing: "${marilOpenerText}" Do not say it again or greet again. Carry straight on, with no pause or filler, and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
               : accountSupportHandoff
               ? marilContext?.transferred
-                ? `Speak first now: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" Then listen carefully and help. Do not pitch sales or ask why they called again if they already said.`
+                ? `Speak first now: "${SHAVEZ_ACCOUNT_SUPPORT_GREETING}" ${transferGreetingInstruction(marilContext?.tomNote ?? null)} Do not pitch sales.`
                 : marilContext?.lastCall
                 ? `Speak first now: "Account services, this is Marel." ${callbackGreetingInstruction(marilContext.lastCall)}`
                 : `Speak first now: "Account services, this is Marel.${verifiedOwner ? ` Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : " How can I help you today?"}" Then listen carefully and help.`
               : agentProfile.id === "tom" && claimContext?.mode === "callback"
               ? `Speak first now. Say: "Hi, this is Tom from Certxa calling back for ${claimContext.callerName}. May I speak with ${claimContext.callerName}, please?" Then wait for them to come to the phone, and follow OUTBOUND OWNERSHIP CALL-BACK.`
               : agentProfile.id === "tom"
-              ? tomOpeningInstructions(CERTXA_SPOKEN_ALIAS, connectionAcknowledged)
+              ? tomLastCall
+              ? `Speak first now. ${connectionAcknowledged ? "The phone system has already played a short connection acknowledgement; do not repeat it. " : ""}Begin with: "${connectionAcknowledged ? `This is Tom at ${CERTXA_SPOKEN_ALIAS}.` : `Thanks for calling ${CERTXA_SPOKEN_ALIAS}, this is Tom.`}" ${callbackGreetingInstruction(tomLastCall)}`
+              : tomOpeningInstructions(CERTXA_SPOKEN_ALIAS, connectionAcknowledged)
           : `Speak first now. Say exactly: "${pickAgentGreeting(agentProfile)}" Use the pronunciation guidance in your instructions. The caller has already selected sales in the phone menu; don't ask what they are calling about again. If they immediately ask a question, answer it naturally instead of insisting on a name. Then listen.`,
           }));
         };
@@ -1485,11 +1564,13 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         console.log(`${LOG} tool ${name}`);
         // Several tools can run at once (save_lead with find_prepared_salon): the next response is asked for only once
         // every one of them has returned, or the AI refuses it ("Missing tool results").
+        if (toolsRunning === 0) { toolStartedAt = Date.now(); holdingAsked = false; }
         toolsRunning += 1;
         const action = runTool(name, args)
           .catch((e) => { console.error(`${LOG} tool ${name} failed:`, e.message); return { success: false, message: "Something went wrong." }; })
           .then((result) => {
             toolsRunning -= 1;
+            if (toolsRunning === 0) lastToolDoneAt = Date.now();
             if (!openAi || openAi.readyState !== WebSocket.OPEN) return;
             openAi.send(JSON.stringify({ type: "response.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) } }));
             if (toolsRunning === 0) openAi.send(JSON.stringify({ type: "response.create" }));
@@ -1548,28 +1629,33 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         const opener = marilOpenerFrames(kind);
         if (opener && streamSid) {
           marilOpener = kind;
+          marilOpenerText = opener.text;
           trimReplyLeadIn = true;
           // A call to her own number hears 8 seconds of hold music first; GPT-Live gets ready while it plays.
           const music = kind === "direct" ? marilHoldMusicFrames() : null;
           if (music) { outQueue.push(...music); holdUntil = Date.now() + music.length * 20; }
-          outQueue.push(...opener);
+          outQueue.push(...opener.frames);
           startPacer();
-          transcript.push({ role: "tom", text: canonicalizeSpokenBrandForText(MARIL_OPENER_TEXT[kind]), at: new Date().toISOString() });
+          transcript.push({ role: "tom", text: canonicalizeSpokenBrandForText(opener.text), at: new Date().toISOString() });
           console.log(`${LOG} Marel ${kind} opener playing call=${callSid ?? "unknown"} ms=${Date.now() - twilioStartAt}`);
         }
         // Calling her back: what was said on this number's last call to her today (lib/marelLastCall.ts).
         const lastCall = transferredByTom ? Promise.resolve(null) : marelLastCall(callerPhoneE164, callSid);
+        // Transferred by Tom: his reason and what the caller told him (same call, migration 0349).
+        const tomNote = transferredByTom ? tomTransferNote(callSid) : Promise.resolve(null);
         marilContextPromise = ownerByCallerId(callerPhone)
-          .then(async (owner) => { verifiedOwner = owner; marilContext = { transferred: transferredByTom, owner, lastCall: await lastCall }; })
-          .catch(async (e) => { marilContext = { transferred: transferredByTom, owner: null, lastCall: await lastCall }; console.warn(`${LOG} Marel caller lookup failed:`, e?.message ?? e); })
+          .then(async (owner) => { verifiedOwner = owner; marilContext = { transferred: transferredByTom, owner, lastCall: await lastCall, tomNote: await tomNote }; })
+          .catch(async (e) => { marilContext = { transferred: transferredByTom, owner: null, lastCall: await lastCall, tomNote: await tomNote }; console.warn(`${LOG} Marel caller lookup failed:`, e?.message ?? e); })
           .then(() => { if (marilContext?.lastCall) console.log(`${LOG} Marel: caller calling back (last call ${marilContext.lastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
       }
       // A prepared salon page: Tom's call-back to the salon (its token came with the call), or a call from a salon's own line.
       const claimToken = String(msg.start?.customParameters?.claimCallback ?? "");
       if (agentProfile.id === "tom" && !String(msg.start?.customParameters?.claimCallback ?? "")) {
+        const lastTomCall = marelLastCall(callerPhoneE164, callSid, "tom");
         knownCustomerPromise = ownerByCallerId(callerPhone)
           .then((owner) => { knownCustomer = owner; if (owner) console.log(`${LOG} Tom: caller is a known customer (store ${owner.storeId}) call=${callSid ?? "unknown"}`); })
-          .catch((e) => console.warn(`${LOG} Tom known-customer lookup failed:`, e?.message ?? e));
+          .catch((e) => console.warn(`${LOG} Tom known-customer lookup failed:`, e?.message ?? e))
+          .then(async () => { tomLastCall = await lastTomCall; if (tomLastCall) console.log(`${LOG} Tom: caller calling back (last call ${tomLastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
       }
       claimContextPromise = agentProfile.id !== "tom" || accountSupportHandoff ? Promise.resolve() : (async () => {
         if (claimToken) {
@@ -1972,7 +2058,7 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
         `${appUrl}/api/webhook/twilio/sales/hold-music.wav`,
       ));
     }
-    if (["ended_by_tom", "caller_hung_up"].includes(outcome)) {
+    if (["ended_by_tom", "caller_hung_up", "no_response"].includes(outcome)) {
       return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
     }
     return sayAndHangUp("I'm sorry, we lost the connection before I could finish helping. Please call back or visit Certxa dot com. Goodbye.");
@@ -2031,6 +2117,21 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
     } catch (err: any) {
       console.error(`${LOG} leads list failed:`, err.message);
       res.status(500).json({ message: "Could not load sales leads" });
+    }
+  });
+  // The weekly call review: Tom and Marel calls with warning signs (lib/salesCallReview.ts; owner, 2026-11-11).
+  app.get("/api/support/sales-calls/review", requireSupportAuth, async (req: Request, res: Response) => {
+    try {
+      const days = Math.max(1, Math.min(30, Number(req.query.days) || 7));
+      const r = await pool.query(
+        `SELECT id, caller_phone, sales_agent_id, outcome, duration_seconds, summary, started_at, transcript, structured_summary, fact_check_ok
+           FROM sales_call_logs WHERE started_at > now() - ($1 || ' days')::interval AND ended_at IS NOT NULL ORDER BY started_at DESC LIMIT 500`, [String(days)]);
+      const calls = r.rows.map((c: any) => ({ ...c, reasons: reviewReasons(c), transcript: undefined, structured_summary: undefined }))
+        .filter((c: any) => c.reasons.length);
+      res.json({ days, checked: r.rows.length, calls });
+    } catch (err: any) {
+      console.error(`${LOG} call review failed:`, err.message);
+      res.status(500).json({ message: "Could not load the call review" });
     }
   });
   app.get("/api/support/sales-calls/:id", requireSupportAuth, async (req: Request, res: Response) => {
