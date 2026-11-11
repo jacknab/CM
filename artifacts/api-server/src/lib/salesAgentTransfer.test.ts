@@ -13,7 +13,7 @@ describe("Tom to Shavez account-support handoff", () => {
     expect(twiml).toContain(`/api/webhook/twilio/sales/shavez?handoff=${TOM_ACCOUNT_SUPPORT_HANDOFF}`);
     expect(twiml).toContain("</Redirect>");
     expect(twiml.indexOf("<Play>")).toBeLessThan(twiml.indexOf("<Redirect"));
-    expect(SHAVEZ_ACCOUNT_SUPPORT_GREETING).toContain("Maril with Account Services");
+    expect(SHAVEZ_ACCOUNT_SUPPORT_GREETING).toContain("Marel with Account Services");
     expect(SHAVEZ_ACCOUNT_SUPPORT_GREETING).toContain("Tom connected us");
   });
 

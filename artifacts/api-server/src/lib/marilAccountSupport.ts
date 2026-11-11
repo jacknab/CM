@@ -1,11 +1,11 @@
 /**
- * Maril, Certxa's AI Account Services agent on the phone (owner, 2026-11-10). Tom transfers account and billing calls
+ * Marel, Certxa's AI Account Services agent on the phone (owner, 2026-11-10). Tom transfers account and billing calls
  * to her, and her own number (602) 560-9931 is the account-support line (routes/salesAgent.ts, agent "shavez").
  *
  * Who she is talking to (the owner's rule): a call from the account owner's mobile on file is the owner; otherwise she
  * texts a 6-digit code to that mobile and the caller reads it back. Nothing about an account is shared or changed before.
  *
- * What she can do for a verified owner, all logged on the account as the "Maril (AI)" support agent (migration 0341),
+ * What she can do for a verified owner, all logged on the account as the "Marel (AI)" support agent (migration 0341),
  * with credits and refunds held to the isAdmin limits (lib/supportPolicy.ts) like any agent:
  *   read the account and billing · e-mail the billing page, a password reset or a receipt · retry a failed payment ·
  *   extend a trial (within the 74-day rule) · apply a credit · refund a payment · open a ticket for the team.
@@ -30,11 +30,11 @@ const money = (cents: number) => `$${(Number(cents || 0) / 100).toFixed(2)}`;
 export type VerifiedOwner = { userId: string; firstName: string | null; email: string | null; storeId: number; businessName: string; accountType: string | null };
 
 let marilAgentId: number | null = null;
-/** Maril's support_agents row (migration 0341): who her actions are logged as. */
+/** Marel's support_agents row (migration 0341): who her actions are logged as. */
 export async function marilAgent(): Promise<number> {
   if (marilAgentId) return marilAgentId;
   const { rows: [row] } = await pool.query(`SELECT id FROM support_agents WHERE email = 'maril.ai@certxa.invalid' LIMIT 1`);
-  if (!row) throw new Error("Maril's support agent record is missing (migration 0341)");
+  if (!row) throw new Error("Marel's support agent record is missing (migration 0341)");
   marilAgentId = Number(row.id);
   return marilAgentId;
 }
@@ -82,14 +82,14 @@ export async function sendVerificationCode(userId: string): Promise<{ ok: true; 
   if (!owner) return { ok: false, message: "That account was not found." };
   if (digits(owner.phone).length !== 10) return { ok: false, message: "This account has no mobile number on file to text a code to. Offer a ticket so the team can verify them another way." };
   const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
-  const sms = await sendTwilioSms(owner.phone!, `Certxa: your Account Services code is ${code}. Maril will ask you for it on the call. Don't share it with anyone else.`);
+  const sms = await sendTwilioSms(owner.phone!, `Certxa: your Account Services code is ${code}. Marel will ask you for it on the call. Don't share it with anyone else.`);
   if (!sms.success) return { ok: false, message: "The code could not be texted." };
   const { phone: _p, ...safe } = owner;
   return { ok: true, codeHash: hashCode(code), owner: safe, sentTo: mask(owner.phone)! };
 }
 export const hashCode = (code: string) => crypto.createHash("sha256").update(String(code).replace(/\D/g, "")).digest("hex");
 
-/** What Maril can tell a verified owner about their account and billing. */
+/** What Marel can tell a verified owner about their account and billing. */
 export async function accountSummary(owner: VerifiedOwner) {
   const s = owner.storeId;
   const [store, sub, profile, charges, tickets, credits] = await Promise.all([
@@ -116,7 +116,7 @@ export async function accountSummary(owner: VerifiedOwner) {
     business: owner.businessName,
     accountStatus: st.account_status ?? null,
     suspendedReason: st.suspended_reason ?? null,
-    // A running or ended free trial, and how many more days Maril may still give (owner, 2026-11-11).
+    // A running or ended free trial, and how many more days Marel may still give (owner, 2026-11-11).
     trial: (st.subscription_status === "trial" || st.subscription_status === "expired") && st.trial_ends_at
       ? await trialFacts(owner.userId, new Date(st.trial_ends_at)) : null,
     plan: plan ? {
@@ -139,7 +139,7 @@ export async function sendBillingLink(owner: VerifiedOwner): Promise<string> {
   const link = `${SITE()}${owner.accountType === "certxa_pro" ? "/solo/billing" : "/billing"}`;
   await sendEmail(owner.storeId, owner.email, "Your Certxa billing page", [
     emailGreeting(owner.firstName), emailText("Here's your billing page, where you can update your card, see your invoices and change or cancel your plan."),
-    emailButton("Open billing", link), emailNote("Sent by Maril from Certxa Account Services, as you asked on the phone."),
+    emailButton("Open billing", link), emailNote("Sent by Marel from Certxa Account Services, as you asked on the phone."),
   ].join(""));
   await log(owner.storeId, "billing_link_sent_by_support", { to: owner.email });
   return `Sent to ${owner.email}.`;
@@ -151,7 +151,7 @@ export async function sendPasswordReset(owner: VerifiedOwner): Promise<string> {
   await pool.query(`INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES ($1, $2, now() + interval '1 hour')`, [owner.userId, token]);
   await sendEmail(0, owner.email, "Reset your Certxa password", [
     emailText(`<strong style="font-size:18px;">Reset your Certxa password</strong>`), emailGreeting(owner.firstName),
-    emailText("Maril from Certxa Account Services sent this as you asked on the phone. Tap the button to set a new password."),
+    emailText("Marel from Certxa Account Services sent this as you asked on the phone. Tap the button to set a new password."),
     emailButton("Reset password", `${SITE()}/reset-password?token=${token}`),
     emailNote("This link expires in 1 hour. If you didn't ask for it, you can ignore this e-mail."),
   ].join(""));
@@ -229,13 +229,13 @@ export async function accountDetails(owner: VerifiedOwner) {
 
 /**
  * The account's health: the same checks as isTeam › Account Diagnostics (lib/healthCheck), without the front desk and
- * kiosk sections — hardware, screens, printers and networks are not Maril's (owner, 2026-11-11). Only what is wrong or
+ * kiosk sections — hardware, screens, printers and networks are not Marel's (owner, 2026-11-11). Only what is wrong or
  * needs attention comes back, in words an owner can act on.
  */
 const MARIL_HEALTH_SEGMENTS: SegmentId[] = ["booking_readiness", "team_roster", "services_catalog", "features_settings", "sms_communications",
   "payments_billing", "ai_receptionist", "online_presence", "commission_payroll"];
 export async function accountHealth(owner: VerifiedOwner) {
-  const run = await runHealthCheck({ accountId: owner.storeId, agentId: await marilAgent(), agentName: "Maril (AI)", segments: MARIL_HEALTH_SEGMENTS, pool: pool as any });
+  const run = await runHealthCheck({ accountId: owner.storeId, agentId: await marilAgent(), agentName: "Marel (AI)", segments: MARIL_HEALTH_SEGMENTS, pool: pool as any });
   const problems: { area: string; status: string; issue: string; fix: string | null }[] = [];
   for (const seg of Object.values(run.results)) {
     for (const c of seg.checks) {
@@ -352,7 +352,7 @@ export async function refundCharge(owner: VerifiedOwner, chargeRef: number, amou
   }
 }
 
-/** A ticket for the team, with what the caller needs, when Maril can't finish it on the call. */
+/** A ticket for the team, with what the caller needs, when Marel can't finish it on the call. */
 export async function openTicket(owner: VerifiedOwner | null, t: { subject: string; description: string; priority?: string; callerName?: string; callerPhone?: string | null }): Promise<string> {
   const priority = ["low", "normal", "high", "urgent"].includes(String(t.priority)) ? String(t.priority) : "normal";
   const number = `TK-${Date.now().toString(36).toUpperCase()}`;

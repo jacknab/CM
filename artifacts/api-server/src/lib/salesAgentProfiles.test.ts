@@ -23,24 +23,24 @@ describe("independent Certxa sales-agent profiles", () => {
     expect(SHAVEZ_SALES_AGENT.voice).toBe("marin");
   });
 
-  it("rotates Maril's caller-facing greetings without changing internal attribution or Tom's greeting", () => {
+  it("rotates Marel's caller-facing greetings without changing internal attribution or Tom's greeting", () => {
     const greetings = new Set(Array.from({ length: SHAVEZ_SALES_AGENT.greetings.length }, (_, i) =>
       pickAgentGreeting(SHAVEZ_SALES_AGENT, () => (i + 0.25) / SHAVEZ_SALES_AGENT.greetings.length)));
     expect(greetings.size).toBe(SHAVEZ_SALES_AGENT.greetings.length);
     expect(SHAVEZ_SALES_AGENT.name).toBe("Shavez");
-    expect(SHAVEZ_SALES_AGENT.spokenName).toBe("Maril");
-    expect([...greetings].every((greeting) => greeting.includes("Maril") && greeting.includes("Sir-Tex-uh"))).toBe(true);
+    expect(SHAVEZ_SALES_AGENT.spokenName).toBe("Marel");
+    expect([...greetings].every((greeting) => greeting.includes("Marel") && greeting.includes("Sir-Tex-uh"))).toBe(true);
     expect([...greetings].some((greeting) => /Shavez|spell|S-H-A-V-E-Z/i.test(greeting))).toBe(false);
     expect(pickAgentGreeting(TOM_SALES_AGENT, () => 0)).toContain("Tom");
     expect(pickAgentGreeting(TOM_SALES_AGENT, () => 0)).toContain("May I ask who I'm speaking with?");
   });
 
   it("adapts sales knowledge wording to the active agent", () => {
-    expect(agentKnowledgeForPrompt("Tom can help with this.", SHAVEZ_SALES_AGENT)).toBe("Maril can help with this.");
+    expect(agentKnowledgeForPrompt("Tom can help with this.", SHAVEZ_SALES_AGENT)).toBe("Marel can help with this.");
     expect(agentKnowledgeForPrompt("Tom can help with this.", TOM_SALES_AGENT)).toBe("Tom can help with this.");
   });
 
-  it("routes independent professionals to Certxa Pro and keeps salon-team fit and Maril isolated", () => {
+  it("routes independent professionals to Certxa Pro and keeps salon-team fit and Marel isolated", () => {
     const tomGuidance = salesAgentProductFitGuidance(TOM_SALES_AGENT);
     expect(tomGuidance).toContain("Recommend it naturally when the caller works independently");
     expect(tomGuidance).toContain("home-based, booth-renting, or mobile professional");

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Maril's trial extension (owner, 2026-11-11): up to 14 days, never past 74 days, ended trials too. No real database.
+// Marel's trial extension (owner, 2026-11-11): up to 14 days, never past 74 days, ended trials too. No real database.
 const DAY = 86_400_000;
 const state = vi.hoisted(() => ({ user: { trial_ends_at: new Date(), subscription_status: "trial" } as any, started: new Date(), updates: [] as unknown[][], lifted: [] as number[] }));
 vi.mock("../db", () => ({ pool: { query: async (sql: string, values: unknown[]) => {
@@ -23,7 +23,7 @@ const newEnd = () => (state.updates[0][0] as Date).getTime();
 
 beforeEach(() => { state.updates = []; state.lifted = []; });
 
-describe("Maril extends a free trial", () => {
+describe("Marel extends a free trial", () => {
   it("adds the days asked for while the trial is running", async () => {
     state.started = new Date(Date.now() - 50 * DAY);
     state.user = { trial_ends_at: new Date(Date.now() + 10 * DAY), subscription_status: "trial" };

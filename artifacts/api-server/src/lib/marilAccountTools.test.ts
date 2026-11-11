@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-// Maril's account health (owner, 2026-11-11): only real problems, never the front desk or kiosk (hardware). No real database.
+// Marel's account health (owner, 2026-11-11): only real problems, never the front desk or kiosk (hardware). No real database.
 const seen = vi.hoisted(() => ({ segments: [] as string[] }));
 vi.mock("../db", () => ({ pool: { query: async (sql: string) => (sql.includes("FROM support_agents") ? { rows: [{ id: 816 }] } : { rows: [] }) } }));
 vi.mock("../sms", () => ({ sendTwilioSms: async () => undefined }));
@@ -19,7 +19,7 @@ vi.mock("./healthCheck", () => ({ runHealthCheck: async (o: { segments: string[]
 
 import { accountHealth } from "./marilAccountSupport";
 
-describe("Maril's account health check", () => {
+describe("Marel's account health check", () => {
   it("reports only real problems an owner can act on, and never checks hardware", async () => {
     const h = await accountHealth({ userId: "u1", storeId: 5, businessName: "Test", firstName: null, email: null, accountType: null });
     expect(seen.segments).not.toContain("front_desk");

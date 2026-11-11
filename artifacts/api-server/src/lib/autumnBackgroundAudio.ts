@@ -22,7 +22,7 @@ export interface AutumnBackgroundAudioCursor {
   volume: number;
 }
 
-/** Decoded once per recording (Autumn's salon, Tom and Maril's call centre) and shared by every call. */
+/** Decoded once per recording (Autumn's salon, Tom and Marel's call centre) and shared by every call. */
 const preparedByFile = new Map<string, Promise<PreparedAmbience | null>>();
 const AUTUMN_CACHE_FILE = () => process.env.AUTUMN_BACKGROUND_AUDIO_CACHE_FILE?.trim() || "/var/cache/certxa/autumn-ambience-8khz-mono-s16le.pcm";
 function preparedFor(file: string, cacheFile: string): Promise<PreparedAmbience | null> {
@@ -55,7 +55,7 @@ export async function createAutumnBackgroundAudioCursor(
 }
 
 /**
- * Tom and Maril's call-centre background (owner, 2026-11-11), prepared and mixed exactly like Autumn's salon ambience.
+ * Tom and Marel's call-centre background (owner, 2026-11-11), prepared and mixed exactly like Autumn's salon ambience.
  * SALES_AGENT_BACKGROUND_AUDIO_ENABLED=0 turns it off; _FILE and _VOLUME (default 0.11, at most 0.3) change it.
  */
 export function readSalesAgentBackgroundAudioConfig(): AutumnBackgroundAudioConfig {

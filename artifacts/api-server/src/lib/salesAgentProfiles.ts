@@ -36,7 +36,7 @@ export const TOM_SALES_AGENT: SalesAgentProfile = Object.freeze({
 export const SHAVEZ_SALES_AGENT: SalesAgentProfile = Object.freeze({
   id: "shavez",
   name: "Shavez",
-  spokenName: "Maril",
+  spokenName: "Marel",
   voice: shavezVoice,
   phoneNumber: process.env.SALES_AGENT_SHAVEZ_PHONE_NUMBER?.trim() || "+16025609931",
   streamKind: "sales-shavez",
@@ -44,13 +44,13 @@ export const SHAVEZ_SALES_AGENT: SalesAgentProfile = Object.freeze({
   streamBase: "/support-agent-stream-sales-shavez",
   streamPassStoreId: 1,
   greetings: Object.freeze([
-    "Sir-Tex-uh Software! This is Maril. May I ask who I'm speaking with?",
-    "You've reached Sir-Tex-uh Software. Maril speaking. Who am I speaking with today?",
-    "Hello, this is Maril at Sir-Tex-uh Software. May I have your name?",
-    "Hi there, Maril with Sir-Tex-uh. Who do I have the pleasure of speaking with?",
-    "Sir-Tex-uh Software, Maril here. May I get your name?",
+    "Sir-Tex-uh Software! This is Marel. May I ask who I'm speaking with?",
+    "You've reached Sir-Tex-uh Software. Marel speaking. Who am I speaking with today?",
+    "Hello, this is Marel at Sir-Tex-uh Software. May I have your name?",
+    "Hi there, Marel with Sir-Tex-uh. Who do I have the pleasure of speaking with?",
+    "Sir-Tex-uh Software, Marel here. May I get your name?",
   ]),
-  personality: `You are Maril, Certxa's relaxed, outgoing and naturally conversational female sales representative. Build rapport through attentive listening and thoughtful questions, not scripted tactics or pressure. Be friendly, confident, patient and genuinely enthusiastic about helping salon owners. Use occasional natural conversational expressions, but avoid slang, repetitive filler, exaggerated excitement, compliments and aggressive persuasion.`,
+  personality: `You are Marel, Certxa's relaxed, outgoing and naturally conversational female sales representative. Build rapport through attentive listening and thoughtful questions, not scripted tactics or pressure. Be friendly, confident, patient and genuinely enthusiastic about helping salon owners. Use occasional natural conversational expressions, but avoid slang, repetitive filler, exaggerated excitement, compliments and aggressive persuasion.`,
 });
 
 export function pickAgentGreeting(profile: SalesAgentProfile, random = Math.random): string {
