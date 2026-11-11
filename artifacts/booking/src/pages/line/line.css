@@ -2,6 +2,8 @@
 .ln {
   --ln-bg: #f4f6f9; --ln-card: #ffffff; --ln-ink: #0f1b2d; --ln-muted: #5b6b80; --ln-line: #dde3ea;
   --ln-accent: #1f3a5f; --ln-accent-ink: #ffffff; --ln-soft: #e8eef6; --ln-warn: #9a5b00; --ln-warn-bg: #fff4e0;
+  /* Fills the screen itself: the site's own top padding (index.css) left an empty band above the page. */
+  position: fixed; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
   min-height: 100vh; background: var(--ln-bg); color: var(--ln-ink);
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased;
 }
@@ -55,3 +57,12 @@
 .ln-tv li em { font-style: normal; font-size: 1.3vw; color: var(--ln-muted); border: 1px dashed var(--ln-muted); padding: .2vw .8vw; border-radius: 99px; }
 .ln-tv .ln-tv-qr { margin-top: 2vw; font-size: 1.5vw; color: var(--ln-muted); }
 @media (max-width: 800px) { .ln-tv { grid-template-columns: 1fr; } }
+
+/* The estimated time someone would be called, under the wait (as Great Clips shows it). */
+.ln-eta { margin: 10px 0 0; font-size: 15px; font-weight: 700; color: var(--ln-ink); }
+/* The client's progress toward the chair. */
+.ln-progress { height: 10px; border-radius: 999px; background: var(--ln-soft); overflow: hidden; margin-top: 14px; }
+.ln-progress > span { display: block; height: 100%; border-radius: 999px; background: var(--ln-accent); transition: width .6s ease; }
+.ln-progress-ends { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--ln-muted); }
+.ln-form label.ln-remember { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; }
+.ln-form label.ln-remember input { width: 18px; height: 18px; padding: 0; }

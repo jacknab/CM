@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { fetchSpot, imHere, leaveLine, saveSpot, type Spot } from "./lineApi";
+import { fetchSpot, imHere, leaveLine, prettyPhone, saveSpot, type Spot } from "./lineApi";
 import "./line.css";
 
 const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -58,6 +58,19 @@ export default function SpotPage() {
             <>
               <div className="ln-big" data-testid="spot-wait">{spot.waitText ?? "—"}</div>
               <p className="ln-status">{spot.ahead === 0 ? "You're next" : `${spot.ahead} ${spot.ahead === 1 ? "person" : "people"} ahead of you`}</p>
+              {spot.estimatedAt && <p className="ln-eta" data-testid="spot-eta">Estimated check-in time {spot.estimatedAt}</p>}
+              {/* Progress toward the chair (owner, 2026-11-11): from the wait promised on joining down to their turn. */}
+              {spot.promisedMin != null && spot.promisedMin > 0 && spot.waitMin != null && (() => {
+                const done = Math.max(0.05, Math.min(1, 1 - spot.waitMin / spot.promisedMin));
+                return (
+                  <div data-testid="spot-progress">
+                    <div className="ln-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(done * 100)} aria-label="Your progress in line">
+                      <span style={{ width: `${Math.round(done * 100)}%` }} />
+                    </div>
+                    <div className="ln-progress-ends"><span>Checked in</span><span>Your turn</span></div>
+                  </div>
+                );
+              })()}
               <p className="ln-fine" style={{ marginTop: 8 }}>{spot.here ? "You're checked in at the shop." : "We'll text you when it's time to head over."}</p>
             </>
           )}
@@ -94,7 +107,7 @@ export default function SpotPage() {
             data-testid="spot-leave">Leave the line</button>
         )}
         {!open && again}
-        {spot.store.phone && <p className="ln-fine">Running late or have a question? Call <a href={`tel:${spot.store.phone}`}>{spot.store.phone}</a></p>}
+        {spot.store.phone && <p className="ln-fine">Running late or have a question? Call <a href={`tel:${spot.store.phone}`}>{prettyPhone(spot.store.phone)}</a></p>}
       </main>
     </div>
   );

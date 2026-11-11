@@ -158,6 +158,9 @@ export async function lineState(store: LineStore, deps: LineDeps, now = Date.now
   return { store, settings, open, avgMin, barbers, waiting, taken, estimate };
 }
 
+/** "10:40 AM": now plus the wait, in the shop's time. */
+const atClock = (min: number | null | undefined, tz: string) =>
+  min == null ? null : formatInTimeZone(new Date(Date.now() + min * 60_000), tz || "UTC", "h:mm a");
 const first = (name: string | null | undefined) => String(name ?? "").trim().split(/\s+/)[0] || "";
 
 /** The shop's line as anyone may see it (the client's phone before joining, the lobby screen). */
@@ -168,12 +171,14 @@ export function publicLine(s: LineState) {
     open: s.open.open, closedReason: s.open.reason, acceptingUntil: s.open.closesAt,
     paused: s.settings.paused ? { reason: s.settings.paused.reason || null, until: s.settings.paused.until } : null,
     waitMin: wait, waitText: waitText(wait),
+    // The clock time someone joining now would likely be called (owner, 2026-11-11: as Great Clips shows it).
+    estimatedAt: atClock(wait, s.store.timezone),
     ahead: s.waiting.length,
     barbersWorking: s.barbers.length,
     barberChoice: s.settings.barberChoice,
     barbers: s.settings.barberChoice ? s.barbers.map((b) => {
       const m = s.estimate?.next.byBarber.get(b.id) ?? null;
-      return { id: b.id, name: first(b.name), waitMin: m, waitText: waitText(m) };
+      return { id: b.id, name: first(b.name), waitMin: m, waitText: waitText(m), estimatedAt: atClock(m, s.store.timezone) };
     }) : [],
     // The lobby screen: who is next (first name, last initial), and who is on the way.
     line: s.waiting.slice(0, 12).map((r) => ({
@@ -272,6 +277,9 @@ export async function spotByToken(token: string, deps: LineDeps) {
     here: !!row.arrivedAt, online: row.online,
     position: ahead >= 0 ? ahead + 1 : null, ahead: ahead >= 0 ? ahead : null,
     waitMin, waitText: status === "waiting" ? waitText(waitMin) : null,
+    estimatedAt: status === "waiting" ? atClock(waitMin, store.timezone) : null,
+    // The wait promised when they joined: the client page's progress bar runs from it down to their turn.
+    promisedMin: row.waitPromisedMin,
     heldUntil: status === "held" ? row.heldUntil : null,
     barber: status === "up" ? first(row.staffName) : null,
     party,
