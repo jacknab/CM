@@ -8,7 +8,7 @@ import { useEffect } from "react";
 
 let paying = false;
 
-/** Around a card confirmation that may leave the page (Stripe's bank check). */
+/** Around a step that leaves the page and comes back: a card confirmation (Stripe's bank check), Google's sign-in. */
 export function setPaying(on: boolean): void {
   paying = on;
 }

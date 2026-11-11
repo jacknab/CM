@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import { CheckCircle, Loader2 } from "lucide-react";
-import { backToApp as returnToApp, useEndAppWebSessionOnClose } from "@/lib/appWebSession";
+import { backToApp as returnToApp, setPaying, useEndAppWebSessionOnClose } from "@/lib/appWebSession";
 
 const APP_RETURN = "certxa-pro://google-business";
 type Loc = { name: string; title?: string; displayName?: string; storefrontAddress?: { addressLines?: string[]; locality?: string; administrativeArea?: string }; _accountName?: string };
@@ -41,6 +41,8 @@ export default function ProGoogleConnect() {
     setStep("working");
     try {
       const { authUrl } = await call<{ authUrl: string }>(`/api/google-business/auth-url?storeId=${storeId}&returnTo=${encodeURIComponent(`/pro-google-connect?storeId=${storeId}`)}`);
+      // Leaving for Google's sign-in is not closing the page: keep the sign-in for Google's way back here.
+      setPaying(true);
       window.location.href = authUrl;
     } catch (e: any) { setMessage(e.message); setStep("error"); }
   };
