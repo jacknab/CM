@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { UserRound, X, XCircle } from "lucide-react";
 import type { BoardMarker } from "./barberApi";
 import { salonTimeZone } from "@/lib/salonClock";
@@ -6,7 +7,10 @@ import { salonTimeZone } from "@/lib/salonClock";
  * A waiting client's card. There is no ticket yet — the barber only takes the client here; the ticket is made when
  * they ring the client up. Sized for a 10" tablet (owner, 2026-11-02): big name and ticket number, no phone number,
  * large buttons — Assign to me, Cancel check-in (takes them off the waiting list), Close.
+ * A client with Quick Notes shows them right here, newest first (owner, 2026-11-12: "seen easily by tapping on the
+ * check-in card"; GET /api/quick-notes/client/:id).
  */
+type QuickNote = { id: number; text: string; createdAt: string; staffName: string | null };
 export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }: {
   marker: BoardMarker;
   busy: boolean;
@@ -15,6 +19,17 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
   onCancelCheckin: (m: BoardMarker) => void;
   onClose: () => void;
 }) {
+  const [notes, setNotes] = useState<QuickNote[]>([]);
+  useEffect(() => {
+    const clientId = Number(marker.clientId);
+    if (!(clientId > 0)) { setNotes([]); return; }
+    let live = true;
+    fetch(`/api/quick-notes/client/${clientId}`, { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live) setNotes(Array.isArray(d?.notes) ? d.notes.slice(0, 3) : []); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [marker.clientId]);
   const since = (() => { const d = new Date(marker.createdAt); return Number.isNaN(d.getTime()) ? null : d; })();
   return (
     <div className="mp-backdrop" onClick={onClose}>
@@ -26,6 +41,17 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
           <strong id="barber-marker-title">{(marker.clientName ?? "Guest").trim() || "Guest"}</strong>
         </div>
         {since && <p className="mp-since">Checked in {since.toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" })}</p>}
+        {notes.length > 0 && (
+          <div className="mp-notes" data-testid="barber-marker-notes">
+            <p className="mp-notes-title">Notes</p>
+            {notes.map((n) => (
+              <div key={n.id} className="mp-note">
+                <p className="mp-note-text">{n.text}</p>
+                <p className="mp-note-meta">{new Date(n.createdAt).toLocaleDateString([], { timeZone: salonTimeZone(), month: "short", day: "numeric" })}{n.staffName ? ` · ${n.staffName}` : ""}</p>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mp-actions">
           <button type="button" className="mp-btn mp-btn-primary" disabled={busy} onClick={() => onAssign(marker)} data-testid="barber-marker-assign">
             <UserRound size={34} /><span>ASSIGN TO ME</span>
