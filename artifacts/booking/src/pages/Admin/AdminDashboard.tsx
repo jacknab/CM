@@ -15,6 +15,7 @@ import BillingDashboard from './BillingDashboard';
 import { BillingPlansManager } from './BillingPlansManager';
 import PlanFeaturesBuilder from './PlanFeaturesBuilder';
 import IllustrationLibrary from './IllustrationLibrary';
+import HairstyleLibraryManager from './HairstyleLibraryManager';
 import SeoAgentAdmin from './SeoAgentAdmin';
 import WalletManager from './WalletManager';
 import ServiceStatusPage from './ServiceStatusPage';
@@ -268,6 +269,7 @@ function AdminDashboardContent({
         <Route path="/billing/plans"         element={<BillingPlansManager />} />
         <Route path="/plans/:planId/features" element={<PlanFeaturesBuilder />} />
         <Route path="/illustration-library"  element={<IllustrationLibrary />} />
+        <Route path="/hairstyle-library"     element={<HairstyleLibraryManager />} />
         <Route path="/seo-agent"             element={<SeoAgentAdmin />} />
         <Route path="/wallets"               element={<WalletManager />} />
         <Route path="/status"                element={<ServiceStatusPage />} />

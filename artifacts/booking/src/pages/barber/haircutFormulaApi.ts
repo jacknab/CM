@@ -76,7 +76,7 @@ export const getTicketFormula = (appointmentId: number) => call<TicketFormula>(`
 export const getCheckinFormula = (checkinId: number) => call<TicketFormula>(`/api/haircut-formula/for-checkin/${checkinId}`);
 export const hairstyleCategories = () => call<{ categories: { id: number; slug: string; name: string }[] }>("/api/hairstyles/categories");
 export const searchHairstyles = (q: string, category?: string | null) =>
-  call<{ hairstyles: Hairstyle[] }>(`/api/hairstyles?${new URLSearchParams({ q, ...(category ? { category } : {}), limit: "30" })}`);
+  call<{ hairstyles: Hairstyle[] }>(`/api/hairstyles?${new URLSearchParams({ q, ...(category ? { category } : {}), limit: category ? "60" : "30" })}`);
 export const getHairstyle = (id: number) => call<HairstyleDetails>(`/api/hairstyles/${id}`);
 
 // ── Writing ───────────────────────────────────────────────────────────────────────

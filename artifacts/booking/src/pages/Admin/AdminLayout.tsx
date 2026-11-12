@@ -41,6 +41,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     { path: '/isadmin/fulfillment', label: 'FULFILLMENT', icon: Package },
     { path: '/isadmin/hardware-prices', label: 'HARDWARE PRICES', icon: Tag },
     { path: '/isadmin/illustration-library', label: 'ILLUSTRATIONS', icon: ImageIcon },
+    { path: '/isadmin/hairstyle-library', label: 'HAIRSTYLE LIBRARY', icon: ImageIcon },
     { path: '/isadmin/platform-settings', label: 'PLATFORM SETTINGS', icon: Settings },
     { path: '/isadmin/seo-agent', label: 'SEO AGENT', icon: Zap },
     { path: '/isadmin/status', label: 'SERVICE STATUS', icon: Activity },

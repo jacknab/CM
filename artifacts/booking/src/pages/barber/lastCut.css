@@ -140,3 +140,7 @@
   .lcf-ticket-side { padding: 0 20px 20px; min-height: 360px; }
 }
 .lcf-refs-inline .lcf-row-label { padding-top: 0; }
+
+/* Hairstyle picker category filter (Phase 4) */
+.lcf-style-cats button { min-height: 48px; font-size: 16px; }
+.lcf-style-results { max-height: 320px; overflow-y: auto; }

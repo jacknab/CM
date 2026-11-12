@@ -7,7 +7,7 @@ import {
 } from "./formulaDraft";
 import { word } from "./formulaView";
 import {
-  createNamedFormula, getHistory, getVersionDetails, listFormulas, onceAtATime, saveKey, saveTicketFormula, saveToFormula, searchHairstyles,
+  createNamedFormula, getHistory, getVersionDetails, hairstyleCategories, listFormulas, onceAtATime, saveKey, saveTicketFormula, saveToFormula, searchHairstyles,
   type Formula, type FormulaVersion, type Hairstyle,
 } from "./haircutFormulaApi";
 import { FormulaRows, useLastCut } from "./LastCutPanel";
@@ -138,12 +138,21 @@ function HairstylePicker({ style, onPick }: { style: Style; onPick: (s: Style) =
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Hairstyle[]>([]);
   const [open, setOpen] = useState(false);
+  // Category filter (Phase 4 library): "All" or one category; works together with the search words.
+  const [categories, setCategories] = useState<{ slug: string; name: string }[]>([]);
+  const [category, setCategory] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || categories.length) return;
+    let live = true;
+    hairstyleCategories().then((r) => { if (live) setCategories(r.categories); }, () => {});
+    return () => { live = false; };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return;
     let live = true;
-    const t = setTimeout(() => { searchHairstyles(q).then((r) => { if (live) setResults(r.hairstyles); }, () => { if (live) setResults([]); }); }, 200);
+    const t = setTimeout(() => { searchHairstyles(q, category).then((r) => { if (live) setResults(r.hairstyles); }, () => { if (live) setResults([]); }); }, 200);
     return () => { live = false; clearTimeout(t); };
-  }, [q, open]);
+  }, [q, open, category]);
   return (
     <div className="lcf-style-pick" data-testid="lcf-ed-style">
       {style && !open ? (
@@ -155,6 +164,14 @@ function HairstylePicker({ style, onPick }: { style: Style; onPick: (s: Style) =
       ) : open ? (
         <>
           <input className="lcf-search" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search hairstyles (e.g. mid fade, crop)" data-testid="lcf-ed-style-search" />
+          {categories.length > 0 && (
+            <div className="lcf-chips lcf-style-cats" role="group" aria-label="Hairstyle category" data-testid="lcf-ed-style-categories">
+              <button type="button" className={category === null ? "on" : ""} aria-pressed={category === null} onClick={() => setCategory(null)}>All</button>
+              {categories.map((c) => (
+                <button key={c.slug} type="button" className={category === c.slug ? "on" : ""} aria-pressed={category === c.slug} onClick={() => setCategory(c.slug)}>{c.name}</button>
+              ))}
+            </div>
+          )}
           <div className="lcf-chips lcf-style-results">
             {results.map((h) => <button key={h.id} type="button" onClick={() => { onPick({ id: h.id, name: h.name, category: h.category.name }); setOpen(false); }}>{h.name}<small>{h.scope === "store" ? " · this shop" : ""}</small></button>)}
             {results.length === 0 && <p className="lcf-muted">No styles found.</p>}
