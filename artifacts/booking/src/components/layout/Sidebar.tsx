@@ -197,7 +197,8 @@ function buildFinanceSubnav(pick: Pick4, showPos: boolean): SubNavSection[] {
       headingKey: "pointOfSale",
       heading: pick({ en: "Point of Sale", vi: "Điểm bán hàng", es: "Punto de venta", fr: "Point de vente" }),
       items: [
-        { label: pick({ en: "Cash Drawer", vi: "Ngăn kéo tiền",   es: "Cajón de efectivo",   fr: "Tiroir-caisse" }),   icon: Layers,     to: "/cash-drawer" },
+        // Point of Sale off: no Cash Drawer (its page is closed too, FeatureGuard "pos").
+        ...(showPos ? [{ label: pick({ en: "Cash Drawer", vi: "Ngăn kéo tiền",   es: "Cajón de efectivo",   fr: "Tiroir-caisse" }),   icon: Layers,     to: "/cash-drawer" }] : []),
         { label: pick({ en: "Gift Cards",  vi: "Thẻ quà tặng",    es: "Tarjetas de regalo",  fr: "Cartes cadeaux" }),  icon: CreditCard, to: "/gift-cards" },
       ],
     },
@@ -393,7 +394,9 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     .filter((s) => s.to !== "/catalog/nail-services" || !/barber/i.test((selectedStore as any)?.category ?? ""))
     .filter((s) => s.to !== "/catalog/pricing-levels" || /barber|hair/i.test((selectedStore as any)?.category ?? ""));
   // Autumn (AI Receptionist) is part of the booking system: hidden when it is switched off.
-  const MARKETING_SUBNAV = buildMarketingSubnav(pick).filter((s) => features.bookingSystem || s.to !== "/manage/ai-receptionist");
+  // Advanced Features switches hide their pages here as on the phone menu (2026-11-12 settings audit).
+  const MARKETING_SUBNAV = buildMarketingSubnav(pick).filter((s) => (features.bookingSystem || s.to !== "/manage/ai-receptionist")
+    && (features.waitlist || s.to !== "/waitlist") && (features.rewardPoints || s.to !== "/loyalty"));
   const FINANCE_SUBNAV   = buildFinanceSubnav(pick, !!features.pos);
   const TEAM_SUBNAV      = buildTeamSubnav(pick);
 

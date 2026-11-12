@@ -280,9 +280,9 @@ export function CheckoutMode(p: Props) {
   }, [p.dualScreen, ticket.id]);
   // Mirror the cart to the customer's screen whenever it changes.
   // The customer screen shows the client's points in the cart header — but only when the salon has the points system switched on.
-  const { data: loyaltyCfg } = useQuery<{ enabled: boolean; pointsPerDollar?: number }>({ queryKey: ["/api/loyalty/config"], staleTime: 60_000 });
+  const { data: loyaltyCfg } = useQuery<{ enabled: boolean; pointsPerDollar?: number; rewardPoints?: boolean }>({ queryKey: ["/api/loyalty/config"], staleTime: 60_000 });
   const tipPresets = useTipPresets();
-  const showPoints = loyaltyCfg?.enabled === true && !!ticket.client.id;
+  const showPoints = loyaltyCfg?.enabled === true && loyaltyCfg.rewardPoints !== false && !!ticket.client.id;
   const cartKey = JSON.stringify([ticket.id, ticket.service.id, ticket.total, extras.map((e) => [e.label, e.price]), linked.map((t) => t.id), discount, reward?.id, tip, showPoints ? ticket.client.loyaltyPoints : null, tenders.map((t) => [t.method, t.amount])]);
   // The lines of the sale — shown on the customer's screen and on a texted receipt.
   const cartItems = () => [

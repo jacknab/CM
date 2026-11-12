@@ -517,7 +517,13 @@ async function autoMarkNoShowsForStore(storeId: number): Promise<void> {
   }
 }
 
-async function getTurnPreferences(storeId: number) {
+/**
+ * The turn settings. The owner's Advanced Features › Turn System switch (features.turnSystem) is the master switch
+ * (owner, 2026-11-12: "it doesn't matter if I have the TURN feature on or off"): off means no turns anywhere — no turn
+ * line, no turn credit, no TURN popup after checkout — whatever Turn Rotation says. `raw`: the Turn Rotation page's own
+ * settings as saved, so showing and saving them never overwrites its own on/off.
+ */
+async function getTurnPreferences(storeId: number, opts: { raw?: boolean } = {}) {
   const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
   const prefs = safeParsePreferences(row?.preferences as string | undefined);
   return {
@@ -526,9 +532,14 @@ async function getTurnPreferences(storeId: number) {
     appointmentExclusionWindowMinutes: normalizeNumber(
       prefs.turnSystem?.appointmentExclusionWindowMinutes,
       DEFAULT_TURN_SETTINGS.appointmentExclusionWindowMinutes,
+  const featureOff = !opts.raw && prefs.features && typeof prefs.features === "object" && (prefs.features as any).turnSystem === false;
       1
     ),
     turnValueThreshold: normalizeNumber(
+    ...(featureOff ? { turnEnabled: false } : {}),
+    // Advanced Features › Time Clock off: nobody clocks in, so the turn line uses the staff working today by their
+    // profile hours instead (getTurnEligibility; 2026-11-12 settings audit).
+    ...(!opts.raw && prefs.features && typeof prefs.features === "object" && (prefs.features as any).timeclock === false ? { timeclockOff: true } : {}),
       prefs.turnSystem?.turnValueThreshold,
       DEFAULT_TURN_SETTINGS.turnValueThreshold
     ),
@@ -681,6 +692,18 @@ async function getTurnEligibility(storeId: number, serviceId?: number | null) {
   // lib/turnEngine.ts): turns earned by finished, paid WALK-IN tickets, clients served, or — in fixed
   // order — when they last took a turn. Lowest is next. Tickets still in progress never count.
   const periodStart = await turnEngine.turnPeriodStart(storeId, rules, settings, todayStartUtc);
+  if ((settings as any).timeclockOff && turnStaffIds.size > 0) {
+    // No time clock: the staff whose profile hours include today stand in the line, earliest start first.
+    const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+    const working = await db.select({ staffId: staffAvailability.staffId, startTime: staffAvailability.startTime })
+      .from(staffAvailability)
+      .where(and(inArray(staffAvailability.staffId, [...turnStaffIds]), eq(staffAvailability.dayOfWeek, weekday)))
+      .orderBy(asc(staffAvailability.startTime));
+    for (const w of working) {
+      if (!clockInOrder.has(w.staffId)) clockInOrder.set(w.staffId, clockInPos++);
+      clockedInToday.add(w.staffId);
+    }
+  }
   const overallScores = await turnEngine.loadTurnScores({ storeId, rules, periodStart, until: todayEndUtc });
   // A salon that keeps a rotation per service category is asked "who is next FOR THIS SERVICE".
   const turnCategory = rules.categoryRotation && serviceId ? await turnEngine.serviceCategory(storeId, serviceId) : null;
@@ -19502,7 +19525,7 @@ or
       if (!storeId) return res.status(400).json({ error: "storeId required" });
       const store = await assertOwnStore(userId, storeId);
       if (!store) return res.status(403).json({ error: "Unauthorized" });
-      return res.json(await getTurnPreferences(storeId));
+      return res.json(await getTurnPreferences(storeId, { raw: true }));
     } catch (err) {
       console.error("[turn] Failed to get settings:", err);
       return res.status(500).json({ error: "Failed to get turn settings" });
@@ -19518,7 +19541,7 @@ or
       if (!store) return res.status(403).json({ error: "Unauthorized" });
       // The rules as saved, with whatever this request changes laid over them. Anything the request
       // leaves out stays as it is; anything unreadable falls back to a safe value (shared/turnRules.ts).
-      const before = await getTurnPreferences(storeId);
+      const before = await getTurnPreferences(storeId, { raw: true });
       const RULE_FIELDS = ["turnMode", "turnValueThreshold", "partialTurnValue", "turnBrackets", "turnBoundary", "turnAmountBasis",
         "turnTieBreak", "turnSkipLosesTurn", "turnResetPeriod", "turnLateJoin", "turnRefundPolicy", "turnCategoryRotation"] as const;
       const requested: Record<string, unknown> = {};
@@ -22963,6 +22986,8 @@ or
       const appointmentId = Number.isFinite(Number(req.body?.appointmentId)) ? Number(req.body.appointmentId) : null;
       if (!Number.isFinite(customerId) || !Number.isFinite(rewardId)) {
         return res.status(400).json({ error: "customerId and rewardId are required" });
+        // Advanced Features › Reward Points: when off, checkouts show no points (2026-11-12 settings audit).
+        rewardPoints: prefs.features?.rewardPoints !== false,
       }
       // Atomic, and once per ticket: asking again for the same reward on the same appointment returns the earlier redemption.
       const r = await redeemLoyaltyReward({ storeId, customerId, rewardId, appointmentId });

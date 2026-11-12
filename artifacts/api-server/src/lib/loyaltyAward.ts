@@ -85,8 +85,11 @@ export async function awardLoyaltyForCompletion(opts: {
     if (!(totalPaid > 0)) return;
 
     const cfg: any = (await db.execute(sql`SELECT preferences FROM store_settings WHERE store_id = ${storeId}`)).rows[0];
-    const lp = cfg?.preferences ? (JSON.parse(cfg.preferences as string).loyalty ?? {}) : {};
+    const parsed = cfg?.preferences ? JSON.parse(cfg.preferences as string) : {};
+    const lp = parsed.loyalty ?? {};
     if (lp.enabled === false) return;
+    // Advanced Features › Reward Points off: no points earned (owner, 2026-11-12 settings audit).
+    if (parsed.features?.rewardPoints === false) return;
     const pointsPerDollar = Number(lp.pointsPerDollar) > 0 ? Number(lp.pointsPerDollar) : 1;
 
     await db.transaction(async (tx) => {
@@ -148,6 +151,9 @@ export type RedeemResult =
  * asking again for the same reward on the same appointment returns the earlier redemption instead of charging again.
  */
 export async function redeemLoyaltyReward(a: { storeId: number; customerId: number; rewardId: number; appointmentId: number | null }): Promise<RedeemResult> {
+  // Advanced Features › Reward Points off: points can't be spent either (owner, 2026-11-12 settings audit).
+  const prefRow: any = (await db.execute(sql`SELECT preferences FROM store_settings WHERE store_id = ${a.storeId}`)).rows[0];
+  try { if (prefRow?.preferences && JSON.parse(prefRow.preferences).features?.rewardPoints === false) return { ok: false, status: 409, message: "Reward points are turned off for this salon" }; } catch { /* unreadable: carry on */ }
   return db.transaction(async (tx): Promise<RedeemResult> => {
     const reward: any = (await tx.execute(sql`
       SELECT id, name, points_cost, dollar_value FROM loyalty_rewards WHERE id = ${a.rewardId} AND store_id = ${a.storeId}`)).rows[0];
