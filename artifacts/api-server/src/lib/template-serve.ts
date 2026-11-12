@@ -917,6 +917,34 @@ function applySeoHeadTags(html: string, seo: SeoMeta): string {
   if (schema) {
     if (schemaPattern.test(html)) html = html.replace(schemaPattern, schema);
     else additions.push(schema);
+  // The template's sample studio stayed in these (owner, 2026-11-07: "Lacquer & Loom", New York): the salon's own
+  // details, or nothing — never the sample's.
+  if (seo.title) replaceOrAppend(/<meta\s+name=["']title["'][^>]*>/i, `<meta name="title" content="${escAttr(seo.title)}">`);
+  if (seo.siteName) {
+    replaceOrAppend(/<meta\s+name=["']author["'][^>]*>/i, `<meta name="author" content="${escAttr(seo.siteName)}">`);
+    // Google's site name for every salon website: Certxa (owner, 2026-11-12; the salon is the title and the business).
+    replaceOrAppend(/<meta\s+property=["']og:site_name["'][^>]*>/i, `<meta property="og:site_name" content="Certxa">`);
+  }
+  // The Certxa icon in Google results (owner, 2026-11-12). The template's own icon sat under /api/, which robots.txt
+  // keeps crawlers out of, so Google showed a blank globe: same-site Certxa icon files instead (48px multiples).
+  html = html.replace(/\s*<link\s+rel=["'](?:shortcut\s+)?icon["'][^>]*>/gi, "").replace(/\s*<link\s+rel=["']apple-touch-icon["'][^>]*>/gi, "");
+  additions.push(`<link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png">`
+    + `<link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">`);
+  if (!seo.geoPosition) html = html.replace(/<meta\s+name=["']geo\.position["'][^>]*>\s*/gi, "");
+  const icbm = seo.geoPosition ? seo.geoPosition.replace(";", ", ") : null;
+  if (icbm) replaceOrAppend(/<meta\s+name=["']ICBM["'][^>]*>/i, `<meta name="ICBM" content="${escAttr(icbm)}">`);
+  else html = html.replace(/<meta\s+name=["']ICBM["'][^>]*>\s*/gi, "");
+  // What the booking sites (Solo, owner 2026-11-07) also give: the home-screen name, the language alternates and the
+  // pointer to the salon's facts for AI assistants (llms.txt).
+  if (seo.siteName) {
+    replaceOrAppend(/<meta\s+name=["']apple-mobile-web-app-title["'][^>]*>/i, `<meta name="apple-mobile-web-app-title" content="${escAttr(seo.siteName)}">`);
+    replaceOrAppend(/<meta\s+name=["']color-scheme["'][^>]*>/i, `<meta name="color-scheme" content="light">`);
+    const home = seo.canonical.endsWith("/") ? seo.canonical : `${seo.canonical}/`;
+    if (!/hreflang=/i.test(html)) additions.push(`<link rel="alternate" hreflang="en-US" href="${escAttr(home)}"><link rel="alternate" hreflang="x-default" href="${escAttr(home)}">`);
+    if (!/type=["']text\/markdown["']/i.test(html)) additions.push(`<link rel="alternate" type="text/markdown" href="${escAttr(home)}llms.txt" title="${escAttr(seo.siteName)} — facts for AI assistants">`);
+  }
+  if (!seo.geoRegion) html = html.replace(/<meta\s+name=["']geo\.region["'][^>]*>\s*/gi, "");
+  if (!seo.geoPlacename) html = html.replace(/<meta\s+name=["']geo\.placename["'][^>]*>\s*/gi, "");
   }
   if (seo.preloadImage) additions.push(`<link rel="preload" as="image" href="${escAttr(seo.preloadImage)}">`);
   return additions.length ? html.replace(/<\/head>/i, `${additions.join("")}</head>`) : html;
@@ -1475,7 +1503,22 @@ export async function handleTenantSiteBySlug(req: Request, res: Response): Promi
   await serveTenantSite(website, splat, basePath, res, splat ?? req.path);
 }
 
+/**
+ * The Certxa icon files on every salon website (owner, 2026-11-12: a clear icon in Google results). Template sites
+ * sent these addresses to the page itself, so Google found no icon; they come from the booking app's public files.
+ */
+const CERTXA_ICON_FILES = new Set(["/favicon.ico", "/favicon.svg", "/favicon-48x48.png", "/favicon-96x96.png", "/favicon-192x192.png", "/favicon-512x512.png", "/apple-touch-icon.png"]);
+function serveCertxaIcon(req: Request, res: Response): boolean {
+  if (!CERTXA_ICON_FILES.has(req.path)) return false;
+  const file = path.resolve(process.cwd(), "dist", "public", req.path.slice(1));
+  if (!fs.existsSync(file)) return false;
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.sendFile(file);
+  return true;
+}
+
 // ── Tenant site by custom domain (reads Host header; called from Nginx) ───────
+  if (serveCertxaIcon(req, res)) return;
 
 export async function handleTenantSiteByDomain(req: Request, res: Response): Promise<void> {
   // Nginx sets X-Forwarded-Host; fall back to Host header
@@ -1577,6 +1620,7 @@ function domainValidationPageHtml(domain: string, token: string): string {
     p{color:#9ca3af;line-height:1.7;margin-bottom:.5rem}
     .domain{font-weight:600;color:#d1b3f5}
     .badge{display:inline-block;margin-top:2.5rem;padding:.5rem 1.75rem;background:#1A0333;border:1px solid #3B0764;border-radius:50px;font-size:.85rem;color:#9d7ec4}
+  if (serveCertxaIcon(req, res)) return;
   </style>
 </head>
 <body>

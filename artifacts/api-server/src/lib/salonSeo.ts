@@ -303,7 +303,10 @@ export function salonHead(f: SalonFacts): SalonHead {
     "@context": "https://schema.org",
     "@graph": [
       business,
-      { "@type": "WebPage", "@id": f.canonical, url: f.canonical, name: title, description, about: { "@id": `${f.canonical}#business` } },
+      // The site's name in Google results is Certxa, not the web address (owner, 2026-11-12, like GlossGenius shows its own).
+      { "@type": "WebSite", "@id": `${f.canonical}#website`, url: f.canonical, name: "Certxa", alternateName: ["Certxa.com"],
+        publisher: { "@type": "Organization", name: "Certxa", url: "https://certxa.com/", logo: "https://certxa.com/favicon-512x512.png" } },
+      { "@type": "WebPage", "@id": f.canonical, url: f.canonical, name: title, description, isPartOf: { "@id": `${f.canonical}#website` }, about: { "@id": `${f.canonical}#business` } },
       ...(faq.length ? [{ "@type": "FAQPage", mainEntity: faq.map((x) => ({ "@type": "Question", name: x.q, acceptedAnswer: { "@type": "Answer", text: x.a } })) }] : []),
     ],
   };
@@ -356,7 +359,8 @@ export function applySalonPage(template: string, f: SalonFacts, servicePages: Se
     [/<meta\s+property=["']og:title["'][^>]*>/i, `<meta property="og:title" content="${t}" />`],
     [/<meta\s+property=["']og:description["'][^>]*>/i, `<meta property="og:description" content="${d}" />`],
     [/<meta\s+property=["']og:url["'][^>]*>/i, `<meta property="og:url" content="${c}" />`],
-    [/<meta\s+property=["']og:site_name["'][^>]*>/i, `<meta property="og:site_name" content="${n}" />`],
+    // Google's site name: Certxa on every salon page (the salon's name is the title and the business).
+    [/<meta\s+property=["']og:site_name["'][^>]*>/i, `<meta property="og:site_name" content="Certxa" />`],
     [/<meta\s+name=["']twitter:title["'][^>]*>/i, `<meta name="twitter:title" content="${t}" />`],
     [/<meta\s+name=["']twitter:description["'][^>]*>/i, `<meta name="twitter:description" content="${d}" />`],
     [/<meta\s+name=["']apple-mobile-web-app-title["'][^>]*>/i, `<meta name="apple-mobile-web-app-title" content="${n}" />`],
