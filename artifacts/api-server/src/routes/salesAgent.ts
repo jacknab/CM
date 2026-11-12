@@ -39,6 +39,7 @@ import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgent
 import { salesAgentConnectionOpening, tomOpeningInstructions, TOM_SALES_DISCOVERY } from "../lib/salesAgentOpening";
 import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
 import { scheduleFollowUp } from "../lib/agentFollowUps";
+import { setupIvrRoutes } from "./ivr";
 import { archiveRecordingNow, localRecordingPath } from "../lib/callRecordingArchive";
 import { reviewReasons } from "../lib/salesCallReview";
 import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, tomNoteForPrompt, tomTransferNote, transferGreetingInstruction, type MarelLastCall, type TomTransferNote } from "../lib/marelLastCall";
@@ -765,6 +766,8 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   let accountSupportHandoff = false;
   /** Marel's ready-made opener, already playing when GPT-Live starts (lib/marilOpener.ts). */
   let marilOpener: MarilOpenerKind | null = null;
+  /** Pressed 3 (Technical Support) in the phone menu and passed to Marel until the tech-support agent exists. */
+  let marilTechSupport = false;
   let marilOpenerText = "Account services, this is Marel.";
   /** A transfer from Tom: hold music plays until her live voice starts (owner, 2026-11-11). */
   let musicUntilVoice = false;
@@ -1497,6 +1500,8 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
               ? marilContext?.lastCall
                 ? `You have already said, and the caller is hearing: "${marilOpenerText}" Do not say it again. ${callbackGreetingInstruction(marilContext.lastCall)}`
                 : `You have already said, and the caller is hearing: "${marilOpenerText}" Do not say it again or greet again. Carry straight on, with no pause or filler, and say only: "${verifiedOwner ? `Am I speaking with ${verifiedOwner.firstName ?? "the owner"} from ${verifiedOwner.businessName}?` : "How can I help you today?"}" Then listen carefully and help.`
+              : accountSupportHandoff && marilTechSupport
+              ? `Speak first now, relaxed and natural: "Hi, this is Marel." The caller pressed 3 for Technical Support in the phone menu; there is no tech-support team on the phone yet, so you take it. Say so in one easy sentence ("I'll take down what's going on and get it to our tech team"), then ask what's happening. Device, hardware or network problems: get the details (what device, what happens, since when) and open a ticket as in WHAT YOU DON'T DO — TECH SUPPORT. Account problems you can fix as usual (after verification).`
               : accountSupportHandoff
               ? marilContext?.transferred
                 ? `Speak first now, warmly and naturally: "${marilOpenerText}" ${transferGreetingInstruction(marilContext?.tomNote ?? null)} Do not pitch sales.`
@@ -1648,7 +1653,10 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         const pick = MARIL_OPENER_TEXTS[kind];
         marilOpenerText = pick[Math.floor(Math.random() * pick.length)] ?? pick[0];
         trimReplyLeadIn = true;
-        const music = marilHoldMusicFrames();
+        // From the phone menu: its "please hold…" played already, so no hold music here.
+        const viaIvr = String(msg.start?.customParameters?.via ?? "") === "ivr";
+        if (String(msg.start?.customParameters?.topic ?? "") === "tech-support") marilTechSupport = true;
+        const music = viaIvr ? null : marilHoldMusicFrames();
         if (music && streamSid) {
           outQueue.push(...music);
           if (kind === "direct") holdUntil = Date.now() + music.length * 20;
@@ -2006,7 +2014,12 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
       const timingParameter = isTom
         ? `<Parameter name="webhookReceivedAt" value="${webhookReceivedAt}" />`
         : "";
-      const connectionOpening = isClaimCallback ? "" : salesAgentConnectionOpening(agent);
+      // From the phone menu (routes/ivr.ts, owner 2026-11-12): "please hold…" has just played, so no "Connecting you to
+      // Tom" and no hold music for Marel; `topic` says why they chose this line (e.g. tech support).
+      const viaIvr = String(req.query?.via ?? "") === "ivr";
+      const topic = viaIvr ? String(req.query?.topic ?? "").replace(/[^a-z-]/gi, "").slice(0, 20) : "";
+      const ivrParameter = viaIvr ? `<Parameter name="via" value="ivr" />${topic ? `<Parameter name="topic" value="${xml(topic)}" />` : ""}` : "";
+      const connectionOpening = isClaimCallback || viaIvr ? "" : salesAgentConnectionOpening(agent);
       const acknowledgementParameter = isTom && !isClaimCallback ? '<Parameter name="connectionAcknowledged" value="true" />' : "";
       const claimParameter = isClaimCallback ? `<Parameter name="claimCallback" value="${xml(claimCallback)}" />` : "";
       console.log(`${LOG} agent=${agent.id} incoming call from ${from || "unknown"}`);
@@ -2021,6 +2034,7 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
       ${timingParameter}
       ${handoffParameter}
       ${claimParameter}
+      ${ivrParameter}
     </Stream>
   </Connect>
 </Response>`);
@@ -2201,6 +2215,7 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
     res.json({ ok: true });
   });
 
+  setupIvrRoutes(app); // the phone menu in front of Tom and Marel (routes/ivr.ts)
   void warmMarilOpeners();
   if (readSalesAgentBackgroundAudioConfig().enabled) void createSalesAgentBackgroundAudioCursor().catch(() => undefined); // decode before the first call
   console.log(`${LOG} ready — Tom POST ${TOM_SALES_AGENT.webhookPath} WSS ${TOM_SALES_AGENT.streamBase}; Shavez POST ${SHAVEZ_SALES_AGENT.webhookPath} WSS ${SHAVEZ_SALES_AGENT.streamBase}`);
