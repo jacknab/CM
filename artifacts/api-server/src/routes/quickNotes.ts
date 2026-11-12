@@ -12,6 +12,7 @@ import { Router } from "express";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { saveQuickNoteVersion } from "../lib/haircutFormulas";
 import { buildQuickNoteText, cleanQuickNoteChoices, quickNoteTemplateFor, rememberChoices } from "@shared/quickNotes";
 
 const router = Router();
@@ -102,6 +103,9 @@ router.post("/", isAuthenticated, async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
         [storeId, visit.customer_id, appointmentId, visit.staff_id ?? null, userId, template.id, JSON.stringify(details), text, note.id])).rows[0].id;
     }
+    // Last Cut Formula (HAIRCUT_FORMULAS=on, haircut templates only): the same visit is also kept as an unchangeable formula
+    // version, a re-save as a correction. Under its own savepoint: it can never stop the note from saving.
+    await saveQuickNoteVersion(client, { storeId, appointmentId, quickNoteId: noteId, templateId: template.id, choices, extra, userId });
     await client.query("COMMIT");
     return res.json({ id: noteId, text });
   } catch (err) {

@@ -3,6 +3,7 @@ import { AT_RISK_DAYS, INACTIVE_DAYS, REGULAR_VISITS } from "@shared/clientStatu
 import multer from "multer";
 import { db, pool } from "../db";
 import { mergeLoyaltyTx } from "../lib/loyaltyAward";
+import { lockMergeClientsTx, moveClientRecordsTx, recalcWinnerTotalsTx } from "../lib/clientMerge";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import { isAuthenticated } from "../auth";
 import {
@@ -990,102 +991,28 @@ router.post("/merge", isAuthenticated, async (req, res) => {
     // irreversibly archive, another store's clients just by naming their ids). resolveSessionStoreId only accepts a
     // client-supplied hint after checking the user actually owns that location.
     const storeId = await resolveSessionStoreId(req);
-    const { winnerId, loserIds } = req.body;
-    if (!storeId || !winnerId || !Array.isArray(loserIds) || loserIds.length === 0) {
-      return res.status(400).json({ message: "winnerId and loserIds[] required" });
-    }
+    if (!storeId) return res.status(400).json({ message: "winnerId and loserIds[] required" });
+    const actor = `user:${getUserId(req) ?? "unknown"} client-merge`;
 
-    // Verify all clients belong to this store
-    const allIds = [winnerId, ...loserIds];
-    const clientRows = await db
-      .select({ id: clients.id })
-      .from(clients)
-      .where(and(inArray(clients.id, allIds), eq(clients.storeId, storeId)));
-    if (clientRows.length !== allIds.length) {
-      return res.status(403).json({ message: "One or more clients not found in this store" });
-    }
-
-    await db.transaction(async (tx) => {
-      for (const loserId of loserIds) {
-        // Re-point appointments to winner
-        await tx.execute(sql`
-          UPDATE appointments SET customer_id = ${winnerId}
-          WHERE customer_id = ${loserId} AND store_id = ${storeId}
-        `);
-
+    // One transaction: the store check and the row locks are inside it (nothing can change between the check and the
+    // merge, and two merges of the same client run in turn), and any failure rolls the whole merge back. Quick Notes and
+    // haircut formulas move with the client (lib/clientMerge.ts).
+    const check = await db.transaction(async (tx) => {
+      const c = await lockMergeClientsTx(tx, storeId, req.body?.winnerId, req.body?.loserIds, actor);
+      if (!c.ok) return c;
+      for (const loserId of c.loserIds) {
         // Loyalty: history + balance move to the winner (see mergeLoyaltyTx — keeps balance == ledger on both sides).
-        await mergeLoyaltyTx(tx, storeId, winnerId, loserId);
-
-        // Merge emails the winner doesn't already have
-        await tx.execute(sql`
-          INSERT INTO client_emails (client_id, email_address, is_primary, marketing_opt_in)
-          SELECT ${winnerId}, email_address, false, marketing_opt_in
-          FROM client_emails
-          WHERE client_id = ${loserId}
-          ON CONFLICT DO NOTHING
-        `);
-
-        // Merge phones the winner doesn't already have
-        await tx.execute(sql`
-          INSERT INTO client_phones (client_id, store_id, phone_number_e164, display_phone, phone_type, sms_opt_in, is_primary)
-          SELECT ${winnerId}, store_id, phone_number_e164, display_phone, phone_type, sms_opt_in, false
-          FROM client_phones
-          WHERE client_id = ${loserId}
-          ON CONFLICT DO NOTHING
-        `);
-
-        // Move notes to winner
-        await tx.execute(sql`
-          UPDATE client_notes SET client_id = ${winnerId} WHERE client_id = ${loserId}
-        `);
-
-        // Merge tag relationships (skip duplicates)
-        await tx.execute(sql`
-          INSERT INTO client_tag_relationships (client_id, tag_id)
-          SELECT ${winnerId}, tag_id FROM client_tag_relationships WHERE client_id = ${loserId}
-          ON CONFLICT DO NOTHING
-        `);
-
-        // Merge custom field values the winner doesn't have (use actual column names)
-        await tx.execute(sql`
-          INSERT INTO client_custom_field_values (client_id, custom_field_id, field_value)
-          SELECT ${winnerId}, custom_field_id, field_value
-          FROM client_custom_field_values
-          WHERE client_id = ${loserId}
-            AND custom_field_id NOT IN (SELECT custom_field_id FROM client_custom_field_values WHERE client_id = ${winnerId})
-          ON CONFLICT DO NOTHING
-        `);
-
-        // Re-point kiosk checkins (table may not exist in all environments)
-        await tx.execute(sql`
-          UPDATE kiosk_checkins SET client_id = ${winnerId} WHERE client_id = ${loserId}
-        `).catch(() => {});
-
-        // Archive the loser
-        await tx.execute(sql`
-          UPDATE clients SET archived_at = NOW() WHERE id = ${loserId}
-        `);
+        await mergeLoyaltyTx(tx, storeId, c.winnerId, loserId);
+        await moveClientRecordsTx(tx, storeId, c.winnerId, loserId);
       }
-
-      // Recalculate winner totals from actual appointment data
-      await tx.execute(sql`
-        UPDATE clients SET
-          total_visits = COALESCE((
-            SELECT COUNT(*) FROM appointments
-            WHERE customer_id = ${winnerId} AND store_id = ${storeId} AND status = 'completed'
-          ), 0),
-          total_spent_cents = COALESCE((
-            SELECT ROUND(SUM(CAST(total_paid AS DECIMAL(10,2))) * 100)::int FROM appointments
-            WHERE customer_id = ${winnerId} AND store_id = ${storeId} AND status = 'completed'
-          ), 0),
-          updated_at = NOW()
-        WHERE id = ${winnerId}
-      `);
+      await recalcWinnerTotalsTx(tx, storeId, c.winnerId);
+      return c;
     });
+    if (!check.ok) return res.status(check.status).json({ message: check.message });
 
-    await auditLog(storeId, "merged", { clientId: winnerId, actorUserId: getUserId(req), metadata: { loserIds }, ipAddress: req.ip });
+    await auditLog(storeId, "merged", { clientId: check.winnerId, actorUserId: getUserId(req), metadata: { loserIds: check.loserIds }, ipAddress: req.ip });
 
-    return res.json({ success: true, winnerId, merged: loserIds.length });
+    return res.json({ success: true, winnerId: check.winnerId, merged: check.loserIds.length });
   } catch (err) {
     console.error("[clients] merge error:", err);
     return res.status(500).json({ message: "Failed to merge clients" });

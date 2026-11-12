@@ -24551,6 +24551,9 @@ or
   app.use("/api/dialer", dialerRouter);
 
   // ── Client Data Architecture (normalized CRM + export/import) ───────────────
+  // Last Cut Formula Engine (2026-11-12): /api/clients/:id/haircut-formula… and /api/haircut-formula/…; off unless HAIRCUT_FORMULAS=on.
+  const { default: haircutFormulasRouter } = await import("./routes/haircutFormulas.js");
+  app.use("/api", haircutFormulasRouter);
   const { default: clientsRouter } = await import("./routes/clients.js");
   app.use("/api/clients", clientsRouter);
   // Quick Notes after checkout (Certxa Pro, /nail, /barber; 2026-11-11).
