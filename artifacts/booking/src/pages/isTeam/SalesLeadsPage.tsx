@@ -204,6 +204,10 @@ export default function SalesLeadsPage() {
                           <td className="px-4 py-2 text-slate-700">{c.reasons.join(" · ")}</td>
                           <td className="px-4 py-2 text-slate-600">
                             {c.summary || "—"}
+                            {/* The call's recording (owner, 2026-11-12), kept on Certxa's server. */}
+                            {openCall === c.id && callDetail?.recording_sid && (
+                              <audio controls preload="none" className="mt-2 w-full max-w-md" src={`/api/support/sales-calls/${c.id}/recording`} onClick={(e) => e.stopPropagation()} data-testid="sales-call-recording" />
+                            )}
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (
                               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
                                 {callDetail.transcript.map((t: any, i: number) => (
@@ -268,6 +272,10 @@ export default function SalesLeadsPage() {
                                 {Array.isArray(callDetail.sms_events) && callDetail.sms_events.length > 0 &&
                                   <p><span className="font-medium text-slate-700">SMS sent:</span> {callDetail.sms_events.length}</p>}
                               </div>
+                            )}
+                            {/* The call's recording (owner, 2026-11-12), kept on Certxa's server. */}
+                            {openCall === c.id && callDetail?.recording_sid && (
+                              <audio controls preload="none" className="mt-2 w-full max-w-md" src={`/api/support/sales-calls/${c.id}/recording`} onClick={(e) => e.stopPropagation()} data-testid="sales-call-recording" />
                             )}
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (
                               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">

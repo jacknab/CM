@@ -39,6 +39,7 @@ import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgent
 import { salesAgentConnectionOpening, tomOpeningInstructions, TOM_SALES_DISCOVERY } from "../lib/salesAgentOpening";
 import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
 import { scheduleFollowUp } from "../lib/agentFollowUps";
+import { archiveRecordingNow, localRecordingPath } from "../lib/callRecordingArchive";
 import { reviewReasons } from "../lib/salesCallReview";
 import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, tomNoteForPrompt, tomTransferNote, transferGreetingInstruction, type MarelLastCall, type TomTransferNote } from "../lib/marelLastCall";
 import { isSilentUlaw, marilHoldMusicFrames, MARIL_OPENER_TEXTS, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
@@ -1614,6 +1615,19 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         console.log(`${LOG} stream ready call=${callSid ?? "unknown"} webhook_to_stream_ready_ms=${webhookToStreamReadyMs} ws_to_stream_ready_ms=${twilioStartAt - startedAt}`);
       }
       const from = String(msg.start?.customParameters?.from ?? "");
+      // Recorded (owner, 2026-11-12), both sides on their own channel. A transfer from Tom is the same call, whose
+      // recording is already running. The file is saved on the server and deleted at Twilio (lib/callRecordingArchive.ts).
+      const transferredCall = agentProfile.id === "shavez" && String(msg.start?.customParameters?.handoff ?? "") === TOM_ACCOUNT_SUPPORT_HANDOFF;
+      if (callSid && !transferredCall && !/^(0|false|no|off)$/i.test(process.env.SALES_AGENT_RECORDING_ENABLED?.trim() ?? "")) {
+        const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN, base = publicAppUrl();
+        if (sid && token && base) {
+          void twilio(sid, token).calls(callSid).recordings.create({
+            recordingChannels: "dual", recordingTrack: "both",
+            recordingStatusCallback: `${base}/api/webhook/twilio/sales/recording`, recordingStatusCallbackMethod: "POST",
+          }).then(() => console.log(`${LOG} recording started call=${callSid}`))
+            .catch((e: any) => console.warn(`${LOG} could not start recording call=${callSid}:`, e?.message ?? e));
+        }
+      }
       // Call-centre background, as soon as the stream is up (decoded once at startup; a call never waits for it).
       void createSalesAgentBackgroundAudioCursor().then((cursor) => {
         if (closed || !cursor) return;
@@ -2067,6 +2081,39 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
       return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>`);
     }
     return sayAndHangUp("I'm sorry, we lost the connection before I could finish helping. Please call back or visit Certxa dot com. Goodbye.");
+  });
+
+  // A finished recording of a Tom or Marel call: linked to the call, then downloaded and deleted at Twilio.
+  app.post("/api/webhook/twilio/sales/recording", async (req: Request, res: Response) => {
+    const appUrl = publicAppUrl();
+    if (!appUrl || !validTwilio(req, appUrl)) {
+      console.warn(`${LOG} rejected a recording callback with an invalid Twilio signature`);
+      return res.status(403).type("text/plain").send("Forbidden");
+    }
+    const callSid = String(req.body?.CallSid ?? "").trim();
+    const recordingSid = String(req.body?.RecordingSid ?? "").trim();
+    if (String(req.body?.RecordingStatus ?? "") === "completed" && callSid && /^RE[0-9a-f]{32}$/i.test(recordingSid)) {
+      await pool.query(`UPDATE sales_call_logs SET recording_sid = $2 WHERE call_sid = $1`, [callSid, recordingSid])
+        .catch((e) => console.error(`${LOG} could not link recording ${recordingSid}:`, e.message));
+      void archiveRecordingNow(recordingSid);
+    }
+    return res.status(200).type("text/plain").send("ok");
+  });
+
+  // isTeam › Sales Leads: play a call's recording (the server's copy; Twilio's until it has been downloaded).
+  app.get("/api/support/sales-calls/:id/recording", requireSupportAuth, async (req: Request, res: Response) => {
+    const r = await pool.query(`SELECT recording_sid FROM sales_call_logs WHERE id = $1`, [Number(req.params.id)]).catch(() => ({ rows: [] as any[] }));
+    const recordingSid = r.rows[0]?.recording_sid as string | undefined;
+    if (!recordingSid) return res.status(404).json({ message: "No recording for this call" });
+    const local = localRecordingPath(recordingSid);
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "private, max-age=0");
+    if (local) return res.sendFile(local);
+    const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN;
+    if (!sid || !token) return res.status(404).json({ message: "Recording not available yet" });
+    const t = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Recordings/${recordingSid}.mp3`, { headers: { Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}` } }).catch(() => null);
+    if (!t?.ok) return res.status(404).json({ message: "Recording not available yet" });
+    return res.send(Buffer.from(await t.arrayBuffer()));
   });
 
   app.post("/api/webhook/twilio/sales/stream-status", async (req: Request, res: Response) => {
