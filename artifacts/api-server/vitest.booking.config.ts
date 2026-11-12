@@ -5,7 +5,7 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     environment: "node",
-    include: ["../booking/src/**/*.test.ts"],
+    include: ["../booking/src/**/*.test.ts", "../booking/src/**/*.test.tsx"],
   },
   resolve: {
     alias: {

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { quickNoteLists, toggleQuickNoteOption, type QuickNoteField } from "@shared/quickNotes";
 import { takeRepeatFormula } from "./repeatFormula";
+import { useFormulasEnabled } from "./haircutFormulaApi";
+import { FormulaEditor } from "./FormulaEditor";
+import "./lastCut.css";
 
 /**
  * Quick Notes (owner, 2026-11-11; server routes/quickNotes.ts): once a ticket with a client is checked out, a one-screen
@@ -9,6 +12,9 @@ import { takeRepeatFormula } from "./repeatFormula";
  * client. A ticket with only a name (no client), or no connection, skips straight on.
  * Barbershops (owner, 2026-11-12): every section is multi-select with conflict rules (toggleQuickNoteOption), and
  * "Repeat Last Cut" fills in the client's previous picks (also done on open after "Repeat Formula" on their card).
+ * Last Cut Formula on (HAIRCUT_FORMULAS, Phase 3): unchanged, plus "Full haircut formula" for a barbershop/haircut
+ * note, which opens the formula editor for this ticket; saving there finishes this step. Saving Quick Notes itself
+ * also keeps the haircut in the formula history (server side), so nothing is entered twice.
  */
 type Field = QuickNoteField;
 type Choices = Record<string, string | string[]>;
@@ -38,6 +44,9 @@ export function QuickNotesPopup({ appointmentId, onDone }: { appointmentId: numb
   const [extra, setExtra] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const formulas = useFormulasEnabled() === true;
+  const [fullEditor, setFullEditor] = useState(false);
+  const [editorSaved, setEditorSaved] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -91,6 +100,11 @@ export function QuickNotesPopup({ appointmentId, onDone }: { appointmentId: numb
             Repeat Last Cut<small>fills in last visit's picks</small>
           </button>
         )}
+        {formulas && (visit.template.id === "barber" || visit.template.id === "hair") && (
+          <button type="button" className="lcf-btn" style={{ width: "100%", marginTop: 10 }} onClick={() => setFullEditor(true)} data-testid="barber-qn-full-formula">
+            Full haircut formula
+          </button>
+        )}
         {visit.template.fields.map((f) => (
           <div key={f.key} className="nl-qn-field">
             <span className="nl-qn-label">{f.label}</span>
@@ -111,6 +125,10 @@ export function QuickNotesPopup({ appointmentId, onDone }: { appointmentId: numb
           <button type="button" className="nl-qn-save" disabled={!anything || saving} onClick={() => void save()} data-testid="barber-qn-save">{saving ? "Saving…" : "Save Notes"}</button>
         </div>
       </div>
+      {fullEditor && (
+        <FormulaEditor appointmentId={appointmentId} clientId={visit.clientId} clientName={visit.clientName}
+          onSaved={() => setEditorSaved(true)} onClose={() => { setFullEditor(false); if (editorSaved) onDone(); }} />
+      )}
     </div>
   );
 }

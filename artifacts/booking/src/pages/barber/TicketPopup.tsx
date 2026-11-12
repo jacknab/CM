@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { QuickNoteSummary, RepeatCutButton, type SavedQuickNote } from "./QuickNoteSummary";
 import { isRepeatFormulaMarked, markRepeatFormula } from "./repeatFormula";
 import { salonTimeZone } from "@/lib/salonClock";
@@ -7,6 +7,9 @@ import { useNailText } from "./i18n";
 import { formatDuration, formatElapsed } from "./barberTicketDraft";
 import { ticketNo, type BoardTicket } from "./barberApi";
 import { techLabel } from "./techName";
+import { useFormulasEnabled } from "./haircutFormulaApi";
+import { LastCutPanel } from "./LastCutPanel";
+import { HairstyleReferences } from "./HairstyleReferences";
 
 interface Props {
   ticket: BoardTicket;
@@ -66,6 +69,12 @@ export function TicketPopup(p: Props) {
     return () => { live = false; };
   }, [t.client.id, t.id]);
 
+  // Last Cut Formula on (HAIRCUT_FORMULAS, Phase 3): the client's previous haircut, read-only, on the right of the
+  // card at full height (owner, 2026-11-12: Queue and Ticket popups only show it; it is recorded after the service in
+  // Quick Notes). Off: the Quick Note card below, as before.
+  const formulas = useFormulasEnabled() === true;
+  const [refsFor, setRefsFor] = useState<number | null>(null);
+
   const dock: { icon: typeof Play; id: string; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
     ? [
         t.staff
@@ -88,7 +97,7 @@ export function TicketPopup(p: Props) {
   return (
     <>
       <div className="checkin-overlay" onClick={() => p.onClose()} />
-      <div className="checkin-modal-wrapper ticket-popup" onClick={() => p.onClose()}>
+      <div className={`checkin-modal-wrapper ticket-popup${formulas ? " ticket-popup-lcf" : ""}`} onClick={() => p.onClose()}>
         <div className="checkin-modal-card" role="dialog" aria-modal="true" aria-labelledby="barber-ticket-title" onClick={(e) => e.stopPropagation()} data-testid="barber-ticket-modal">
           <button type="button" className="checkin-modal-close" onClick={() => p.onClose()} aria-label="Close"><X size={16} /></button>
           <div className="checkin-card-header checkin-card-header-lg" style={{ borderLeftColor: t.staff?.color || NO_COLOR }}>
@@ -104,6 +113,7 @@ export function TicketPopup(p: Props) {
               {t.doneAt ? "DONE · UNPAID" : t.status === "started" ? "IN SERVICE · UNPAID" : t.staff ? `WAITING · WITH ${techLabel(t.staff.name, t.staff.id).toUpperCase()}` : "WAITING · UNASSIGNED"}
             </div>
           </div>
+          <LastCutSplit on={formulas}>
           <div className="checkin-modal-body">
             <div className="checkin-modal-detail">
               <Hand size={18} />
@@ -130,7 +140,7 @@ export function TicketPopup(p: Props) {
               <UserRound size={18} />
               <div><small>Barber</small><strong>{t.staff ? techLabel(t.staff.name, t.staff.id) : "Not assigned"}</strong></div>
             </div>
-            {lastNote && (
+            {!formulas && lastNote && (
               <div className="checkin-modal-detail" data-testid="ticket-popup-last-note">
                 <StickyNote size={18} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -157,6 +167,14 @@ export function TicketPopup(p: Props) {
               <div><small>{isSplit ? `Tickets total · ${1 + (p.visit?.length ?? 0)} tickets` : "Total to collect"}</small><strong data-testid="barber-popup-total">${visitTotal.toFixed(2)}</strong></div>
             </div>
           </div>
+          {formulas && (
+            <div className="lcf-ticket-side" data-testid="ticket-popup-last-cut">
+              <LastCutPanel source={{ clientId: Number(t.client.id) > 0 ? Number(t.client.id) : null, appointmentId: t.id }}
+                onViewReferences={(v) => v.templateId && setRefsFor(v.templateId)} />
+            </div>
+          )}
+          </LastCutSplit>
+          {refsFor != null && <HairstyleReferences templateId={refsFor} onClose={() => setRefsFor(null)} />}
         </div>
 
         {t.status === "confirmed" && p.inChairOn != null && (
@@ -185,6 +203,11 @@ export function TicketPopup(p: Props) {
       </div>
     </>
   );
+}
+
+/** With the Last Cut Formula on, the card's details and the panel side by side; off, nothing is added around them. */
+function LastCutSplit({ on, children }: { on: boolean; children: ReactNode }) {
+  return on ? <div className="lcf-ticket-split">{children}</div> : <>{children}</>;
 }
 
 /** Add-ons grouped by id, in the order first added, each with how many times it is on the ticket. */

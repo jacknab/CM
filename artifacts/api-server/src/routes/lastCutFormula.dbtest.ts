@@ -111,11 +111,13 @@ describe("Quick Notes double save", () => {
       const r = await call("POST", "/api/quick-notes", A, { appointmentId: 6307, choices: { guard: ["#4"] }, extra: "" });
       expect(r.status).toBe(200);
       expect((await versionsOf(7302)).length).toBe(0);
+      expect((await call("GET", "/api/haircut-formula/status", A)).body).toEqual({ enabled: false });
       expect((await call("GET", "/api/clients/7301/haircut-formula", A)).status).toBe(404);
       expect((await call("GET", "/api/haircut-formula/for-ticket/6301", A)).status).toBe(404);
       expect((await call("GET", "/api/quick-notes/client/7301/latest", A)).status).toBe(200);
       expect((await call("POST", "/api/clients/merge", A, {})).status).toBe(400);
     } finally { process.env.HAIRCUT_FORMULAS = "on"; }
+    expect((await call("GET", "/api/haircut-formula/status", A)).body).toEqual({ enabled: true });
   });
 });
 

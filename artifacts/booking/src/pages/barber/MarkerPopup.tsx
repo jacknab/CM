@@ -3,6 +3,9 @@ import { UserRound, X, XCircle } from "lucide-react";
 import type { BoardMarker } from "./barberApi";
 import { salonTimeZone } from "@/lib/salonClock";
 import { QuickNoteSummary, type SavedQuickNote } from "./QuickNoteSummary";
+import { useFormulasEnabled } from "./haircutFormulaApi";
+import { LastCutPanel } from "./LastCutPanel";
+import { HairstyleReferences } from "./HairstyleReferences";
 
 /**
  * A waiting client's card. There is no ticket yet — the barber only takes the client here; the ticket is made when
@@ -10,6 +13,9 @@ import { QuickNoteSummary, type SavedQuickNote } from "./QuickNoteSummary";
  * large buttons — Assign to me, Cancel check-in (takes them off the waiting list), Close.
  * A client with Quick Notes shows their last visit's note right here, with the visit's full date and time and how long
  * ago it was (owner, 2026-11-12: "seen easily by tapping on the check-in card"; GET /api/quick-notes/client/:id).
+ * Last Cut Formula on (HAIRCUT_FORMULAS, Phase 3): the buttons stay on the left and the right side is the full-height
+ * read-only Last Cut Formula panel (LastCutPanel) for every check-in ("No previous haircut formula." when there is none).
+ * Off (or not known yet): exactly the Quick Notes card above.
  */
 export { sinceVisit } from "./sinceVisit";
 
@@ -32,11 +38,13 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
       .catch(() => {});
     return () => { live = false; };
   }, [marker.clientId]);
+  const formulas = useFormulasEnabled() === true;
+  const [refsFor, setRefsFor] = useState<number | null>(null);
   const since = (() => { const d = new Date(marker.createdAt); return Number.isNaN(d.getTime()) ? null : d; })();
   return (
     <div className="mp-backdrop" onClick={onClose}>
       {/* With a Last Cut Formula: the buttons on the left, the formula on the right (owner, 2026-11-12). */}
-      <div className={`mp-card${notes.length > 0 ? " mp-card-split" : ""}`} role="dialog" aria-modal="true" aria-labelledby="barber-marker-title" onClick={(e) => e.stopPropagation()} data-testid="barber-marker-modal">
+      <div className={`mp-card${formulas ? " mp-card-lcf" : notes.length > 0 ? " mp-card-split" : ""}`} role="dialog" aria-modal="true" aria-labelledby="barber-marker-title" onClick={(e) => e.stopPropagation()} data-testid="barber-marker-modal">
         <button type="button" className="mp-close-x" onClick={onClose} aria-label="Close"><X size={30} /></button>
         <p className="mp-eyebrow">Waiting · no ticket yet</p>
         <div className="mp-who">
@@ -56,13 +64,18 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
             <span>CLOSE</span>
           </button>
         </div>
-        {notes.length > 0 && (
+        {formulas ? (
+          <LastCutPanel
+            source={{ clientId: Number(marker.clientId) > 0 ? Number(marker.clientId) : null, checkinId: marker.offline ? null : marker.id }}
+            onViewReferences={(v) => v.templateId && setRefsFor(v.templateId)} />
+        ) : notes.length > 0 && (
           <div className="mp-notes" data-testid="barber-marker-notes">
             {notes.map((n) => <QuickNoteSummary key={n.id} note={n} testId="barber-marker-last-visit" />)}
           </div>
         )}
         </div>
       </div>
+      {refsFor != null && <HairstyleReferences templateId={refsFor} onClose={() => setRefsFor(null)} />}
     </div>
   );
 }

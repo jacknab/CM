@@ -2,6 +2,7 @@
  * Last Cut Formula Engine — REST API (Phase 2). Contracts: Phase 1 review, section 8. Mounted at /api.
  * Off unless HAIRCUT_FORMULAS=on (every route answers 404 while off). /api/quick-notes/* is unchanged.
  *
+ *   GET  /api/haircut-formula/status                           { enabled } — always answers, so screens can follow the switch
  *   GET  /api/clients/:id/haircut-formula                       the client's formula (default, or ?formulaId=): latest + last 5
  *   GET  /api/clients/:id/haircut-formula/history               full history, paged (?formulaId=&before=&limit=)
  *   POST /api/clients/:id/haircut-formula/versions              save a version { formulaId?, appointmentId?, spec, notes?, templateId?, source, idempotencyKey }
@@ -37,6 +38,9 @@ const router = Router();
 
 // Per route, never router.use(): this router is mounted at /api, so a router-wide check would answer every /api request.
 const enabled = (_req: Request, res: Response, next: () => void) => (haircutFormulasEnabled() ? next() : res.status(404).json({ message: "Not found" }));
+
+// Whether the tablet shows the Last Cut Formula screens (not gated itself: it is how screens learn the switch).
+router.get("/haircut-formula/status", isAuthenticated, (_req, res) => res.json({ enabled: haircutFormulasEnabled() }));
 
 const posInt = (v: unknown): number | null => {
   const n = typeof v === "string" && /^\d+$/.test(v) ? Number(v) : v;
