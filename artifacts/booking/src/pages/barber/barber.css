@@ -1293,6 +1293,8 @@
 .barber-app .mp-notes { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: #f2f5f9; border: 2px solid #cbd7e8; max-height: 300px; overflow-y: auto; }
 .barber-app .mp-notes-title { margin: 0 0 8px; font-size: 18px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; color: #53637d; }
 .barber-app .mp-note + .mp-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid #cbd7e8; }
+.barber-app .mp-note-when { margin: 0 0 6px; font-size: 18px; font-weight: 700; color: #33445f; }
+.barber-app .mp-note-when span { color: #53637d; font-weight: 600; }
 .barber-app .mp-note-text { margin: 0; font-size: 22px; line-height: 1.35; color: #1d2a40; font-weight: 600; }
 .barber-app .mp-note-meta { margin: 4px 0 0; font-size: 16px; color: #53637d; font-weight: 600; }
 .barber-app .mp-actions { margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

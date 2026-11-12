@@ -114,11 +114,11 @@ router.get("/client/:id", isAuthenticated, async (req, res) => {
     const clientId = Number(req.params.id);
     if (!Number.isInteger(clientId) || clientId <= 0) return res.json({ notes: [] });
     const rows = (await pool.query(
-      `SELECT q.id, q.appointment_id, q.note_text, q.created_at, st.name AS staff_name, s.name AS service_name
+      `SELECT q.id, q.appointment_id, q.note_text, q.created_at, COALESCE(a.completed_at, a.date) AS visit_at, st.name AS staff_name, s.name AS service_name
          FROM client_quick_notes q LEFT JOIN staff st ON st.id = q.staff_id
          LEFT JOIN appointments a ON a.id = q.appointment_id LEFT JOIN services s ON s.id = a.service_id
         WHERE q.client_id = $1 AND q.store_id = $2 ORDER BY q.created_at DESC LIMIT 50`, [clientId, storeId])).rows;
-    return res.json({ notes: rows.map((r) => ({ id: r.id, appointmentId: r.appointment_id, text: r.note_text, createdAt: r.created_at, staffName: r.staff_name ?? null, serviceName: r.service_name ?? null })) });
+    return res.json({ notes: rows.map((r) => ({ id: r.id, appointmentId: r.appointment_id, text: r.note_text, createdAt: r.created_at, visitAt: r.visit_at ?? r.created_at, staffName: r.staff_name ?? null, serviceName: r.service_name ?? null })) });
   } catch (err) {
     console.error("[quick-notes] GET client:", err);
     return res.status(500).json({ message: "Could not load the client's notes" });
