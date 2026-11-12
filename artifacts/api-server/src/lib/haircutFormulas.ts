@@ -16,6 +16,10 @@
 import type pg from "pg";
 import { checkSpecForSave, isHaircutTemplate, quickNoteToSpec, type HaircutSpec } from "@shared/haircutFormula";
 import type { QuickNoteChoices } from "@shared/quickNotes";
+import { R2_PUBLIC_BASE } from "./r2";
+
+/** Public URL of an approved library image (keys are checked by the database: no "..", no leading "/"). */
+export const r2Url = (key: string) => `${R2_PUBLIC_BASE}/${key}`;
 
 type Db = pg.PoolClient;
 
@@ -181,6 +185,9 @@ export async function saveForTicket(db: Db, a: {
   source?: "checkout" | "repeat"; idempotencyKey?: string | null; userId: string | null; staffId?: number | null;
 }) {
   const ticket = await loadTicket(db, a.storeId, a.appointmentId);
+  // One haircut save per ticket at a time (Quick Notes, the ticket screen, retries): the later one sees the first one's
+  // record and becomes a correction (or nothing) instead of a conflict.
+  await db.query(`SELECT pg_advisory_xact_lock(hashtext('haircut-ticket'), $1)`, [a.appointmentId]);
   const original = await originalForTicket(db, a.storeId, a.appointmentId);
   if (original) {
     const current = await effective(db, a.storeId, original.id);
@@ -333,4 +340,126 @@ export async function backfillQuickNoteVersions(db: Db, storeId: number): Promis
     copied++;
   }
   return copied;
+}
+
+// ── Named formulas ───────────────────────────────────────────────────────────────
+// A client has one everyday formula and any number of named ones ("Summer cut", "From merged client #N").
+
+const toFormula = (r: any) => ({
+  id: r.id, label: r.label, isDefault: r.is_default, isArchived: r.is_archived, templateId: r.template_id,
+  versionCount: Number(r.version_count ?? 0), latestVisitAt: r.latest_visit_at ?? null, createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+export async function listFormulas(db: Db | pg.Pool, storeId: number, clientId: number, includeArchived = false) {
+  const rows = (await db.query(
+    `SELECT f.*, (SELECT count(*) FROM client_haircut_formula_versions v WHERE v.formula_id = f.id AND v.store_id = f.store_id AND v.source <> 'correction') AS version_count,
+            (SELECT max(coalesce(v.visit_at, v.created_at)) FROM client_haircut_formula_versions v WHERE v.formula_id = f.id AND v.store_id = f.store_id) AS latest_visit_at
+       FROM client_haircut_formulas f
+      WHERE f.store_id = $1 AND f.client_id = $2 AND ($3 OR NOT f.is_archived)
+      ORDER BY f.is_default DESC, f.is_archived, f.created_at, f.id`, [storeId, clientId, includeArchived])).rows;
+  return rows.map(toFormula);
+}
+
+const cleanLabel = (v: unknown): string => {
+  const label = typeof v === "string" ? v.trim().replace(/\s+/g, " ") : "";
+  if (!label || label.length > 80) throw new FormulaError(400, "Give the formula a name (up to 80 characters)");
+  return label;
+};
+
+/** A named (not everyday) formula. If the client has no everyday formula yet, the first one becomes it. */
+export async function createNamedFormula(db: Db, storeId: number, clientId: number, a: { label: unknown; templateId?: number | null; userId: string | null }) {
+  const label = cleanLabel(a.label);
+  await requireClient(db, storeId, clientId);
+  const t = await templateSnapshot(db, storeId, a.templateId);
+  const hasDefault = (await db.query(`SELECT 1 FROM client_haircut_formulas WHERE store_id = $1 AND client_id = $2 AND is_default AND NOT is_archived FOR UPDATE`, [storeId, clientId])).rowCount;
+  const r = (await db.query(
+    `INSERT INTO client_haircut_formulas (store_id, client_id, label, is_default, template_id, template_scope, created_by_user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`, [storeId, clientId, label, !hasDefault, t.templateId, t.templateScope, a.userId])).rows[0];
+  return toFormula(r);
+}
+
+/** Rename, make it the everyday formula, or archive (history kept; formulas are never deleted). */
+export async function updateFormula(db: Db, storeId: number, formulaId: number, a: { label?: unknown; isDefault?: unknown; archived?: unknown }) {
+  const f = (await db.query(`SELECT * FROM client_haircut_formulas WHERE id = $1 AND store_id = $2 FOR UPDATE`, [formulaId, storeId])).rows[0];
+  if (!f) throw new FormulaError(404, "Formula not found");
+  if (a.label !== undefined) await db.query(`UPDATE client_haircut_formulas SET label = $1, updated_at = now() WHERE id = $2 AND store_id = $3`,
+    [a.label === null ? null : cleanLabel(a.label), formulaId, storeId]);
+  if (a.isDefault === true) {
+    if (f.is_archived) throw new FormulaError(409, "Restore the formula before making it the everyday one");
+    // One everyday formula per client: the current one becomes named first (the unique index would refuse two).
+    await db.query(`UPDATE client_haircut_formulas SET is_default = false, label = coalesce(label, 'Previous everyday formula'), updated_at = now()
+                     WHERE store_id = $1 AND client_id = $2 AND is_default AND NOT is_archived AND id <> $3`, [storeId, f.client_id, formulaId]);
+    await db.query(`UPDATE client_haircut_formulas SET is_default = true, updated_at = now() WHERE id = $1 AND store_id = $2`, [formulaId, storeId]);
+  }
+  if (a.archived === true && !f.is_archived) {
+    await db.query(`UPDATE client_haircut_formulas SET is_archived = true, is_default = false, updated_at = now() WHERE id = $1 AND store_id = $2`, [formulaId, storeId]);
+  } else if (a.archived === false && f.is_archived) {
+    await db.query(`UPDATE client_haircut_formulas SET is_archived = false, updated_at = now() WHERE id = $1 AND store_id = $2`, [formulaId, storeId]);
+  }
+  const out = (await db.query(`SELECT * FROM client_haircut_formulas WHERE id = $1 AND store_id = $2`, [formulaId, storeId])).rows[0];
+  return toFormula(out);
+}
+
+/** One version in full: the record, what it says now (its newest correction) and every correction made to it. */
+export async function versionDetails(db: Db | pg.Pool, storeId: number, versionId: number) {
+  const v = (await db.query(
+    `SELECT ${VERSION_COLUMNS}, st.name AS staff_name FROM client_haircut_formula_versions v
+       LEFT JOIN staff st ON st.id = v.staff_id AND st.store_id = v.store_id WHERE v.id = $1 AND v.store_id = $2`, [versionId, storeId])).rows[0];
+  if (!v) throw new FormulaError(404, "Haircut record not found");
+  const rootId = v.source === "correction" ? v.corrects_version_id : v.id;
+  const chain = (await db.query(
+    `SELECT ${VERSION_COLUMNS}, st.name AS staff_name FROM client_haircut_formula_versions v
+       LEFT JOIN staff st ON st.id = v.staff_id AND st.store_id = v.store_id
+      WHERE v.store_id = $1 AND (v.id = $2 OR v.corrects_version_id = $2) ORDER BY v.id`, [storeId, rootId])).rows.map(toVersion);
+  const formula = v.formula_id == null ? null : (await db.query(
+    `SELECT id, label, is_default, is_archived FROM client_haircut_formulas WHERE id = $1 AND store_id = $2`, [v.formula_id, storeId])).rows[0];
+  return {
+    version: toVersion(v),
+    record: chain[0],
+    current: chain[chain.length - 1],
+    corrections: chain.slice(1),
+    formula: formula ? { id: formula.id, label: formula.label, isDefault: formula.is_default, isArchived: formula.is_archived } : null,
+  };
+}
+
+// ── Hairstyle library (read-only for stores) ─────────────────────────────────────
+// Certxa's global styles (published + active) and the store's own styles. Writes to the global catalog are admin-only
+// and not part of this API.
+
+export async function hairstyleCategories(db: Db | pg.Pool) {
+  return (await db.query(`SELECT id, slug, name, display_order FROM hairstyle_categories WHERE is_active ORDER BY display_order, name`)).rows
+    .map((c) => ({ id: c.id, slug: c.slug, name: c.name, displayOrder: c.display_order }));
+}
+
+export async function searchHairstyles(db: Db | pg.Pool, storeId: number, o: { q?: string | null; category?: string | null; scope?: string | null; limit?: number }) {
+  const scope = o.scope === "global" || o.scope === "store" ? o.scope : "all";
+  const term = (o.q ?? "").trim().slice(0, 80);
+  const rows = (await db.query(
+    `SELECT t.id, t.slug, t.name, t.aliases, t.store_id, c.slug AS category_slug, c.name AS category_name,
+            (SELECT i.r2_key FROM hairstyle_template_images i WHERE i.template_id = t.id AND i.approval_status = 'approved' ORDER BY i.display_order, i.id LIMIT 1) AS thumb
+       FROM hairstyle_templates t JOIN hairstyle_categories c ON c.id = t.category_id
+      WHERE t.is_active
+        AND ((t.store_id IS NULL AND t.status = 'published' AND $2 <> 'store') OR (t.store_id = $1 AND $2 <> 'global'))
+        AND ($3 = '' OR t.name ILIKE '%' || $3 || '%' OR EXISTS (SELECT 1 FROM unnest(t.aliases) a WHERE a ILIKE '%' || $3 || '%'))
+        AND ($4::text IS NULL OR c.slug = $4 OR c.id::text = $4)
+      ORDER BY (t.name ILIKE $3 || '%') DESC, t.store_id IS NULL, t.name
+      LIMIT $5`, [storeId, scope, term.replace(/[%_\\]/g, (m) => `\\${m}`), o.category || null, Math.min(Math.max(o.limit ?? 30, 1), 100)])).rows;
+  return rows.map((r) => ({
+    id: r.id, slug: r.slug, name: r.name, aliases: r.aliases ?? [], scope: r.store_id == null ? "global" : "store",
+    category: { slug: r.category_slug, name: r.category_name }, thumbnailUrl: r.thumb ? r2Url(r.thumb) : null,
+  }));
+}
+
+export async function hairstyleDetails(db: Db | pg.Pool, storeId: number, id: number) {
+  const t = (await db.query(
+    `SELECT t.*, c.slug AS category_slug, c.name AS category_name FROM hairstyle_templates t JOIN hairstyle_categories c ON c.id = t.category_id
+      WHERE t.id = $1 AND t.is_active AND ((t.store_id IS NULL AND t.status = 'published') OR t.store_id = $2)`, [id, storeId])).rows[0];
+  if (!t) throw new FormulaError(404, "Hairstyle not found");
+  const images = (await db.query(
+    `SELECT view, r2_key, alt_text FROM hairstyle_template_images WHERE template_id = $1 AND approval_status = 'approved' ORDER BY display_order, id`, [id])).rows;
+  return {
+    id: t.id, slug: t.slug, name: t.name, description: t.description, aliases: t.aliases ?? [], scope: t.store_id == null ? "global" : "store",
+    category: { slug: t.category_slug, name: t.category_name }, defaultSpec: t.default_spec, specVersion: t.spec_version,
+    images: images.map((i) => ({ view: i.view, url: r2Url(i.r2_key), altText: i.alt_text })),
+  };
 }

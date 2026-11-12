@@ -86,6 +86,9 @@ router.post("/", isAuthenticated, async (req, res) => {
     const userId = (req.session as any)?.userId ?? null;
 
     await client.query("BEGIN");
+    // One save per ticket at a time (a double tap or a network retry): the second waits, then updates the note the first
+    // wrote instead of failing on the one-note-per-ticket key. An advisory lock, so the ticket row itself isn't locked.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext('quick-note'), $1)`, [appointmentId]);
     const existing = (await client.query(`SELECT id, client_note_id FROM client_quick_notes WHERE appointment_id = $1 AND store_id = $2 FOR UPDATE`, [appointmentId, storeId])).rows[0];
     let noteId: number;
     if (existing) {

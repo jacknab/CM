@@ -244,3 +244,171 @@ describe("Quick Notes backfill (not run automatically)", () => {
     expect((await call("GET", "/api/quick-notes/appointment/6302", A)).body.saved.choices).toEqual({ guard: ["#3"] }); // the note itself unchanged
   });
 });
+
+describe("named formulas and record details", () => {
+  let summerId = 0;
+  it("D16 create, list, make everyday, archive; names are checked; another store gets 404", async () => {
+    expect((await call("POST", "/api/clients/7301/haircut-formulas", A, { label: "  " })).status).toBe(400);
+    const c = await call("POST", "/api/clients/7301/haircut-formulas", A, { label: "Summer  cut", templateId: 5301 });
+    expect(c.status).toBe(201);
+    expect(c.body.formula).toMatchObject({ label: "Summer cut", isDefault: false, templateId: 5301 });
+    summerId = c.body.formula.id;
+    const list = await call("GET", "/api/clients/7301/haircut-formulas", A);
+    expect(list.body.formulas[0].isDefault).toBe(true);
+    expect(list.body.formulas.map((f: any) => f.id)).toContain(summerId);
+    // Save into the named formula: its own numbering.
+    const v = await call("POST", "/api/clients/7301/haircut-formula/versions", A, { formulaId: summerId, spec: { v: 1, top: { leaveLonger: true } }, source: "manual", idempotencyKey: "summer-key-001" });
+    expect(v.body.version).toMatchObject({ formulaId: summerId, versionNumber: 1 });
+    // Make it the everyday one: the old everyday formula becomes named, never two at once.
+    const d = await call("PATCH", `/api/haircut-formulas/${summerId}`, A, { isDefault: true });
+    expect(d.body.formula.isDefault).toBe(true);
+    const defaults = await q(`SELECT label FROM client_haircut_formulas WHERE client_id = 7301 AND is_default AND NOT is_archived`);
+    expect(defaults).toEqual([{ label: "Summer cut" }]);
+    expect((await q(`SELECT label FROM client_haircut_formulas WHERE client_id = 7301 AND NOT is_default ORDER BY id LIMIT 1`))[0].label).toBe("Previous everyday formula");
+    expect((await call("GET", "/api/clients/7301/haircut-formula", A)).body.formula.id).toBe(summerId);
+    // Another store can't see or change it.
+    expect((await call("PATCH", `/api/haircut-formulas/${summerId}`, B, { label: "Hijack" })).status).toBe(404);
+    expect((await call("GET", "/api/clients/7301/haircut-formulas", B)).status).toBe(404);
+    expect((await call("POST", "/api/clients/7301/haircut-formulas", B, { label: "Hijack" })).status).toBe(404);
+    // Archive: history stays, the formula leaves the list, and it is audited.
+    const ar = await call("PATCH", `/api/haircut-formulas/${summerId}`, A, { archived: true });
+    expect(ar.body.formula).toMatchObject({ isArchived: true, isDefault: false });
+    expect((await call("GET", "/api/clients/7301/haircut-formulas", A)).body.formulas.map((f: any) => f.id)).not.toContain(summerId);
+    expect((await call("GET", "/api/clients/7301/haircut-formulas?archived=1", A)).body.formulas.map((f: any) => f.id)).toContain(summerId);
+    expect((await q(`SELECT count(*)::int n FROM client_haircut_formula_versions WHERE formula_id = $1`, [summerId]))[0].n).toBe(1);
+    expect((await q(`SELECT action FROM client_haircut_formula_audit WHERE formula_id = $1`, [summerId])).map((r) => r.action)).toContain("formula_archived");
+    // A formula can't be deleted directly.
+    await expect(q(`DELETE FROM client_haircut_formulas WHERE id = $1`, [summerId])).rejects.toMatchObject({ code: "P0001" });
+    // Restore it; the client's next save creates a fresh everyday formula since none is live.
+    expect((await call("PATCH", `/api/haircut-formulas/${summerId}`, A, { archived: false })).body.formula.isArchived).toBe(false);
+  });
+
+  it("D17 record details show the original, what it says now and every correction; 404 for another store", async () => {
+    const [orig] = await q(`SELECT id FROM client_haircut_formula_versions WHERE appointment_id = 6301 AND source = 'checkout'`);
+    const [corr] = await q(`SELECT id FROM client_haircut_formula_versions WHERE corrects_version_id = $1 ORDER BY id DESC LIMIT 1`, [orig.id]);
+    const d = await call("GET", `/api/haircut-formula/versions/${corr.id}`, A);
+    expect(d.status).toBe(200);
+    expect(d.body.record.id).toBe(orig.id);
+    expect(d.body.current.id).toBe(corr.id);
+    expect(d.body.corrections.map((c: any) => c.id)).toContain(corr.id);
+    expect(d.body.record.spec.sides.guard).toEqual(["#1"]);
+    expect((await call("GET", `/api/haircut-formula/versions/${orig.id}`, B)).status).toBe(404);
+    expect((await call("GET", `/api/haircut-formula/versions/999999`, A)).status).toBe(404);
+  });
+});
+
+describe("hairstyle library", () => {
+  beforeAll(async () => {
+    await q(`INSERT INTO hairstyle_templates (id, store_id, category_id, slug, name, status, aliases) VALUES
+      (5302, NULL, 1, 'draft-style', 'Draft Fade', 'draft', '{}'),
+      (5303, $1, 1, 'the-mayor', 'The Mayor', 'draft', '{"mayor cut"}'),
+      (5304, $2, 1, 'b-private', 'Store B Private Fade', 'published', '{}')`, [A, B]);
+    await q(`INSERT INTO hairstyle_template_images (template_id, view, r2_key, source, approval_status, approved_by_user_id, approved_at, display_order) VALUES
+      (5301, 'front', 'hairstyles/5301/front-1.webp', 'certxa_artwork', 'approved', 'u-lcf', now(), 0),
+      (5301, 'back', 'hairstyles/5301/back-1.webp', 'ai_generated', 'pending', NULL, NULL, 1)`);
+  });
+
+  it("D18 search shows Certxa's published styles and the store's own, never another store's or drafts of Certxa", async () => {
+    const all = await call("GET", "/api/hairstyles?q=fade", A);
+    expect(all.status).toBe(200);
+    const names = all.body.hairstyles.map((h: any) => h.name);
+    expect(names).toContain("Mid Skin Fade");
+    expect(names).not.toContain("Draft Fade");
+    expect(names).not.toContain("Store B Private Fade");
+    expect(all.body.hairstyles.find((h: any) => h.id === 5301).thumbnailUrl).toMatch(/hairstyles\/5301\/front-1\.webp$/);
+    expect((await call("GET", "/api/hairstyles?q=mayor%20cut", A)).body.hairstyles.map((h: any) => h.id)).toEqual([5303]); // alias
+    expect((await call("GET", "/api/hairstyles?scope=store", A)).body.hairstyles.map((h: any) => h.id)).toEqual([5303]);
+    expect((await call("GET", "/api/hairstyles?scope=global&category=fades-and-tapers", A)).body.hairstyles.map((h: any) => h.id)).toEqual([5301]);
+    expect((await call("GET", "/api/hairstyles?q=%25", A)).body.hairstyles.length).toBe(0); // a % is a character, not a wildcard
+    expect((await call("GET", "/api/hairstyles?q=mayor", B)).body.hairstyles.length).toBe(0);
+    expect((await call("GET", "/api/hairstyles/categories", A)).body.categories[0]).toMatchObject({ slug: "fades-and-tapers" });
+  });
+
+  it("D19 reference details: approved images only; private and draft styles stay private", async () => {
+    const d = await call("GET", "/api/hairstyles/5301", A);
+    expect(d.status).toBe(200);
+    expect(d.body.images.map((i: any) => i.view)).toEqual(["front"]);
+    expect((await call("GET", "/api/hairstyles/5303", A)).status).toBe(200);
+    expect((await call("GET", "/api/hairstyles/5303", B)).status).toBe(404);
+    expect((await call("GET", "/api/hairstyles/5302", A)).status).toBe(404);
+    // A store can't put another store's private style on its formula.
+    expect((await call("POST", "/api/clients/7301/haircut-formula/versions", A, { spec: { v: 1, instructions: "x" }, templateId: 5304, source: "manual", idempotencyKey: "tmpl-key-0001" })).status).toBe(404);
+  });
+});
+
+describe("invalid tickets and concurrency", () => {
+  beforeAll(async () => {
+    await q(`INSERT INTO appointments (id, store_id, date, duration, customer_id, staff_id, status, total_paid) VALUES
+      (6311, $1, now(), 30, 7302, 8301, 'completed', '30'), (6312, $1, now(), 30, 7302, 8301, 'completed', '30')`, [A]);
+  });
+
+  it("D20 missing, foreign and malformed tickets are refused without writing anything", async () => {
+    const before = (await q(`SELECT count(*)::int n FROM client_haircut_formula_versions`))[0].n;
+    expect((await call("GET", "/api/haircut-formula/for-ticket/999999", A)).status).toBe(404);
+    expect((await call("GET", "/api/haircut-formula/for-ticket/abc", A)).status).toBe(404);
+    expect((await call("POST", "/api/haircut-formula/for-ticket/999999/versions", A, { spec: { v: 1, instructions: "x" }, idempotencyKey: "missing-key-01" })).status).toBe(404);
+    expect((await call("POST", "/api/clients/7301/haircut-formula/versions", A, { appointmentId: 6305, spec: { v: 1, instructions: "x" }, source: "checkout", idempotencyKey: "foreign-key-01" })).status).toBe(404);
+    expect((await call("POST", "/api/clients/7301/haircut-formula/versions", A, { appointmentId: "6301x", spec: { v: 1, instructions: "x" }, source: "checkout", idempotencyKey: "malformed-key1" })).status).toBe(400);
+    expect((await call("POST", "/api/clients/7301/haircut-formula/repeat", A, { appointmentId: 999999, idempotencyKey: "missing-key-02" })).status).toBe(404);
+    expect((await call("POST", "/api/quick-notes", A, { appointmentId: 999999, choices: { guard: ["#1"] } })).status).toBe(404);
+    expect((await call("GET", "/api/haircut-formula/for-checkin/999999", A)).status).toBe(404);
+    expect((await q(`SELECT count(*)::int n FROM client_haircut_formula_versions`))[0].n).toBe(before);
+  });
+
+  it("D21 six saves at once get six distinct, consecutive version numbers", async () => {
+    const rs = await Promise.all(Array.from({ length: 6 }, (_, i) =>
+      call("POST", "/api/clients/7302/haircut-formula/versions", A, { spec: { v: 1, instructions: `cut ${i}` }, source: "manual", idempotencyKey: `parallel-key-${i}` })));
+    expect(rs.every((r) => r.status === 201)).toBe(true);
+    const nums = rs.map((r) => r.body.version.versionNumber).sort((x, y) => x - y);
+    expect(new Set(nums).size).toBe(6);
+    expect(nums[5] - nums[0]).toBe(5);
+  });
+
+  it("D22 the same request retried six times at once: one version, everyone gets it", async () => {
+    const body = { spec: { v: 1, instructions: "retry me" }, source: "manual", idempotencyKey: "retry-storm-key1" };
+    const rs = await Promise.all(Array.from({ length: 6 }, () => call("POST", "/api/clients/7302/haircut-formula/versions", A, body)));
+    expect(rs.every((r) => r.status === 200 || r.status === 201)).toBe(true);
+    expect(new Set(rs.map((r) => r.body.version.id)).size).toBe(1);
+    expect((await q(`SELECT count(*)::int n FROM client_haircut_formula_versions WHERE idempotency_key = 'retry-storm-key1'`))[0].n).toBe(1);
+  });
+
+  it("D23 a Quick Note saved several times at once (double tap, network retry) makes one haircut record", async () => {
+    const body = { appointmentId: 6311, choices: { guard: ["#2"], fade: ["Low"] }, extra: "" };
+    const rs = await Promise.all(Array.from({ length: 4 }, () => call("POST", "/api/quick-notes", A, body)));
+    expect(rs.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+    expect((await q(`SELECT count(*)::int n FROM client_quick_notes WHERE appointment_id = 6311`))[0].n).toBe(1);
+    const vs = await q(`SELECT source FROM client_haircut_formula_versions WHERE appointment_id = 6311`);
+    expect(vs).toEqual([{ source: "checkout" }]);
+  });
+
+  it("D24 a ticket save racing the Quick Note for the same visit: both succeed, one original, the other a correction", async () => {
+    const [n, t] = await Promise.all([
+      call("POST", "/api/quick-notes", A, { appointmentId: 6312, choices: { guard: ["#3"] }, extra: "" }),
+      call("POST", "/api/haircut-formula/for-ticket/6312/versions", A, { spec: { v: 1, sides: { guard: ["#4"] } }, idempotencyKey: "race-ticket-001" }),
+    ]);
+    expect(n.status).toBe(200);
+    expect(t.status).toBe(201);
+    const vs = await q(`SELECT source FROM client_haircut_formula_versions WHERE appointment_id = 6312 ORDER BY id`);
+    expect(vs.filter((v) => v.source === "checkout").length).toBe(1);
+    expect(vs.map((v) => v.source)).toEqual(["checkout", "correction"]);
+    expect((await q(`SELECT count(*)::int n FROM client_quick_notes WHERE appointment_id = 6312`))[0].n).toBe(1);
+  });
+});
+
+describe("existing Quick Notes contract (barber screens, Certxa Pro)", () => {
+  it("D25 every /api/quick-notes endpoint answers in its existing shape with formulas on", async () => {
+    const visit = await call("GET", "/api/quick-notes/appointment/6311", A);
+    expect(Object.keys(visit.body).sort()).toEqual(["available", "clientId", "clientName", "previous", "saved", "services", "staffName", "template"]);
+    expect(visit.body.template.id).toBe("barber");
+    const list = await call("GET", "/api/quick-notes/client/7302", A);
+    expect(list.status).toBe(200);
+    expect(Object.keys(list.body.notes[0]).sort()).toEqual(["appointmentId", "choices", "createdAt", "extra", "id", "serviceName", "services", "staffName", "template", "text", "visitAt"]);
+    const latest = await call("GET", "/api/quick-notes/client/7302/latest", A);
+    expect(Object.keys(latest.body).sort()).toEqual(["latest", "remember"]);
+    const save = await call("POST", "/api/quick-notes", A, { appointmentId: 6311, choices: { guard: ["#2"], fade: ["Low"] }, extra: "" });
+    expect(Object.keys(save.body).sort()).toEqual(["id", "text"]);
+    // Another store's ticket and client: as before.
+    expect((await call("GET", "/api/quick-notes/appointment/6311", B)).status).toBe(404);
+    expect((await call("GET", "/api/quick-notes/client/7302", B)).body.notes).toEqual([]);
+  });
+});

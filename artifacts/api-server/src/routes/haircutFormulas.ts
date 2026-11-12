@@ -11,6 +11,13 @@
  *   GET  /api/haircut-formula/for-ticket/:appointmentId         what the Queue / Ticket popups show
  *   POST /api/haircut-formula/for-ticket/:appointmentId/versions save for a ticket: the client's formula, or a name-only walk-in record
  *   GET  /api/haircut-formula/for-checkin/:checkinId            same as for-ticket, for a waiting check-in card
+ *   GET  /api/haircut-formula/versions/:id                       one record in full: what it says now and its corrections
+ *   GET  /api/clients/:id/haircut-formulas                      the client's formulas (everyday + named; ?archived=1 includes archived)
+ *   POST /api/clients/:id/haircut-formulas                      a named formula { label, templateId? }
+ *   PATCH /api/haircut-formulas/:formulaId                      { label?, isDefault: true?, archived?: true|false } (never deleted)
+ *   GET  /api/hairstyles/categories                             hairstyle categories
+ *   GET  /api/hairstyles?q=&category=&scope=all|global|store&limit=   Certxa's published styles + this store's own
+ *   GET  /api/hairstyles/:id                                     one style with its approved reference images
  *
  * Store only from resolveSessionStoreId(); another store's client, ticket or version answers 404. 201 for a new version,
  * 200 with the original on an idempotent retry. 400 bad input, 409 conflict, 422 spec failed validation.
@@ -20,10 +27,10 @@ import type pg from "pg";
 import { pool } from "../db";
 import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
-import { R2_PUBLIC_BASE } from "../lib/r2";
 import {
-  FormulaError, attachWalkIn, correctVersion, formulaForClient, getOrCreateDefaultFormula, haircutFormulasEnabled, historyForClient,
-  insertVersion, loadTicket, requireClient, saveForTicket, toVersion,
+  FormulaError, attachWalkIn, correctVersion, createNamedFormula, formulaForClient, getOrCreateDefaultFormula, haircutFormulasEnabled,
+  hairstyleCategories, hairstyleDetails, historyForClient, insertVersion, listFormulas, loadTicket, r2Url, requireClient, saveForTicket,
+  searchHairstyles, toVersion, updateFormula, versionDetails,
 } from "../lib/haircutFormulas";
 
 const router = Router();
@@ -38,7 +45,7 @@ const posInt = (v: unknown): number | null => {
 const userIdOf = (req: Request): string | null => (req.session as any)?.userId ?? null;
 
 /** Runs fn in one transaction with the audit actor set; maps FormulaError to its status. */
-async function run(req: Request, res: Response, fn: (db: pg.PoolClient, storeId: number) => Promise<unknown>, label: string) {
+async function run(req: Request, res: Response, fn: (db: pg.PoolClient, storeId: number) => Promise<unknown>, label: string, okStatus = 200) {
   const storeId = await resolveSessionStoreId(req).catch(() => null);
   if (!storeId) return res.status(403).json({ message: "No store context" });
   const db = await pool.connect();
@@ -48,7 +55,7 @@ async function run(req: Request, res: Response, fn: (db: pg.PoolClient, storeId:
     const out: any = await fn(db, storeId);
     await db.query("COMMIT");
     if (out && typeof out === "object" && "replayed" in out) return res.status(out.replayed ? 200 : 201).json({ version: out.version });
-    return res.json(out);
+    return res.status(okStatus).json(out);
   } catch (err) {
     await db.query("ROLLBACK").catch(() => {});
     if (err instanceof FormulaError) return res.status(err.status).json({ message: err.message });
@@ -150,7 +157,7 @@ async function forTicket(db: pg.PoolClient, storeId: number, appointmentId: numb
     `SELECT id, name, slug FROM hairstyle_templates WHERE id = $1 AND (store_id IS NULL OR store_id = $2)`, [latest.templateId, storeId])).rows[0] : null;
   const images = style ? (await db.query(
     `SELECT view, r2_key, alt_text FROM hairstyle_template_images WHERE template_id = $1 AND approval_status = 'approved' ORDER BY display_order, id`,
-    [style.id])).rows.map((i) => ({ view: i.view, url: `${R2_PUBLIC_BASE}/${i.r2_key}`, altText: i.alt_text })) : [];
+    [style.id])).rows.map((i) => ({ view: i.view, url: r2Url(i.r2_key), altText: i.alt_text })) : [];
   return { clientId: ticketClientId, latest, hairstyle: style ? { id: style.id, name: style.name, slug: style.slug } : null, images };
 }
 
@@ -176,5 +183,47 @@ router.get("/haircut-formula/for-checkin/:checkinId", enabled, isAuthenticated, 
   if (c.client_id == null) return { clientId: null, latest: null, hairstyle: null, images: [] };
   return forTicket(db, storeId, 0, c.client_id);
 }, "GET for-checkin"));
+
+router.get("/haircut-formula/versions/:id", enabled, isAuthenticated, (req, res) => run(req, res, async (db, storeId) => {
+  const versionId = posInt(req.params.id);
+  if (!versionId) throw new FormulaError(404, "Haircut record not found");
+  return versionDetails(db, storeId, versionId);
+}, "GET version"));
+
+router.get("/clients/:id/haircut-formulas", enabled, isAuthenticated, (req, res) => run(req, res, async (db, storeId) => {
+  const clientId = posInt(req.params.id);
+  if (!clientId) throw new FormulaError(404, "Client not found");
+  await requireClient(db, storeId, clientId);
+  return { formulas: await listFormulas(db, storeId, clientId, req.query.archived === "1") };
+}, "GET formulas"));
+
+router.post("/clients/:id/haircut-formulas", enabled, isAuthenticated, (req, res) => run(req, res, async (db, storeId) => {
+  const clientId = posInt(req.params.id);
+  if (!clientId) throw new FormulaError(404, "Client not found");
+  return { formula: await createNamedFormula(db, storeId, clientId, { label: req.body?.label, templateId: posInt(req.body?.templateId), userId: userIdOf(req) }) };
+}, "POST formula", 201));
+
+router.patch("/haircut-formulas/:formulaId", enabled, isAuthenticated, (req, res) => run(req, res, async (db, storeId) => {
+  const formulaId = posInt(req.params.formulaId);
+  if (!formulaId) throw new FormulaError(404, "Formula not found");
+  const { label, isDefault, archived } = req.body ?? {};
+  if (label === undefined && isDefault !== true && typeof archived !== "boolean") throw new FormulaError(400, "Nothing to change");
+  return { formula: await updateFormula(db, storeId, formulaId, { label, isDefault, archived }) };
+}, "PATCH formula"));
+
+router.get("/hairstyles/categories", enabled, isAuthenticated, (req, res) => run(req, res, async (db) => ({ categories: await hairstyleCategories(db) }), "GET categories"));
+
+router.get("/hairstyles", enabled, isAuthenticated, (req, res) => run(req, res, async (db, storeId) => ({
+  hairstyles: await searchHairstyles(db, storeId, {
+    q: typeof req.query.q === "string" ? req.query.q : null, category: typeof req.query.category === "string" ? req.query.category : null,
+    scope: typeof req.query.scope === "string" ? req.query.scope : null, limit: posInt(req.query.limit) ?? 30,
+  }),
+}), "GET hairstyles"));
+
+router.get("/hairstyles/:id", enabled, isAuthenticated, (req, res) => run(req, res, async (db, storeId) => {
+  const id = posInt(req.params.id);
+  if (!id) throw new FormulaError(404, "Hairstyle not found");
+  return hairstyleDetails(db, storeId, id);
+}, "GET hairstyle"));
 
 export default router;
