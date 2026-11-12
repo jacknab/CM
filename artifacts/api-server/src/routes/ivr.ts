@@ -9,14 +9,14 @@
  *   GET  /api/webhook/twilio/ivr/audio/:name   the owner's recorded prompts (menu, after-hours, please-hold), cut from
  *                                              /apps/CM/IVR.wav into booking/public/ivr/
  *
- * Open 7 days a week, 10 a.m.–9 p.m. Eastern (as the after-hours recording says). Every webhook checks Twilio's signature.
+ * Open 7 days a week, 10 a.m.–11 p.m. Eastern (owner, 2026-11-12; the after-hours recording still says 9 p.m.). Every webhook checks Twilio's signature.
  */
 import path from "node:path";
 import fs from "node:fs";
 import twilio from "twilio";
 import type { Express, Request, Response } from "express";
 
-export const IVR_HOURS = { timeZone: "America/New_York", open: 10 * 60, close: 21 * 60 }; // minutes after midnight
+export const IVR_HOURS = { timeZone: "America/New_York", open: 10 * 60, close: 23 * 60 }; // minutes after midnight (owner, 2026-11-12: 10 a.m.–11 p.m.)
 const PROMPTS = new Set(["menu", "after-hours", "please-hold"]);
 const LOG = "[IVR]";
 
@@ -31,7 +31,7 @@ const xml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const twiml = (res: Response, body: string) => res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`);
 const audio = (name: string) => `${appUrl()}/api/webhook/twilio/ivr/audio/${name}.wav`;
 
-/** Open now? Minutes since midnight in Eastern time against 10:00–21:00, every day. */
+/** Open now? Minutes since midnight in Eastern time against 10:00–23:00, every day. */
 export function ivrOpen(now = new Date()): boolean {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: IVR_HOURS.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
   const mins = Number(parts.find((p) => p.type === "hour")?.value) * 60 + Number(parts.find((p) => p.type === "minute")?.value);
