@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/salonClock", () => ({ salonTimeZone: () => "America/Denver" }));
-import { sinceVisit } from "./MarkerPopup";
+import { sinceVisit } from "./sinceVisit";
 
 describe("How long since the client's last visit", () => {
   const now = new Date("2026-11-12T18:00:00Z");

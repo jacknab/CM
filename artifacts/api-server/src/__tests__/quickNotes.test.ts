@@ -4,7 +4,7 @@ import { buildQuickNoteText, cleanQuickNoteChoices, quickNoteTemplateFor, rememb
 describe("Quick Notes", () => {
   test("the template follows the business type", () => {
     expect(quickNoteTemplateFor("Nail Salon").id).toBe("nail");
-    expect(quickNoteTemplateFor("Barbershop").id).toBe("hair");
+    expect(quickNoteTemplateFor("Barbershop").id).toBe("barber");
     expect(quickNoteTemplateFor("Hair Salon").id).toBe("hair");
     expect(quickNoteTemplateFor("Lash and Brows").id).toBe("generic");
     expect(quickNoteTemplateFor(null).id).toBe("generic");

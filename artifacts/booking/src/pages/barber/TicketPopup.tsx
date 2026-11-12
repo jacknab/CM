@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { QuickNoteSummary, RepeatCutButton, type SavedQuickNote } from "./QuickNoteSummary";
+import { isRepeatFormulaMarked, markRepeatFormula } from "./repeatFormula";
 import { salonTimeZone } from "@/lib/salonClock";
 import { Ban, CalendarDays, Check, Clock, Hand, Play, Receipt, ShoppingBag, Split, UserRound, X, MessageSquare, StickyNote } from "lucide-react";
 import { useNailText } from "./i18n";
@@ -49,18 +51,20 @@ export function TicketPopup(p: Props) {
     const iv = setInterval(() => setTick(Date.now()), 30_000);
     return () => clearInterval(iv);
   }, []);
-  // The client's last Quick Note and what to remember (owner, 2026-11-11; QuickNotesPopup.tsx), before their service.
-  const [lastNote, setLastNote] = useState<{ text: string; remember: string[] } | null>(null);
+  // The client's last visit's Quick Note as a scannable formula (owner, 2026-11-12; QuickNoteSummary.tsx), before their service.
+  const [lastNote, setLastNote] = useState<SavedQuickNote | null>(null);
+  const [repeat, setRepeat] = useState(() => isRepeatFormulaMarked(t.client.id));
   useEffect(() => {
     const clientId = Number(t.client.id);
     if (!(clientId > 0)) { setLastNote(null); return; }
     let live = true;
-    fetch(`/api/quick-notes/client/${clientId}/latest`, { credentials: "include" })
+    fetch(`/api/quick-notes/client/${clientId}`, { credentials: "include" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (live) setLastNote(d?.latest ? { text: String(d.latest.text), remember: Array.isArray(d.remember) ? d.remember : [] } : null); })
+      // This ticket's own note (after checkout) isn't its "last visit".
+      .then((d) => { if (live) setLastNote((Array.isArray(d?.notes) ? d.notes : []).find((n: SavedQuickNote & { appointmentId?: number }) => n.appointmentId !== t.id) ?? null); })
       .catch(() => {});
     return () => { live = false; };
-  }, [t.client.id]);
+  }, [t.client.id, t.id]);
 
   const dock: { icon: typeof Play; id: string; label: string; action: () => void; primary?: boolean; danger?: boolean; disabled?: boolean }[] = t.status === "confirmed"
     ? [
@@ -129,8 +133,10 @@ export function TicketPopup(p: Props) {
             {lastNote && (
               <div className="checkin-modal-detail" data-testid="ticket-popup-last-note">
                 <StickyNote size={18} />
-                <div><small>Last notes</small><strong style={{ fontWeight: 500 }}>{lastNote.text}</strong>
-                  {lastNote.remember.length > 0 && <small style={{ display: "block", marginTop: 4 }}>{`Remember: ${lastNote.remember.join(", ")}`}</small>}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <QuickNoteSummary note={lastNote} />
+                  <RepeatCutButton on={repeat} onClick={() => { markRepeatFormula(t.client.id); setRepeat(true); }} testId="ticket-popup-repeat-formula" />
+                </div>
               </div>
             )}
             {t.actualMinutes != null && (

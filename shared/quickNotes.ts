@@ -7,7 +7,7 @@
  * `remember` choices are preferences; a visit choice is never treated as a lasting one.
  */
 
-export type QuickNoteTemplateId = "nail" | "hair" | "generic";
+export type QuickNoteTemplateId = "nail" | "hair" | "barber" | "generic";
 
 export interface QuickNoteField {
   key: string;
@@ -17,6 +17,11 @@ export interface QuickNoteField {
   multi?: boolean;
   /** Carries forward to future visits (a preference), instead of describing this visit. */
   remember?: boolean;
+  /**
+   * Multi fields: two groups that can't be picked together — picking from one clears the other
+   * (e.g. "No Fade" against every fade). See toggleQuickNoteOption.
+   */
+  exclusive?: [string[], string[]];
 }
 
 export interface QuickNoteTemplate { id: QuickNoteTemplateId; fields: QuickNoteField[] }
@@ -42,6 +47,20 @@ export const QUICK_NOTE_TEMPLATES: Record<QuickNoteTemplateId, QuickNoteTemplate
       { key: "top", label: "Top Length", options: ["Scissor cut", "1 inch", "2 inches", "3 inches", "Leave longer"] },
     ],
   },
+  // Barbershops (owner, 2026-11-12): multi-select pills, barbershop words, haircut only (no facial hair section).
+  barber: {
+    id: "barber",
+    fields: [
+      { key: "guard", label: "Back & Sides Guard", multi: true, options: ["Foil/Razor", "#0", "#0.5", "#1", "#1.5", "#2", "#3", "#4", "#5", "#6"] },
+      { key: "fade", label: "Fade Style", multi: true, options: ["No Fade", "Low", "Mid", "High", "Skin Fade", "Taper Fade", "Drop/Burst"],
+        exclusive: [["No Fade"], ["Low", "Mid", "High", "Skin Fade", "Taper Fade", "Drop/Burst"]] },
+      { key: "neckline", label: "Neckline", multi: true, options: ["Natural", "Squared/Blocked", "Rounded", "Tapered", "Faded Out"],
+        exclusive: [["Faded Out"], ["Natural", "Squared/Blocked", "Rounded", "Tapered"]] },
+      { key: "sideburns", label: "Sideburns", multi: true, options: ["Short", "Mid", "Long", "Tapered", "Natural"] },
+      { key: "top", label: "Top Length & Texture", multi: true, options: ["Scissor cut", "1 inch", "2 inches", "3 inches", "Leave longer", "Texturize/Thin"],
+        exclusive: [["Leave longer"], ["1 inch", "2 inches", "3 inches"]] },
+    ],
+  },
   generic: {
     id: "generic",
     fields: [
@@ -51,16 +70,30 @@ export const QUICK_NOTE_TEMPLATES: Record<QuickNoteTemplateId, QuickNoteTemplate
   },
 };
 
-/** Nail salons get the nail template; hair salons and barbershops the haircut one; every other business the short one. */
+/** Nail salons get the nail template; barbershops the barbershop one; hair salons the haircut one; every other business the short one. */
 export function quickNoteTemplateFor(category: string | null | undefined): QuickNoteTemplate {
   const c = String(category ?? "").toLowerCase();
   if (/nail/.test(c)) return QUICK_NOTE_TEMPLATES.nail;
-  if (/barber|hair/.test(c)) return QUICK_NOTE_TEMPLATES.hair;
+  if (/barber/.test(c)) return QUICK_NOTE_TEMPLATES.barber;
+  if (/hair/.test(c)) return QUICK_NOTE_TEMPLATES.hair;
   return QUICK_NOTE_TEMPLATES.generic;
 }
 
 /** The choices: one option per single field, a list for a multi field. */
 export type QuickNoteChoices = Record<string, string | string[] | undefined>;
+
+/**
+ * Tap a pill on a multi field: on/off, and picking from one side of an exclusive pair clears the other side
+ * ("No Fade" clears every fade; a fade clears "No Fade").
+ */
+export function toggleQuickNoteOption(field: QuickNoteField, current: string[], option: string): string[] {
+  if (current.includes(option)) return current.filter((o) => o !== option);
+  let next = [...current, option];
+  for (const [a, b] of field.exclusive ? [field.exclusive, [field.exclusive[1], field.exclusive[0]] as [string[], string[]]] : []) {
+    if (a.includes(option)) next = next.filter((o) => !b.includes(o));
+  }
+  return field.options.filter((o) => next.includes(o)); // menu order
+}
 
 /** Keeps only real options of this template's fields (anything else sent is dropped). */
 export function cleanQuickNoteChoices(template: QuickNoteTemplate, raw: unknown): QuickNoteChoices {
@@ -69,7 +102,11 @@ export function cleanQuickNoteChoices(template: QuickNoteTemplate, raw: unknown)
   for (const f of template.fields) {
     const v = src[f.key];
     if (f.multi) {
-      const picked = Array.isArray(v) ? f.options.filter((o) => v.includes(o)) : [];
+      let picked = Array.isArray(v) ? f.options.filter((o) => v.includes(o)) : typeof v === "string" && f.options.includes(v) ? [v] : [];
+      // Both sides of an exclusive pair sent: the specific picks win over the catch-all ("No Fade", "Leave longer", "Faded Out").
+      if (f.exclusive && picked.some((o) => f.exclusive![0].includes(o)) && picked.some((o) => f.exclusive![1].includes(o))) {
+        picked = picked.filter((o) => !f.exclusive![0].includes(o));
+      }
       if (picked.length) out[f.key] = picked;
     } else if (typeof v === "string" && f.options.includes(v)) out[f.key] = v;
   }
@@ -133,6 +170,35 @@ function hairSentences(c: QuickNoteChoices): string[] {
   return out;
 }
 
+const lower = (s: string) => s.toLowerCase();
+/** Barbershop note in plain sentences (multi-select): "Back and sides #0 guard, low skin fade. Neckline faded out. …" */
+function barberSentences(c: QuickNoteChoices): string[] {
+  const out: string[] = [];
+  const guards = many(c, "guard"), fades = many(c, "fade");
+  const guardWords = guards.length ? list(guards.map((g) => (g === "Foil/Razor" ? "foil/razor" : `${g} guard`))) : "";
+  const fadeWords = fades.includes("No Fade") ? "no fade" : fades.length ? (() => { const w = fades.map(lower).join(" "); return /fade/.test(w) ? w : `${w} fade`; })() : "";
+  if (guardWords || fadeWords) out.push(`Back and sides: ${[guardWords, fadeWords].filter(Boolean).join(", ")}.`);
+  if (many(c, "neckline").length) out.push(`Neckline ${list(many(c, "neckline").map(lower))}.`);
+  if (many(c, "sideburns").length) out.push(`Sideburns ${list(many(c, "sideburns").map(lower))}.`);
+  if (many(c, "top").length) out.push(`Top: ${list(many(c, "top").map(lower))}.`);
+  return out;
+}
+
+/**
+ * A saved note's choices as the barbershop's lists, for showing (owner, 2026-11-12). Older notes (the haircut
+ * template, one choice per field) still read: their old words map onto today's pills.
+ */
+const OLD_WORDS: Record<string, string> = { Squared: "Squared/Blocked", Blocked: "Squared/Blocked" };
+export function quickNoteLists(choices: unknown): Record<"guard" | "fade" | "neckline" | "sideburns" | "top", string[]> {
+  const src = choices && typeof choices === "object" ? (choices as Record<string, unknown>) : {};
+  const get = (k: string) => {
+    const v = src[k];
+    const arr = Array.isArray(v) ? v : typeof v === "string" && v ? [v] : [];
+    return [...new Set(arr.filter((x): x is string => typeof x === "string").map((x) => OLD_WORDS[x] ?? x))];
+  };
+  return { guard: get("guard"), fade: get("fade"), neckline: get("neckline"), sideburns: get("sideburns"), top: get("top") };
+}
+
 function genericSentences(c: QuickNoteChoices): string[] {
   const remember = many(c, "remember").map((r) => GENERIC_REMEMBER[r]).filter(Boolean);
   return remember.length ? [`${cap(list(remember))}.`] : [];
@@ -143,7 +209,8 @@ function genericSentences(c: QuickNoteChoices): string[] {
  * picked or written (there is then nothing to save).
  */
 export function buildQuickNoteText(templateId: QuickNoteTemplateId, choices: QuickNoteChoices, extra?: string | null): string {
-  const sentences = templateId === "nail" ? nailSentences(choices) : templateId === "hair" ? hairSentences(choices) : genericSentences(choices);
+  const sentences = templateId === "nail" ? nailSentences(choices) : templateId === "hair" ? hairSentences(choices)
+    : templateId === "barber" ? barberSentences(choices) : genericSentences(choices);
   let own = String(extra ?? "").trim().replace(/\s+/g, " ");
   if (own) {
     own = cap(own);

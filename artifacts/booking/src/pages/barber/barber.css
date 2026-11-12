@@ -1289,8 +1289,22 @@
 .barber-app .mp-ticket { flex-shrink: 0; background: #050505; color: #fff; border-radius: 10px; padding: 4px 16px; font-size: 44px; font-weight: 900; line-height: 1.1; }
 .barber-app .mp-who strong { min-width: 0; font-size: 50px; font-weight: 900; line-height: 1.05; text-transform: uppercase; overflow-wrap: normal; }
 .barber-app .mp-since { margin: 14px 0 0; color: #53637d; font-size: 22px; font-weight: 600; }
+/* Last Cut Formula (QuickNoteSummary.tsx; owner's design 2026-11-12): labelled sections, light pills, dark Repeat button. */
+.qn-sum { display: flex; flex-direction: column; gap: 10px; }
+.qn-sum-title { margin: 0; font-size: 24px; font-weight: 800; color: #0f172a; }
+.qn-sum-meta { margin: 0; font-size: 16px; font-weight: 700; color: #33445f; line-height: 1.35; }
+.qn-sum-meta span { color: #53637d; font-weight: 600; }
+.qn-sum-section { display: flex; flex-direction: column; gap: 6px; }
+.qn-sum-label { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #334155; }
+.qn-sum-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.qn-pill { display: inline-block; padding: 8px 16px; border-radius: 10px; background: #e8ebf0; border: 1px solid #cfd5de; color: #0f172a; font-size: 19px; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+.qn-sum-extra { margin: 0; color: #0f172a; font-size: 19px; font-style: italic; line-height: 1.35; }
+.qn-sum-text { margin: 0; font-size: 20px; line-height: 1.35; color: #1d2a40; font-weight: 600; }
+.qn-repeat-big { width: 100%; margin-top: 14px; padding: 12px 18px; border-radius: 12px; border: 0; background: #1f2227; color: #fff; font-size: 19px; font-weight: 700; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+.qn-repeat-big small { font-size: 15px; font-weight: 500; color: #cbd2dc; }
+.qn-repeat-big:disabled { background: #475569; cursor: default; }
 /* The client's Quick Notes on the check-in card (owner, 2026-11-12). */
-.barber-app .mp-notes { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: #f2f5f9; border: 2px solid #cbd7e8; max-height: 300px; overflow-y: auto; }
+.barber-app .mp-notes { margin-top: 22px; padding: 18px 20px; border-radius: 16px; background: #fff; border: 1px solid #d5dbe4; max-height: 430px; overflow-y: auto; }
 .barber-app .mp-notes-title { margin: 0 0 8px; font-size: 18px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; color: #53637d; }
 .barber-app .mp-note + .mp-note { margin-top: 12px; padding-top: 12px; border-top: 1px solid #cbd7e8; }
 .barber-app .mp-note-when { margin: 0 0 6px; font-size: 18px; font-weight: 700; color: #33445f; }

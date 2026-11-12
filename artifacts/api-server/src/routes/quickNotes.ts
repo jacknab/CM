@@ -44,14 +44,20 @@ router.get("/appointment/:id", isAuthenticated, async (req, res) => {
     if (!visit) return res.status(404).json({ message: "Visit not found" });
     const template = quickNoteTemplateFor(visit.category);
     const saved = (await pool.query(`SELECT details, note_text FROM client_quick_notes WHERE appointment_id = $1 AND store_id = $2`, [visit.id, storeId])).rows[0];
+    // The client's previous visit, for "Repeat Last Cut" (owner, 2026-11-12).
+    const previous = visit.customer_id == null ? null : (await pool.query(
+      `SELECT details FROM client_quick_notes WHERE client_id = $1 AND store_id = $2 AND appointment_id <> $3 ORDER BY created_at DESC LIMIT 1`,
+      [visit.customer_id, storeId, visit.id])).rows[0];
     return res.json({
       // A note is kept on the client, so a ticket with only a name (no client record) has nowhere to keep it.
       available: visit.customer_id != null && visit.status === "completed",
       template,
+      clientId: visit.customer_id ?? null,
       clientName: visit.client_name ?? null,
       staffName: visit.staff_name ?? null,
       services: [visit.service_name, ...(visit.addon_names ?? [])].filter(Boolean),
       saved: saved ? { choices: saved.details?.choices ?? {}, extra: saved.details?.extra ?? "", text: saved.note_text } : null,
+      previous: previous ? { choices: previous.details?.choices ?? {}, extra: previous.details?.extra ?? "" } : null,
     });
   } catch (err) {
     console.error("[quick-notes] GET appointment:", err);
@@ -114,11 +120,12 @@ router.get("/client/:id", isAuthenticated, async (req, res) => {
     const clientId = Number(req.params.id);
     if (!Number.isInteger(clientId) || clientId <= 0) return res.json({ notes: [] });
     const rows = (await pool.query(
-      `SELECT q.id, q.appointment_id, q.note_text, q.created_at, COALESCE(a.completed_at, a.date) AS visit_at, st.name AS staff_name, s.name AS service_name
+      `SELECT q.id, q.appointment_id, q.note_text, q.template, q.details, q.created_at, COALESCE(a.completed_at, a.date) AS visit_at, st.name AS staff_name, s.name AS service_name
          FROM client_quick_notes q LEFT JOIN staff st ON st.id = q.staff_id
          LEFT JOIN appointments a ON a.id = q.appointment_id LEFT JOIN services s ON s.id = a.service_id
         WHERE q.client_id = $1 AND q.store_id = $2 ORDER BY q.created_at DESC LIMIT 50`, [clientId, storeId])).rows;
-    return res.json({ notes: rows.map((r) => ({ id: r.id, appointmentId: r.appointment_id, text: r.note_text, createdAt: r.created_at, visitAt: r.visit_at ?? r.created_at, staffName: r.staff_name ?? null, serviceName: r.service_name ?? null })) });
+    return res.json({ notes: rows.map((r) => ({ id: r.id, appointmentId: r.appointment_id, text: r.note_text, template: r.template, choices: r.details?.choices ?? {}, extra: r.details?.extra ?? "",
+      services: Array.isArray(r.details?.services) ? r.details.services : [], createdAt: r.created_at, visitAt: r.visit_at ?? r.created_at, staffName: r.staff_name ?? null, serviceName: r.service_name ?? null })) });
   } catch (err) {
     console.error("[quick-notes] GET client:", err);
     return res.status(500).json({ message: "Could not load the client's notes" });
