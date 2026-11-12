@@ -909,14 +909,6 @@ function applySeoHeadTags(html: string, seo: SeoMeta): string {
   if (seo.geoPosition) replaceOrAppend(/<meta\s+name=["']geo\.position["'][^>]*>/i, `<meta name="geo.position" content="${escAttr(seo.geoPosition)}">`);
   if (seo.geoRegion) replaceOrAppend(/<meta\s+name=["']geo\.region["'][^>]*>/i, `<meta name="geo.region" content="${escAttr(seo.geoRegion)}">`);
   if (seo.geoPlacename) replaceOrAppend(/<meta\s+name=["']geo\.placename["'][^>]*>/i, `<meta name="geo.placename" content="${escAttr(seo.geoPlacename)}">`);
-
-  const schema = seo.jsonLd
-    ? `<script type="application/ld+json">${JSON.stringify(seo.jsonLd).replace(/<\/script/gi, "<\\/script")}</script>`
-    : "";
-  const schemaPattern = /<script\s+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/i;
-  if (schema) {
-    if (schemaPattern.test(html)) html = html.replace(schemaPattern, schema);
-    else additions.push(schema);
   // The template's sample studio stayed in these (owner, 2026-11-07: "Lacquer & Loom", New York): the salon's own
   // details, or nothing — never the sample's.
   if (seo.title) replaceOrAppend(/<meta\s+name=["']title["'][^>]*>/i, `<meta name="title" content="${escAttr(seo.title)}">`);
@@ -945,6 +937,14 @@ function applySeoHeadTags(html: string, seo: SeoMeta): string {
   }
   if (!seo.geoRegion) html = html.replace(/<meta\s+name=["']geo\.region["'][^>]*>\s*/gi, "");
   if (!seo.geoPlacename) html = html.replace(/<meta\s+name=["']geo\.placename["'][^>]*>\s*/gi, "");
+
+  const schema = seo.jsonLd
+    ? `<script type="application/ld+json">${JSON.stringify(seo.jsonLd).replace(/<\/script/gi, "<\\/script")}</script>`
+    : "";
+  const schemaPattern = /<script\s+type=["']application\/ld\+json["'][^>]*>[\s\S]*?<\/script>/i;
+  if (schema) {
+    if (schemaPattern.test(html)) html = html.replace(schemaPattern, schema);
+    else additions.push(schema);
   }
   if (seo.preloadImage) additions.push(`<link rel="preload" as="image" href="${escAttr(seo.preloadImage)}">`);
   return additions.length ? html.replace(/<\/head>/i, `${additions.join("")}</head>`) : html;
@@ -1450,7 +1450,22 @@ async function serveAutoPage(website: Record<string, unknown>, routePath: string
 
 // ── Tenant site by slug (called from /api/tenant/:slug/site routes) ───────────
 
+/**
+ * The Certxa icon files on every salon website (owner, 2026-11-12: a clear icon in Google results). Template sites
+ * sent these addresses to the page itself, so Google found no icon; they come from the booking app's public files.
+ */
+const CERTXA_ICON_FILES = new Set(["/favicon.ico", "/favicon.svg", "/favicon-48x48.png", "/favicon-96x96.png", "/favicon-192x192.png", "/favicon-512x512.png", "/apple-touch-icon.png"]);
+function serveCertxaIcon(req: Request, res: Response): boolean {
+  if (!CERTXA_ICON_FILES.has(req.path)) return false;
+  const file = path.resolve(process.cwd(), "dist", "public", req.path.slice(1));
+  if (!fs.existsSync(file)) return false;
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.sendFile(file);
+  return true;
+}
+
 export async function handleTenantSiteBySlug(req: Request, res: Response): Promise<void> {
+  if (serveCertxaIcon(req, res)) return;
   const slug = (req.params as Record<string, string>).slug;
   if (!slug) { res.status(400).send("Missing slug"); return; }
 
@@ -1503,24 +1518,10 @@ export async function handleTenantSiteBySlug(req: Request, res: Response): Promi
   await serveTenantSite(website, splat, basePath, res, splat ?? req.path);
 }
 
-/**
- * The Certxa icon files on every salon website (owner, 2026-11-12: a clear icon in Google results). Template sites
- * sent these addresses to the page itself, so Google found no icon; they come from the booking app's public files.
- */
-const CERTXA_ICON_FILES = new Set(["/favicon.ico", "/favicon.svg", "/favicon-48x48.png", "/favicon-96x96.png", "/favicon-192x192.png", "/favicon-512x512.png", "/apple-touch-icon.png"]);
-function serveCertxaIcon(req: Request, res: Response): boolean {
-  if (!CERTXA_ICON_FILES.has(req.path)) return false;
-  const file = path.resolve(process.cwd(), "dist", "public", req.path.slice(1));
-  if (!fs.existsSync(file)) return false;
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  res.sendFile(file);
-  return true;
-}
-
 // ── Tenant site by custom domain (reads Host header; called from Nginx) ───────
-  if (serveCertxaIcon(req, res)) return;
 
 export async function handleTenantSiteByDomain(req: Request, res: Response): Promise<void> {
+  if (serveCertxaIcon(req, res)) return;
   // Nginx sets X-Forwarded-Host; fall back to Host header
   const host = (req.headers["x-forwarded-host"] as string | undefined)
     ?? req.get("host")
@@ -1620,7 +1621,6 @@ function domainValidationPageHtml(domain: string, token: string): string {
     p{color:#9ca3af;line-height:1.7;margin-bottom:.5rem}
     .domain{font-weight:600;color:#d1b3f5}
     .badge{display:inline-block;margin-top:2.5rem;padding:.5rem 1.75rem;background:#1A0333;border:1px solid #3B0764;border-radius:50px;font-size:.85rem;color:#9d7ec4}
-  if (serveCertxaIcon(req, res)) return;
   </style>
 </head>
 <body>
