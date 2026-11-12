@@ -1317,6 +1317,13 @@
 .barber-app .mp-btn-primary { grid-column: 1 / -1; min-height: 110px; background: #3f6ea3; border-color: #345d8c; color: #fff; font-size: 32px; }
 .barber-app .mp-btn-danger { border-color: #e7b4b4; background: #fdf1f1; color: #b42318; }
 .barber-app .mp-btn:active:not(:disabled) { transform: scale(.98); }
+/* Last Cut Formula left, buttons right (owner, 2026-11-12); stacks again on a narrow screen. */
+.barber-app .mp-card-split { width: min(1180px, 96vw); max-height: 94vh; display: flex; flex-direction: column; }
+.barber-app .mp-card-split .mp-split { margin-top: 22px; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; min-height: 0; }
+.barber-app .mp-card-split .mp-notes { margin-top: 0; max-height: calc(94vh - 230px); }
+.barber-app .mp-card-split .mp-actions { margin-top: 0; grid-template-columns: 1fr; }
+.barber-app .mp-card-split .mp-btn-primary { grid-column: auto; }
+@media (max-width: 900px) { .barber-app .mp-card-split .mp-split { grid-template-columns: 1fr; } }
 /* The name row and the bottom row keep their height; the clock band in the middle gives way. Long names step down. */
 .barber-app .q-wait-grid .q-unified-head, .barber-app .q-wait-grid .q-unified-footer { flex-shrink: 0; }
 .barber-app .q-wait-grid .q-unified-main { min-height: 64px; }
