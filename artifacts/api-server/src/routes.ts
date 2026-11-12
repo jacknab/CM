@@ -26583,6 +26583,14 @@ or
           startOnAssign: isBarbershop,
         };
         // A second service is its own ticket of the same visit (lib/nailTickets.ts, createNailTicketGroup): the
+      // Advanced Features › Check-In Kiosk off: no new check-ins at the kiosk (owner, 2026-11-12); the kiosk asks clients to
+      // check in at the front desk. Never a "closed" screen (kiosk-never-closed).
+      {
+        const [ss] = await db.select({ preferences: storeSettings.preferences }).from(storeSettings).where(eq(storeSettings.storeId, store.id));
+        if ((safeParsePreferences(ss?.preferences as string | undefined).kioskSettings as any)?.kioskEnabled === false) {
+          return res.status(409).json({ error: "Please check in at the front desk.", kioskOff: true });
+        }
+      }
         // same technician takes both when one can, otherwise the second goes to whoever is next for it.
         const extraServiceIds: number[] = selectedServices.slice(1).map((sv: any) => Number(sv.id)).filter((id: number) => Number.isInteger(id) && id > 0 && id !== Number(primaryServiceId));
         const makeTicket = (how: { staffId: number } | { autoAssign: true }) => extraServiceIds.length > 0

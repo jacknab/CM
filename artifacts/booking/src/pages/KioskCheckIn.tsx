@@ -1205,6 +1205,16 @@ function KioskCheckInScreens() {
     <KioskPairing slug={slug} storeName={storeConfig?.name} onPaired={() => setScreen("idle")} />
   );
 
+  // Advanced Features › Check-In Kiosk off (owner, 2026-11-12): no check-in form, just a friendly pointer to the front
+  // desk (never a "closed" screen). Comes back to the welcome screen by itself when the switch is turned on again.
+  if (kioskConfig && !kioskConfig.kioskEnabled && !["suspended", "pair", "loading", "error"].includes(screen)) return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center text-center px-10 select-none" style={{ ...NO_SELECT, background: BG }} data-testid="kiosk-front-desk">
+      {storeConfig?.name && <p style={{ fontSize: 26, fontWeight: 600, color: "#6b7280", margin: "0 0 18px" }}>{storeConfig.name}</p>}
+      <p style={{ fontSize: "clamp(38px, 6vw, 64px)", fontWeight: 800, color: PRIMARY, margin: 0, lineHeight: 1.15 }}>Please check in at the front desk</p>
+      <p style={{ fontSize: 24, color: "#4b5563", margin: "22px 0 0" }}>We'll be right with you.</p>
+    </div>
+  );
+
   // ── IDLE ────────────────────────────────────────────────────────────────────
   // Welcome screen (owner, 2026-10-31): the WELCOME / Please Check-In Here picture fills the whole screen, with the
   // language choice over its bottom edge (the only place clients pick a language). Tapping anywhere except a

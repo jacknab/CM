@@ -247,7 +247,7 @@ export default function FeaturesSettings() {
                   <span>
                     <span className="block text-sm font-medium mb-0.5">Enable Kiosk Check-In</span>
                     <span className="block text-xs text-muted-foreground mt-1 leading-relaxed">
-                      When enabled, clients can check in from a tablet at <span className="font-mono">certxa.com/kiosk/your-slug</span>. Disabling this shows a "closed" screen on any active kiosk devices.
+                      When enabled, clients can check in from a tablet at <span className="font-mono">certxa.com/kiosk/your-slug</span>. When off, the kiosk asks clients to check in at the front desk instead of showing the check-in form.
                     </span>
                   </span>
                 </label>
