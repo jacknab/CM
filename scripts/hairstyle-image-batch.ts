@@ -3,7 +3,7 @@
  *
  *   cd artifacts/api-server && set -a; . /etc/certxa.env; set +a
  *   pnpm tsx ../../scripts/hairstyle-image-batch.ts build    --batch 01 --from 0 --count 20   # batch.json from the manifest
- *   pnpm tsx ../../scripts/hairstyle-image-batch.ts generate --batch 01 [--only <slug>]          # OpenAI images (resumable)
+ *   (generate: DISABLED — images are never made through the API; they come from ChatGPT as zips)
  *   pnpm tsx ../../scripts/hairstyle-image-batch.ts validate --batch 01                          # automated consistency checks
  *   pnpm tsx ../../scripts/hairstyle-image-batch.ts upload   --batch 01 [--apply]                # → PENDING rows (never approved)
  *
@@ -100,6 +100,8 @@ const loadBatch = (): Batch => JSON.parse(readFileSync(join(batchDir(), "batch.j
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex").slice(0, 16);
 
 async function generate() {
+  // Disabled (owner, 2026-11-12): images are never generated through the API — they are made in ChatGPT and imported.
+  if (!process.env.ALLOW_API_IMAGE_GENERATION_NEVER) throw new Error("API image generation is disabled: images are made in ChatGPT and imported as pending (see docs/last-cut-formula).");
   const { default: OpenAI, toFile } = apiRequire("openai");
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const b = loadBatch();
