@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { UserRound, X, XCircle } from "lucide-react";
 import type { BoardMarker } from "./barberApi";
 import { salonTimeZone } from "@/lib/salonClock";
-import { QuickNoteSummary, RepeatCutButton, type SavedQuickNote } from "./QuickNoteSummary";
-import { isRepeatFormulaMarked, markRepeatFormula } from "./repeatFormula";
+import { QuickNoteSummary, type SavedQuickNote } from "./QuickNoteSummary";
 
 /**
  * A waiting client's card. There is no ticket yet — the barber only takes the client here; the ticket is made when
@@ -23,7 +22,6 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
   onClose: () => void;
 }) {
   const [notes, setNotes] = useState<SavedQuickNote[]>([]);
-  const [repeat, setRepeat] = useState(() => isRepeatFormulaMarked(marker.clientId));
   useEffect(() => {
     const clientId = Number(marker.clientId);
     if (!(clientId > 0)) { setNotes([]); return; }
@@ -37,7 +35,7 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
   const since = (() => { const d = new Date(marker.createdAt); return Number.isNaN(d.getTime()) ? null : d; })();
   return (
     <div className="mp-backdrop" onClick={onClose}>
-      {/* With a Last Cut Formula: formula on the left, the buttons on the right (owner, 2026-11-12). */}
+      {/* With a Last Cut Formula: the buttons on the left, the formula on the right (owner, 2026-11-12). */}
       <div className={`mp-card${notes.length > 0 ? " mp-card-split" : ""}`} role="dialog" aria-modal="true" aria-labelledby="barber-marker-title" onClick={(e) => e.stopPropagation()} data-testid="barber-marker-modal">
         <button type="button" className="mp-close-x" onClick={onClose} aria-label="Close"><X size={30} /></button>
         <p className="mp-eyebrow">Waiting · no ticket yet</p>
@@ -47,13 +45,6 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
         </div>
         {since && <p className="mp-since">Checked in {since.toLocaleTimeString([], { timeZone: salonTimeZone(), hour: "numeric", minute: "2-digit" })}</p>}
         <div className="mp-split">
-        {notes.length > 0 && (
-          <div className="mp-notes" data-testid="barber-marker-notes">
-            {notes.map((n) => <QuickNoteSummary key={n.id} note={n} testId="barber-marker-last-visit" />)}
-            {/* Repeat Last Cut: their last cut's picks fill in Quick Notes when this visit is checked out. */}
-            <RepeatCutButton on={repeat} onClick={() => { markRepeatFormula(marker.clientId); setRepeat(true); }} testId="barber-marker-repeat-formula" />
-          </div>
-        )}
         <div className="mp-actions">
           <button type="button" className="mp-btn mp-btn-primary" disabled={busy} onClick={() => onAssign(marker)} data-testid="barber-marker-assign">
             <UserRound size={34} /><span>ASSIGN TO ME</span>
@@ -65,6 +56,11 @@ export function MarkerPopup({ marker, busy, onAssign, onCancelCheckin, onClose }
             <span>CLOSE</span>
           </button>
         </div>
+        {notes.length > 0 && (
+          <div className="mp-notes" data-testid="barber-marker-notes">
+            {notes.map((n) => <QuickNoteSummary key={n.id} note={n} testId="barber-marker-last-visit" />)}
+          </div>
+        )}
         </div>
       </div>
     </div>
