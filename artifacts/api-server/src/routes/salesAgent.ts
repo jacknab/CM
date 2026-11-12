@@ -2108,6 +2108,8 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
     const local = localRecordingPath(recordingSid);
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Cache-Control", "private, max-age=0");
+    // ?download=1: saved as a file (owner, 2026-11-12), named after the call.
+    if (req.query.download) res.setHeader("Content-Disposition", `attachment; filename="certxa-call-${Number(req.params.id)}.mp3"`);
     if (local) return res.sendFile(local);
     const sid = process.env.TWILIO_ACCOUNT_SID, token = process.env.TWILIO_AUTH_TOKEN;
     if (!sid || !token) return res.status(404).json({ message: "Recording not available yet" });

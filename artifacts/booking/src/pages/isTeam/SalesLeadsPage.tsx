@@ -206,7 +206,10 @@ export default function SalesLeadsPage() {
                             {c.summary || "—"}
                             {/* The call's recording (owner, 2026-11-12), kept on Certxa's server. */}
                             {openCall === c.id && callDetail?.recording_sid && (
-                              <audio controls preload="none" className="mt-2 w-full max-w-md" src={`/api/support/sales-calls/${c.id}/recording`} onClick={(e) => e.stopPropagation()} data-testid="sales-call-recording" />
+                              <div className="mt-2 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                <audio controls preload="none" className="w-full max-w-md" src={`/api/support/sales-calls/${c.id}/recording`} data-testid="sales-call-recording" />
+                                <a href={`/api/support/sales-calls/${c.id}/recording?download=1`} className="text-xs font-medium text-slate-700 underline" data-testid="sales-call-recording-download">Download recording</a>
+                              </div>
                             )}
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (
                               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
@@ -275,7 +278,10 @@ export default function SalesLeadsPage() {
                             )}
                             {/* The call's recording (owner, 2026-11-12), kept on Certxa's server. */}
                             {openCall === c.id && callDetail?.recording_sid && (
-                              <audio controls preload="none" className="mt-2 w-full max-w-md" src={`/api/support/sales-calls/${c.id}/recording`} onClick={(e) => e.stopPropagation()} data-testid="sales-call-recording" />
+                              <div className="mt-2 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                                <audio controls preload="none" className="w-full max-w-md" src={`/api/support/sales-calls/${c.id}/recording`} data-testid="sales-call-recording" />
+                                <a href={`/api/support/sales-calls/${c.id}/recording?download=1`} className="text-xs font-medium text-slate-700 underline" data-testid="sales-call-recording-download">Download recording</a>
+                              </div>
                             )}
                             {openCall === c.id && Array.isArray(callDetail?.transcript) && (
                               <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
