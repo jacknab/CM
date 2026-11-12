@@ -526,20 +526,20 @@ async function autoMarkNoShowsForStore(storeId: number): Promise<void> {
 async function getTurnPreferences(storeId: number, opts: { raw?: boolean } = {}) {
   const [row] = await db.select().from(storeSettings).where(eq(storeSettings.storeId, storeId));
   const prefs = safeParsePreferences(row?.preferences as string | undefined);
+  const featureOff = !opts.raw && prefs.features && typeof prefs.features === "object" && (prefs.features as any).turnSystem === false;
   return {
     ...DEFAULT_TURN_SETTINGS,
     ...(prefs.turnSystem && typeof prefs.turnSystem === "object" ? prefs.turnSystem : {}),
-    appointmentExclusionWindowMinutes: normalizeNumber(
-      prefs.turnSystem?.appointmentExclusionWindowMinutes,
-      DEFAULT_TURN_SETTINGS.appointmentExclusionWindowMinutes,
-  const featureOff = !opts.raw && prefs.features && typeof prefs.features === "object" && (prefs.features as any).turnSystem === false;
-      1
-    ),
-    turnValueThreshold: normalizeNumber(
     ...(featureOff ? { turnEnabled: false } : {}),
     // Advanced Features › Time Clock off: nobody clocks in, so the turn line uses the staff working today by their
     // profile hours instead (getTurnEligibility; 2026-11-12 settings audit).
     ...(!opts.raw && prefs.features && typeof prefs.features === "object" && (prefs.features as any).timeclock === false ? { timeclockOff: true } : {}),
+    appointmentExclusionWindowMinutes: normalizeNumber(
+      prefs.turnSystem?.appointmentExclusionWindowMinutes,
+      DEFAULT_TURN_SETTINGS.appointmentExclusionWindowMinutes,
+      1
+    ),
+    turnValueThreshold: normalizeNumber(
       prefs.turnSystem?.turnValueThreshold,
       DEFAULT_TURN_SETTINGS.turnValueThreshold
     ),
@@ -22858,6 +22858,8 @@ or
       return res.json({
         enabled: l.enabled !== false,
         pointsPerDollar: Number(l.pointsPerDollar) > 0 ? Number(l.pointsPerDollar) : 1,
+        // Advanced Features › Reward Points: when off, checkouts show no points (2026-11-12 settings audit).
+        rewardPoints: prefs.features?.rewardPoints !== false,
       });
     } catch (err) {
       console.error("[loyalty/config] GET", err);
@@ -22986,8 +22988,6 @@ or
       const appointmentId = Number.isFinite(Number(req.body?.appointmentId)) ? Number(req.body.appointmentId) : null;
       if (!Number.isFinite(customerId) || !Number.isFinite(rewardId)) {
         return res.status(400).json({ error: "customerId and rewardId are required" });
-        // Advanced Features › Reward Points: when off, checkouts show no points (2026-11-12 settings audit).
-        rewardPoints: prefs.features?.rewardPoints !== false,
       }
       // Atomic, and once per ticket: asking again for the same reward on the same appointment returns the earlier redemption.
       const r = await redeemLoyaltyReward({ storeId, customerId, rewardId, appointmentId });
