@@ -1020,6 +1020,8 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   const { guard, pinSheet } = useManagerOverride();
   const isLive = (t: BoardTicket | null = editing): t is BoardTicket => !!t && !offline && !isLocalId(t.id);
   const [liveBusy, setLiveBusy] = useState(false);
+  /** SAVE-then-pay on a ticket being rung up is in flight (for the "Opening checkout…" cover). */
+  const [savingToPay, setSavingToPay] = useState(false);
   const reloadTicket = async (id: number) => {
     const b = await queryClient.fetchQuery({ queryKey: boardKey(storeId), queryFn: fetchBoard, staleTime: 0 });
     const fresh = b.tickets.find((x) => x.id === id);
@@ -1140,6 +1142,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   const saveLive = async (t: BoardTicket, thenPay = false) => {
     if (liveBusy) return;
     setLiveBusy(true);
+    if (thenPay) setSavingToPay(true);
     try {
       // The barber who took the client, else the barber signed in. Their ticket starts with them at once (the
       // barbershop's way: there is no START step).
@@ -1158,6 +1161,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       toast({ title: "Couldn't save the ticket", description: err?.message, variant: "destructive" });
     } finally {
       setLiveBusy(false);
+      setSavingToPay(false);
     }
   };
   // An add-on key: the add-on joins the ticket's first service (an add-on is on a ticket once).
@@ -1931,6 +1935,9 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
     if (!canSubmit) { say("Add a service first"); return; }
     payNow(fn);
   };
+  // From the first CHECKOUT tap until its payment screen is up (owner, 2026-11-12): the builder was cleared at once and
+  // the payment waited for the board, so the screen looked like it had reloaded and CHECKOUT got tapped twice.
+  const openingCheckout = !!payWhenOnBoard || (create.isPending && payAfterCreate.current) || savingToPay;
   // Clearing drops the client too, and a ticket can only be built for a client — so go back to the queue.
   const clearDraft = async () => {
     // A ticket being rung up that was never saved goes away, and the client is waiting again.
@@ -2454,10 +2461,17 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
           onFinished={() => { setSetupOpen(false); void queryClient.invalidateQueries({ queryKey: ["/api/nail/pos-setup"] }); }}
           onClose={() => setSetupOpen(false)} lang={lang} barber />
       )}
+      {openingCheckout && !checkout && (
+        <div className="bh-opening-checkout" role="status" aria-live="polite" data-testid="barber-opening-checkout">
+          <div><span className="bh-opening-spinner" aria-hidden="true" />Opening checkout…</div>
+        </div>
+      )}
       {markerPopup && tech && <MarkerPopup marker={markerPopup} busy={takeMarker.isPending || act.isPending} onAssign={(m) => takeMarker.mutate(m)} onClose={() => setMarkerPopup(null)}
         onCancelCheckin={async (m) => {
-          if (!(await confirm(`Take ${(m.clientName ?? "this client").trim() || "this client"} off the waiting list?`, { title: "Cancel check-in", confirmLabel: "Cancel check-in", cancelLabel: "Keep", destructive: true }))) return;
+          // The question opens under this popup's layer and blocks the screen, which looked like a freeze (owner,
+          // 2026-11-12): close the popup first, and bring it back if they keep the client.
           setMarkerPopup(null);
+          if (!(await confirm(`Take ${(m.clientName ?? "this client").trim() || "this client"} off the waiting list?`, { title: "Cancel check-in", confirmLabel: "Cancel check-in", cancelLabel: "Keep", destructive: true }))) { setMarkerPopup(m); return; }
           act.mutate(() => removeMarker(m.id), { onSuccess: () => say(`${(m.clientName ?? "Client").trim() || "Client"}'s check-in was cancelled`) });
         }} />}
       {!showSetup && lockEnabled && !tech && !showTurnPage && !needsRegisterPicker && !needsDrawerPicker && <BarberIdGate storeName={storeName} timezone={timezone} waiting={waitingForGate} keypadVisible={keypadVisible} onSignedIn={onTechSignedIn} />}

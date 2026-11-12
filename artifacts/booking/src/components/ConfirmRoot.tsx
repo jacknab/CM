@@ -41,7 +41,9 @@ export function ConfirmRoot() {
         if (!open) _resolveConfirm(false);
       }}
     >
-      <AlertDialogContent>
+      {/* Above every screen's own popups (the /barber and /nail ones sit at 300+): a question asked from inside one
+          used to open behind it and leave the screen blocked (owner, 2026-11-12). */}
+      <AlertDialogContent className="z-[2000]">
         <AlertDialogHeader>
           <AlertDialogTitle>{state.title}</AlertDialogTitle>
           {state.message && (
