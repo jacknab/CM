@@ -16,10 +16,15 @@
 import type pg from "pg";
 import { checkSpecForSave, isHaircutTemplate, quickNoteToSpec, type HaircutSpec } from "@shared/haircutFormula";
 import type { QuickNoteChoices } from "@shared/quickNotes";
-import { R2_PUBLIC_BASE } from "./r2";
+import { publicUrlForKey } from "./r2";
 
-/** Public URL of an approved library image (keys are checked by the database: no "..", no leading "/"). */
-export const r2Url = (key: string) => `${R2_PUBLIC_BASE}/${key}`;
+/**
+ * Public URL of an APPROVED library image — the app's own R2 URL (public base or the /api/r2 proxy), like every other
+ * upload. Pending and rejected images are never in R2 (lib/hairstyleImageStore.ts) and never get a public URL.
+ */
+export const r2Url = (key: string) => publicUrlForKey(key);
+/** SQL condition for an image a barber may see: approved AND published (its key is in R2, not the private review store). */
+export const VISIBLE_IMAGE = `approval_status = 'approved' AND r2_key NOT LIKE 'review/%'`;
 
 type Db = pg.PoolClient;
 
@@ -436,7 +441,7 @@ export async function searchHairstyles(db: Db | pg.Pool, storeId: number, o: { q
   const term = (o.q ?? "").trim().slice(0, 80);
   const rows = (await db.query(
     `SELECT t.id, t.slug, t.name, t.aliases, t.store_id, c.slug AS category_slug, c.name AS category_name,
-            (SELECT i.r2_key FROM hairstyle_template_images i WHERE i.template_id = t.id AND i.approval_status = 'approved' ORDER BY i.display_order, i.id LIMIT 1) AS thumb
+            (SELECT i.r2_key FROM hairstyle_template_images i WHERE i.template_id = t.id AND i.approval_status = 'approved' AND i.r2_key NOT LIKE 'review/%' ORDER BY i.display_order, i.id LIMIT 1) AS thumb
        FROM hairstyle_templates t JOIN hairstyle_categories c ON c.id = t.category_id
       WHERE t.is_active
         AND ((t.store_id IS NULL AND t.status = 'published' AND $2 <> 'store') OR (t.store_id = $1 AND $2 <> 'global'))
@@ -456,7 +461,7 @@ export async function hairstyleDetails(db: Db | pg.Pool, storeId: number, id: nu
       WHERE t.id = $1 AND t.is_active AND ((t.store_id IS NULL AND t.status = 'published') OR t.store_id = $2)`, [id, storeId])).rows[0];
   if (!t) throw new FormulaError(404, "Hairstyle not found");
   const images = (await db.query(
-    `SELECT view, r2_key, alt_text FROM hairstyle_template_images WHERE template_id = $1 AND approval_status = 'approved' ORDER BY display_order, id`, [id])).rows;
+    `SELECT view, r2_key, alt_text FROM hairstyle_template_images WHERE template_id = $1 AND ${VISIBLE_IMAGE} ORDER BY display_order, id`, [id])).rows;
   return {
     id: t.id, slug: t.slug, name: t.name, description: t.description, aliases: t.aliases ?? [], scope: t.store_id == null ? "global" : "store",
     category: { slug: t.category_slug, name: t.category_name }, defaultSpec: t.default_spec, specVersion: t.spec_version,

@@ -1619,6 +1619,8 @@ export async function registerRoutes(
       key = String(rawKey).replace(/^\/+/, "");
       res.setHeader("X-R2-Key", key || "");
       if (!key) return res.status(400).json({ message: "Missing object key" });
+      // Hairstyle images waiting for approval are never in R2 (lib/hairstyleImageStore.ts); refuse the prefix anyway.
+      if (key.startsWith("review/")) return res.status(404).json({ message: "Not found" });
 
       const rangeHeader = typeof req.headers.range === "string" ? req.headers.range : undefined;
       const obj = await getObjectFromR2(key, rangeHeader);

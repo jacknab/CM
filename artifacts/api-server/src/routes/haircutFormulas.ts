@@ -30,7 +30,7 @@ import { isAuthenticated } from "../auth";
 import { resolveSessionStoreId } from "../lib/sessionStore";
 import {
   FormulaError, attachWalkIn, correctVersion, createNamedFormula, formulaForClient, getOrCreateDefaultFormula, haircutFormulasEnabled,
-  hairstyleCategories, hairstyleDetails, historyForClient, insertVersion, listFormulas, loadTicket, r2Url, requireClient, saveForTicket,
+  hairstyleCategories, hairstyleDetails, historyForClient, insertVersion, listFormulas, loadTicket, r2Url, requireClient, saveForTicket, VISIBLE_IMAGE,
   searchHairstyles, toVersion, updateFormula, versionDetails,
 } from "../lib/haircutFormulas";
 
@@ -160,7 +160,7 @@ async function forTicket(db: pg.PoolClient, storeId: number, appointmentId: numb
   const style = latest.templateId ? (await db.query(
     `SELECT id, name, slug FROM hairstyle_templates WHERE id = $1 AND (store_id IS NULL OR store_id = $2)`, [latest.templateId, storeId])).rows[0] : null;
   const images = style ? (await db.query(
-    `SELECT view, r2_key, alt_text FROM hairstyle_template_images WHERE template_id = $1 AND approval_status = 'approved' ORDER BY display_order, id`,
+    `SELECT view, r2_key, alt_text FROM hairstyle_template_images WHERE template_id = $1 AND ${VISIBLE_IMAGE} ORDER BY display_order, id`,
     [style.id])).rows.map((i) => ({ view: i.view, url: r2Url(i.r2_key), altText: i.alt_text })) : [];
   return { clientId: ticketClientId, latest, hairstyle: style ? { id: style.id, name: style.name, slug: style.slug } : null, images };
 }

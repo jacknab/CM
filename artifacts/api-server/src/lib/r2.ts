@@ -15,6 +15,11 @@ export const R2_PUBLIC_BASE =
   (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "") ||
   `${R2_ENDPOINT.replace(/\/$/, "")}/${R2_BUCKET}`;
 
+/** The URL the app serves an R2 key at (public base, or the /api/r2 proxy): the same one every upload returns. */
+export function publicUrlForKey(key: string): string {
+  return buildPublicUrlFromKey(key);
+}
+
 function buildPublicUrlFromKey(key: string): string {
   // Preferred: explicit public URL (custom domain / r2.dev)
   if ((process.env.R2_PUBLIC_URL ?? "").trim()) {
@@ -111,7 +116,7 @@ export async function toThumb(buffer: Buffer, size = 80): Promise<Buffer> {
 /**
  * Upload a raw buffer to R2 (no conversion). Returns the public URL.
  */
-async function putR2(buffer: Buffer, key: string, contentType: string): Promise<string> {
+export async function putR2(buffer: Buffer, key: string, contentType: string): Promise<string> {
   await r2.send(
     new PutObjectCommand({
       Bucket: R2_BUCKET,
@@ -220,6 +225,10 @@ export async function uploadAvatarToR2(
  * Delete an object from R2 given its full public URL.
  * Silently succeeds if the URL doesn't belong to this bucket.
  */
+export async function deleteKeyFromR2(key: string): Promise<void> {
+  await r2.send(new DeleteObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+}
+
 export async function deleteFromR2(publicUrl: string): Promise<void> {
   const key = extractR2KeyFromUrl(publicUrl);
   if (!key) return;

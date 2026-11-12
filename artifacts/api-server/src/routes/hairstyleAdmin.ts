@@ -1,25 +1,29 @@
 /**
- * Hairstyle library — reference-image approval (Last Cut Formula Phase 4). Certxa platform admins only
+ * Hairstyle library — reference-image approval (Last Cut Formula Phases 4–5). Certxa platform admins only
  * (isAdminAuthenticated: users.is_admin). Global styles only (store_id NULL); store styles are never listed or changed.
  * Mounted at /api/admin/hairstyles. Page: /isadmin/hairstyle-library.
  *
  *   GET   /api/admin/hairstyles?q=&category=&images=missing|pending      the global styles with image counts per view
  *   GET   /api/admin/hairstyles/:id                                      one style with ALL its images (any status), for preview
+ *   GET   /api/admin/hairstyles/images/:imageId/file                     the image file itself (admins only; never cached)
  *   POST  /api/admin/hairstyles/:id/images        (multipart: image, view, source?, altText?)   upload → pending
  *   POST  /api/admin/hairstyles/images/:imageId/replace   (multipart: image)   a new pending image for the same style + view;
- *                                                          approving it rejects the one it replaces
+ *                                                          approving it retires the one it replaces
  *   PATCH /api/admin/hairstyles/images/:imageId   { view?, altText?, displayOrder?, templateId? }  (moving to another style: pending only)
  *   POST  /api/admin/hairstyles/images/:imageId/approve
  *   POST  /api/admin/hairstyles/images/:imageId/reject   { reason? }
  *
- * Only `approved` images are ever sent to barbers (/api/hairstyles/:id, the Last Cut Formula panels). Files go to
- * Cloudflare R2 through uploadToR2 (WebP), under hairstyles/global/<slug>/. Without R2 configured, uploads are refused.
+ * Image security (Phase 5, lib/hairstyleImageStore.ts): pending and rejected images are NOT in R2 — every R2 object is
+ * public through /api/r2/<key> — but in a private folder on the server, viewable only through the admin file route.
+ * Approving publishes the file to R2 under a fresh key; rejecting, replacing or re-angling an approved image takes it
+ * out of R2 again. Barbers only ever get approved, published images.
  */
 import { Router, type Request, type Response } from "express";
+import type pg from "pg";
 import { pool } from "../db";
 import { isAdminAuthenticated } from "../auth";
-import { extractR2KeyFromUrl, isR2Configured, memoryUpload, uploadToR2 } from "../lib/r2";
-import { r2Url } from "../lib/haircutFormulas";
+import { getObjectFromR2, isR2Configured, memoryUpload, publicUrlForKey } from "../lib/r2";
+import { addPendingImage, afterPublish, copyToReview, discardPublished, isReviewKey, publish, readReview } from "../lib/hairstyleImageStore";
 import { IMAGE_VIEWS } from "@shared/hairstyleImageManifest";
 
 const router = Router();
@@ -34,7 +38,10 @@ const SOURCES = new Set(["certxa_artwork", "ai_generated", "approved_reference"]
 const posInt = (v: unknown): number | null => { const n = Number(v); return Number.isSafeInteger(n) && n > 0 ? n : null; };
 const adminId = (req: Request): string => (req.session as any).userId;
 const toImage = (i: any) => ({
-  id: i.id, templateId: i.template_id, view: i.view, url: r2Url(i.r2_key), r2Key: i.r2_key, source: i.source, status: i.approval_status,
+  id: i.id, templateId: i.template_id, view: i.view, source: i.source, status: i.approval_status,
+  // Pending / rejected: only through the admin file route. Approved: the public URL barbers get.
+  url: isReviewKey(i.r2_key) ? `/api/admin/hairstyles/images/${i.id}/file` : publicUrlForKey(i.r2_key),
+  published: !isReviewKey(i.r2_key),
   approvedAt: i.approved_at, approvedBy: i.approved_by_user_id, altText: i.alt_text, displayOrder: i.display_order, metadata: i.metadata, createdAt: i.created_at,
 });
 const fail = (res: Response, label: string, err: unknown) => { console.error(`[hairstyle-admin] ${label}:`, err); return res.status(500).json({ message: "Could not complete the hairstyle library request" }); };
@@ -42,17 +49,13 @@ const fail = (res: Response, label: string, err: unknown) => { console.error(`[h
 async function globalStyle(id: number) {
   return (await pool.query(`SELECT id, slug, name, status, is_active FROM hairstyle_templates WHERE id = $1 AND store_id IS NULL`, [id])).rows[0] ?? null;
 }
-
-/** Puts one uploaded file in R2 under the style's folder and returns its key (never invented: it is the key written). */
-async function store(file: Express.Multer.File, slug: string): Promise<string> {
-  const url = await uploadToR2(file.buffer, `hairstyles/global/${slug}`, file.originalname, file.mimetype);
-  const key = extractR2KeyFromUrl(url);
-  if (!key) throw new Error("R2 did not return a key");
-  return key;
+async function lockImage(db: pg.PoolClient, imageId: number) {
+  return (await db.query(
+    `SELECT i.*, t.slug FROM hairstyle_template_images i JOIN hairstyle_templates t ON t.id = i.template_id AND t.store_id IS NULL
+      WHERE i.id = $1 FOR UPDATE OF i`, [imageId])).rows[0] ?? null;
 }
 
 function checkFile(req: Request, res: Response): req is Request & { file: Express.Multer.File } {
-  if (!isR2Configured()) { res.status(503).json({ message: "Image storage (R2) is not configured on this server" }); return false; }
   if (!req.file) { res.status(400).json({ message: "Choose an image file" }); return false; }
   if (!IMAGE_TYPES.has(req.file.mimetype)) { res.status(400).json({ message: "PNG, JPEG or WebP only" }); return false; }
   return true;
@@ -99,6 +102,22 @@ router.get("/:id", async (req, res) => {
   } catch (err) { return fail(res, "get", err); }
 });
 
+router.get("/images/:imageId/file", async (req, res) => {
+  try {
+    const img = (await pool.query(
+      `SELECT i.r2_key FROM hairstyle_template_images i JOIN hairstyle_templates t ON t.id = i.template_id AND t.store_id IS NULL WHERE i.id = $1`,
+      [posInt(req.params.imageId) ?? 0])).rows[0];
+    if (!img) return res.status(404).json({ message: "Image not found" });
+    const body = isReviewKey(img.r2_key)
+      ? await readReview(img.r2_key)
+      : Buffer.from(await ((await getObjectFromR2(img.r2_key)).Body as any).transformToByteArray());
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    return res.send(body);
+  } catch (err) { return fail(res, "file", err); }
+});
+
 router.post("/:id/images", upload.single("image"), async (req, res) => {
   try {
     if (!checkFile(req, res)) return;
@@ -106,13 +125,11 @@ router.post("/:id/images", upload.single("image"), async (req, res) => {
     if (!t) return res.status(404).json({ message: "Hairstyle not found" });
     const view = String(req.body?.view ?? "");
     if (!(IMAGE_VIEWS as readonly string[]).includes(view)) return res.status(400).json({ message: "Pick the view: front, left, right, back or detail" });
-    const source = SOURCES.has(String(req.body?.source)) ? String(req.body.source) : "certxa_artwork";
-    const key = await store(req.file, t.slug);
-    const r = (await pool.query(
-      `INSERT INTO hairstyle_template_images (template_id, view, r2_key, source, approval_status, alt_text, metadata)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6) RETURNING *`,
-      [t.id, view, key, source, typeof req.body?.altText === "string" ? req.body.altText.slice(0, 300) || null : null,
-       JSON.stringify({ uploadedBy: adminId(req), originalName: req.file.originalname.slice(0, 200) })])).rows[0];
+    const r = await addPendingImage(pool, {
+      templateId: t.id, view, buffer: req.file.buffer, source: SOURCES.has(String(req.body?.source)) ? String(req.body.source) : "certxa_artwork",
+      altText: typeof req.body?.altText === "string" ? req.body.altText.slice(0, 300) || null : null,
+      metadata: { uploadedBy: adminId(req), originalName: req.file.originalname.slice(0, 200) },
+    });
     return res.status(201).json({ image: toImage(r) });
   } catch (err) { return fail(res, "upload", err); }
 });
@@ -121,26 +138,23 @@ router.post("/images/:imageId/replace", upload.single("image"), async (req, res)
   try {
     if (!checkFile(req, res)) return;
     const old = (await pool.query(
-      `SELECT i.*, t.slug FROM hairstyle_template_images i JOIN hairstyle_templates t ON t.id = i.template_id AND t.store_id IS NULL WHERE i.id = $1`,
+      `SELECT i.* FROM hairstyle_template_images i JOIN hairstyle_templates t ON t.id = i.template_id AND t.store_id IS NULL WHERE i.id = $1`,
       [posInt(req.params.imageId) ?? 0])).rows[0];
     if (!old) return res.status(404).json({ message: "Image not found" });
-    const key = await store(req.file, old.slug);
-    const r = (await pool.query(
-      `INSERT INTO hairstyle_template_images (template_id, view, r2_key, source, approval_status, alt_text, display_order, metadata)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7) RETURNING *`,
-      [old.template_id, old.view, key, old.source, old.alt_text, old.display_order,
-       JSON.stringify({ uploadedBy: adminId(req), originalName: req.file.originalname.slice(0, 200), replaces: old.id })])).rows[0];
+    const r = await addPendingImage(pool, {
+      templateId: old.template_id, view: old.view, buffer: req.file.buffer, source: old.source, altText: old.alt_text, displayOrder: old.display_order,
+      metadata: { uploadedBy: adminId(req), originalName: req.file.originalname.slice(0, 200), replaces: old.id },
+    });
     return res.status(201).json({ image: toImage(r) });
   } catch (err) { return fail(res, "replace", err); }
 });
 
 router.patch("/images/:imageId", async (req, res) => {
   const db = await pool.connect();
+  let toDiscard: string | null = null;
   try {
     await db.query("BEGIN");
-    const img = (await db.query(
-      `SELECT i.* FROM hairstyle_template_images i JOIN hairstyle_templates t ON t.id = i.template_id AND t.store_id IS NULL WHERE i.id = $1 FOR UPDATE OF i`,
-      [posInt(req.params.imageId) ?? 0])).rows[0];
+    const img = await lockImage(db, posInt(req.params.imageId) ?? 0);
     if (!img) { await db.query("ROLLBACK"); return res.status(404).json({ message: "Image not found" }); }
     const b = req.body ?? {};
     if (b.view !== undefined && !(IMAGE_VIEWS as readonly string[]).includes(b.view)) { await db.query("ROLLBACK"); return res.status(400).json({ message: "Unknown view" }); }
@@ -152,56 +166,83 @@ router.patch("/images/:imageId", async (req, res) => {
       if (!t) { await db.query("ROLLBACK"); return res.status(404).json({ message: "Hairstyle not found" }); }
       templateId = t.id;
     }
-    // A view change on an approved image would show it as a different angle: it goes back to pending.
+    // A view change on an approved image would show it as a different angle: it goes back to pending, out of R2.
     const viewChanged = b.view !== undefined && b.view !== img.view;
+    let key = img.r2_key;
+    if (viewChanged && !isReviewKey(img.r2_key)) { key = await copyToReview(img.r2_key); toDiscard = img.r2_key; }
     const r = (await db.query(
-      `UPDATE hairstyle_template_images SET template_id = $1, view = $2, alt_text = $3, display_order = $4,
-              approval_status = CASE WHEN $5 THEN 'pending' ELSE approval_status END,
-              approved_at = CASE WHEN $5 THEN NULL ELSE approved_at END, approved_by_user_id = CASE WHEN $5 THEN NULL ELSE approved_by_user_id END,
+      `UPDATE hairstyle_template_images SET template_id = $1, view = $2, alt_text = $3, display_order = $4, r2_key = $5,
+              approval_status = CASE WHEN $6 THEN 'pending' ELSE approval_status END,
+              approved_at = CASE WHEN $6 THEN NULL ELSE approved_at END, approved_by_user_id = CASE WHEN $6 THEN NULL ELSE approved_by_user_id END,
               updated_at = now()
-        WHERE id = $6 RETURNING *`,
+        WHERE id = $7 RETURNING *`,
       [templateId, b.view ?? img.view, typeof b.altText === "string" ? b.altText.slice(0, 300) || null : img.alt_text,
-       Number.isInteger(b.displayOrder) ? b.displayOrder : img.display_order, viewChanged, img.id])).rows[0];
+       Number.isInteger(b.displayOrder) ? b.displayOrder : img.display_order, key, viewChanged, img.id])).rows[0];
     await db.query("COMMIT");
+    if (toDiscard) await discardPublished(toDiscard);
     return res.json({ image: toImage(r) });
   } catch (err) { await db.query("ROLLBACK").catch(() => {}); return fail(res, "patch", err); } finally { db.release(); }
 });
 
 router.post("/images/:imageId/approve", async (req, res) => {
+  if (!isR2Configured()) return res.status(503).json({ message: "Image storage (R2) is not configured on this server" });
   const db = await pool.connect();
+  let published: string | null = null;
   try {
     await db.query("BEGIN");
-    const img = (await db.query(
-      `SELECT i.* FROM hairstyle_template_images i JOIN hairstyle_templates t ON t.id = i.template_id AND t.store_id IS NULL WHERE i.id = $1 FOR UPDATE OF i`,
-      [posInt(req.params.imageId) ?? 0])).rows[0];
+    const img = await lockImage(db, posInt(req.params.imageId) ?? 0);
     if (!img) { await db.query("ROLLBACK"); return res.status(404).json({ message: "Image not found" }); }
+    if (img.approval_status === "approved" && !isReviewKey(img.r2_key)) { await db.query("ROLLBACK"); return res.json({ image: toImage(img), retired: null }); }
+    // Publish first (copy to R2 under a fresh key); if anything below fails, the copy is removed again.
+    const reviewKey = img.r2_key;
+    published = await publish(reviewKey, img.slug, img.view, img.id);
     const r = (await db.query(
-      `UPDATE hairstyle_template_images SET approval_status = 'approved', approved_by_user_id = $1, approved_at = now(), updated_at = now()
-        WHERE id = $2 RETURNING *`, [adminId(req), img.id])).rows[0];
-    // A replacement retires the image it replaces (kept as rejected, never deleted).
+      `UPDATE hairstyle_template_images SET approval_status = 'approved', approved_by_user_id = $1, approved_at = now(), r2_key = $2, updated_at = now()
+        WHERE id = $3 RETURNING *`, [adminId(req), published, img.id])).rows[0];
+    // A replacement retires the image it replaces (kept privately as rejected, never deleted).
     const replaces = posInt(img.metadata?.replaces);
+    let retiredKey: string | null = null;
     if (replaces) {
-      await db.query(
-        `UPDATE hairstyle_template_images SET approval_status = 'rejected', approved_at = NULL, approved_by_user_id = NULL,
-                metadata = metadata || jsonb_build_object('replacedBy', $1::int, 'rejectedBy', $2::text), updated_at = now()
-          WHERE id = $3 AND template_id = $4`, [img.id, adminId(req), replaces, img.template_id]);
+      const old = await lockImage(db, replaces);
+      if (old && old.template_id === img.template_id) {
+        const back = await copyToReview(old.r2_key);
+        if (back !== old.r2_key) retiredKey = old.r2_key;
+        await db.query(
+          `UPDATE hairstyle_template_images SET approval_status = 'rejected', approved_at = NULL, approved_by_user_id = NULL, r2_key = $1,
+                  metadata = metadata || jsonb_build_object('replacedBy', $2::int, 'rejectedBy', $3::text), updated_at = now()
+            WHERE id = $4`, [back, img.id, adminId(req), old.id]);
+      }
     }
     await db.query("COMMIT");
+    published = null; // kept
+    await afterPublish(reviewKey);
+    if (retiredKey) await discardPublished(retiredKey);
     return res.json({ image: toImage(r), retired: replaces ?? null });
-  } catch (err) { await db.query("ROLLBACK").catch(() => {}); return fail(res, "approve", err); } finally { db.release(); }
+  } catch (err) {
+    await db.query("ROLLBACK").catch(() => {});
+    if (published) await discardPublished(published);
+    return fail(res, "approve", err);
+  } finally { db.release(); }
 });
 
 router.post("/images/:imageId/reject", async (req, res) => {
+  const db = await pool.connect();
+  let toDiscard: string | null = null;
   try {
-    const r = (await pool.query(
-      `UPDATE hairstyle_template_images i SET approval_status = 'rejected', approved_at = NULL, approved_by_user_id = NULL,
-              metadata = i.metadata || jsonb_build_object('rejectedBy', $1::text, 'rejectReason', $2::text), updated_at = now()
-         FROM hairstyle_templates t
-        WHERE i.id = $3 AND t.id = i.template_id AND t.store_id IS NULL RETURNING i.*`,
-      [adminId(req), typeof req.body?.reason === "string" ? req.body.reason.slice(0, 300) : "", posInt(req.params.imageId) ?? 0])).rows[0];
-    if (!r) return res.status(404).json({ message: "Image not found" });
+    await db.query("BEGIN");
+    const img = await lockImage(db, posInt(req.params.imageId) ?? 0);
+    if (!img) { await db.query("ROLLBACK"); return res.status(404).json({ message: "Image not found" }); }
+    const key = await copyToReview(img.r2_key);
+    if (key !== img.r2_key) toDiscard = img.r2_key;
+    const r = (await db.query(
+      `UPDATE hairstyle_template_images SET approval_status = 'rejected', approved_at = NULL, approved_by_user_id = NULL, r2_key = $1,
+              metadata = metadata || jsonb_build_object('rejectedBy', $2::text, 'rejectReason', $3::text), updated_at = now()
+        WHERE id = $4 RETURNING *`,
+      [key, adminId(req), typeof req.body?.reason === "string" ? req.body.reason.slice(0, 300) : "", img.id])).rows[0];
+    await db.query("COMMIT");
+    if (toDiscard) await discardPublished(toDiscard);
     return res.json({ image: toImage(r) });
-  } catch (err) { return fail(res, "reject", err); }
+  } catch (err) { await db.query("ROLLBACK").catch(() => {}); return fail(res, "reject", err); } finally { db.release(); }
 });
 
 export default router;

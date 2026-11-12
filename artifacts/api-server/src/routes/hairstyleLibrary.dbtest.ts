@@ -7,17 +7,26 @@ import type { Server } from "node:http";
 
 vi.mock("../auth", async (orig) => ({ ...(await orig<typeof import("../auth")>()), isAuthenticated: (_q: unknown, _s: unknown, n: () => void) => n() }));
 vi.mock("../lib/sessionStore", () => ({ resolveSessionStoreId: async (req: any) => Number(req.headers["x-store"]) || null }));
-let uploads = 0;
+// A fake R2 bucket in memory: what is in it is what the public could fetch through /api/r2/<key>.
+const bucket = vi.hoisted(() => ({ objects: new Map<string, Buffer>(), failPut: false }));
 vi.mock("../lib/r2", async (orig) => {
   const real = await orig<typeof import("../lib/r2")>();
-  return { ...real, isR2Configured: () => true, uploadToR2: async (_b: Buffer, folder: string) => `${real.R2_PUBLIC_BASE}/${folder}/test-${++uploads}.webp` };
+  return {
+    ...real, isR2Configured: () => true,
+    toWebP: async (b: Buffer) => ({ buffer: b, mimeType: "image/webp" }),
+    putR2: async (b: Buffer, key: string) => { if (bucket.failPut) throw new Error("R2 down"); bucket.objects.set(key, b); return real.publicUrlForKey(key); },
+    getObjectFromR2: async (key: string) => { const b = bucket.objects.get(key); if (!b) throw new Error("NoSuchKey"); return { Body: { transformToByteArray: async () => new Uint8Array(b) } }; },
+    deleteKeyFromR2: async (key: string) => { bucket.objects.delete(key); },
+  };
 });
+const reviewDir = vi.hoisted(() => { const d = `${require("node:os").tmpdir()}/lcf-review-${process.pid}-${Date.now()}`; process.env.HAIRSTYLE_REVIEW_DIR = d; return d; });
 
 import { pool } from "../db";
 import haircutFormulasRouter from "./haircutFormulas";
 import hairstyleAdminRouter from "./hairstyleAdmin";
 import { importHairstyleCatalog } from "../lib/hairstyleCatalogImport";
 import { HAIRSTYLE_CATALOG } from "@shared/hairstyleCatalog";
+import { existsSync, readdirSync, rmSync, statSync } from "node:fs";
 
 const A = 9401, B = 9402;
 let server: Server;
@@ -59,7 +68,7 @@ beforeAll(async () => {
   await q(`INSERT INTO staff (id, store_id, name) VALUES (8401, $1, 'Barber One')`, [A]);
   await q(`INSERT INTO appointments (id, store_id, date, duration, customer_id, staff_id, status, total_paid) VALUES (6401, $1, now() - interval '9 days', 30, 7401, 8401, 'completed', '30'), (6402, $1, now(), 30, 7401, 8401, 'confirmed', '0')`, [A]);
 });
-afterAll(async () => { await new Promise((ok) => server.close(ok)); await pool.end(); });
+afterAll(async () => { await new Promise((ok) => server.close(ok)); await pool.end(); rmSync(reviewDir, { recursive: true, force: true }); });
 
 describe("catalog import", () => {
   it("L1 two imports at once (restart / two servers): exactly 200 published global styles, no error", async () => {
@@ -139,8 +148,12 @@ describe("search, categories and details", () => {
   });
 });
 
-describe("reference image approval (admins only)", () => {
-  let styleId = 0, firstId = 0;
+const rawFile = async (path: string, user?: string) => { const r = await fetch(`${base}${path}`, { headers: user ? { "x-user": user } : {} }); return { status: r.status, cache: r.headers.get("cache-control"), bytes: r.ok ? Buffer.from(await r.arrayBuffer()) : null }; };
+const rowKey = async (id: number) => (await q(`SELECT r2_key, approval_status FROM hairstyle_template_images WHERE id = $1`, [id]))[0];
+const reviewFiles = () => (existsSync(reviewDir) ? readdirSync(reviewDir) : []);
+
+describe("reference image approval (admins only) and image security", () => {
+  let styleId = 0, firstId = 0, firstPublicKey = "";
   beforeAll(async () => { styleId = await idOf("mid-skin-fade"); });
 
   it("L9 refuses anyone who isn't a platform admin", async () => {
@@ -149,43 +162,91 @@ describe("reference image approval (admins only)", () => {
     expect((await call("POST", `/api/admin/hairstyles/${styleId}/images`, { user: "u-owner", form: png() })).status).toBe(403);
   });
 
-  it("L10 an upload is pending and invisible to barbers until approved", async () => {
+  it("L10 an upload is pending, kept privately (not in R2), and only an admin can look at it", async () => {
     const f = png(); f.append("view", "front");
     const up = await call("POST", `/api/admin/hairstyles/${styleId}/images`, { user: "u-admin", form: f });
     expect(up.status).toBe(201);
-    expect(up.body.image).toMatchObject({ view: "front", status: "pending", source: "certxa_artwork" });
-    expect(up.body.image.r2Key).toMatch(/^hairstyles\/global\/mid-skin-fade\/test-\d+\.webp$/);
+    expect(up.body.image).toMatchObject({ view: "front", status: "pending", published: false, url: `/api/admin/hairstyles/images/${up.body.image.id}/file` });
     firstId = up.body.image.id;
+    expect(bucket.objects.size).toBe(0); // nothing public
+    const { r2_key } = await rowKey(firstId);
+    expect(r2_key).toMatch(/^review\/[0-9a-f-]{36}\.webp$/);
+    expect((statSync(reviewDir).mode & 0o777).toString(8)).toBe("700");
+    expect((statSync(`${reviewDir}/${r2_key.slice(7)}`).mode & 0o777).toString(8)).toBe("600");
+    const asAdmin = await rawFile(`/api/admin/hairstyles/images/${firstId}/file`, "u-admin");
+    expect(asAdmin).toMatchObject({ status: 200, cache: "private, no-store" });
+    expect((await rawFile(`/api/admin/hairstyles/images/${firstId}/file`, "u-owner")).status).toBe(403);
+    expect((await rawFile(`/api/admin/hairstyles/images/${firstId}/file`)).status).toBe(401);
     expect((await call("GET", `/api/hairstyles/${styleId}`, { store: B, user: "u-owner" })).body.images).toEqual([]);
-    const ok = await call("POST", `/api/admin/hairstyles/images/${firstId}/approve`, { user: "u-admin" });
-    expect(ok.body.image).toMatchObject({ status: "approved", approvedBy: "u-admin" });
-    const seen = (await call("GET", `/api/hairstyles/${styleId}`, { store: B, user: "u-owner" })).body.images;
-    expect(seen).toEqual([{ view: "front", url: expect.stringContaining(up.body.image.r2Key), altText: null }]);
   });
 
-  it("L11 replace: the old image stays until the new one is approved, then only the new one shows", async () => {
+  it("L11 approving publishes it to R2 under a fresh key; barbers then see it; the private copy is removed", async () => {
+    const before = (await rowKey(firstId)).r2_key;
+    const ok = await call("POST", `/api/admin/hairstyles/images/${firstId}/approve`, { user: "u-admin" });
+    expect(ok.body.image).toMatchObject({ status: "approved", approvedBy: "u-admin", published: true });
+    firstPublicKey = (await rowKey(firstId)).r2_key;
+    expect(firstPublicKey).toMatch(new RegExp(`^hairstyles/global/mid-skin-fade/front-${firstId}-[0-9a-f]{8}\\.webp$`));
+    expect([...bucket.objects.keys()]).toEqual([firstPublicKey]);
+    expect(reviewFiles()).not.toContain(before.slice(7));
+    const seen = (await call("GET", `/api/hairstyles/${styleId}`, { store: B, user: "u-owner" })).body.images;
+    expect(seen).toEqual([{ view: "front", url: expect.stringContaining(firstPublicKey), altText: null }]);
+  });
+
+  it("L12 replace: the new image stays private until approved; then the old one leaves R2 and is kept privately", async () => {
     const rep = await call("POST", `/api/admin/hairstyles/images/${firstId}/replace`, { user: "u-admin", form: png() });
-    expect(rep.body.image).toMatchObject({ view: "front", status: "pending", metadata: { replaces: firstId } });
-    expect((await call("GET", `/api/hairstyles/${styleId}`, { store: A, user: "u-owner" })).body.images.length).toBe(1);
+    expect(rep.body.image).toMatchObject({ view: "front", status: "pending", published: false, metadata: { replaces: firstId } });
+    expect([...bucket.objects.keys()]).toEqual([firstPublicKey]);
     const ok = await call("POST", `/api/admin/hairstyles/images/${rep.body.image.id}/approve`, { user: "u-admin" });
     expect(ok.body.retired).toBe(firstId);
+    const newKey = (await rowKey(rep.body.image.id)).r2_key;
+    expect([...bucket.objects.keys()]).toEqual([newKey]);
+    const old = await rowKey(firstId);
+    expect(old.approval_status).toBe("rejected");
+    expect(old.r2_key).toMatch(/^review\//);
+    expect(reviewFiles()).toContain(old.r2_key.slice(7));
+    expect((await rawFile(`/api/admin/hairstyles/images/${firstId}/file`, "u-admin")).status).toBe(200);
     const imgs = (await call("GET", `/api/hairstyles/${styleId}`, { store: A, user: "u-owner" })).body.images;
-    expect(imgs.map((i: any) => i.url)).toEqual([expect.stringContaining(rep.body.image.r2Key)]);
-    expect((await q(`SELECT approval_status FROM hairstyle_template_images WHERE id = $1`, [firstId]))[0].approval_status).toBe("rejected");
+    expect(imgs.map((i: any) => i.url)).toEqual([expect.stringContaining(newKey)]);
   });
 
-  it("L12 reject hides an image; moving an approved image to another view sends it back to pending", async () => {
+  it("L13 rejecting or re-angling an approved image takes it out of R2 again", async () => {
     const f = png(); f.append("view", "left");
     const left = (await call("POST", `/api/admin/hairstyles/${styleId}/images`, { user: "u-admin", form: f })).body.image;
     await call("POST", `/api/admin/hairstyles/images/${left.id}/approve`, { user: "u-admin" });
+    const leftKey = (await rowKey(left.id)).r2_key;
+    expect(bucket.objects.has(leftKey)).toBe(true);
     const moved = await call("PATCH", `/api/admin/hairstyles/images/${left.id}`, { user: "u-admin", body: { view: "right" } });
-    expect(moved.body.image).toMatchObject({ view: "right", status: "pending" });
+    expect(moved.body.image).toMatchObject({ view: "right", status: "pending", published: false });
+    expect(bucket.objects.has(leftKey)).toBe(false);
+    await call("POST", `/api/admin/hairstyles/images/${left.id}/approve`, { user: "u-admin" });
+    const rightKey = (await rowKey(left.id)).r2_key;
+    expect(rightKey).toMatch(/\/right-/);
     const rej = await call("POST", `/api/admin/hairstyles/images/${left.id}/reject`, { user: "u-admin", body: { reason: "wrong angle" } });
-    expect(rej.body.image).toMatchObject({ status: "rejected", metadata: { rejectReason: "wrong angle" } });
+    expect(rej.body.image).toMatchObject({ status: "rejected", published: false, metadata: { rejectReason: "wrong angle" } });
+    expect(bucket.objects.has(rightKey)).toBe(false);
     expect((await call("GET", `/api/hairstyles/${styleId}`, { store: A, user: "u-owner" })).body.images.map((i: any) => i.view)).toEqual(["front"]);
   });
 
-  it("L13 checks the file, the view, and never touches a store's private style", async () => {
+  it("L14 a failed approval leaves nothing public and the image pending", async () => {
+    const f = png(); f.append("view", "back");
+    const back = (await call("POST", `/api/admin/hairstyles/${styleId}/images`, { user: "u-admin", form: f })).body.image;
+    const keysBefore = [...bucket.objects.keys()].sort();
+    bucket.failPut = true;
+    expect((await call("POST", `/api/admin/hairstyles/images/${back.id}/approve`, { user: "u-admin" })).status).toBe(500);
+    bucket.failPut = false;
+    expect((await rowKey(back.id))).toMatchObject({ approval_status: "pending", r2_key: expect.stringMatching(/^review\//) });
+    // The database update fails after the file was published: the published copy is removed again.
+    await q(`CREATE FUNCTION lcf_fail_approve() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.approval_status = 'approved' THEN RAISE EXCEPTION 'forced'; END IF; RETURN NEW; END $$`);
+    await q(`CREATE TRIGGER lcf_fail_approve_trg BEFORE UPDATE ON hairstyle_template_images FOR EACH ROW EXECUTE FUNCTION lcf_fail_approve()`);
+    try {
+      expect((await call("POST", `/api/admin/hairstyles/images/${back.id}/approve`, { user: "u-admin" })).status).toBe(500);
+    } finally { await q(`DROP TRIGGER lcf_fail_approve_trg ON hairstyle_template_images`); await q(`DROP FUNCTION lcf_fail_approve()`); }
+    expect([...bucket.objects.keys()].sort()).toEqual(keysBefore);
+    expect((await rowKey(back.id)).approval_status).toBe("pending");
+    expect((await rawFile(`/api/admin/hairstyles/images/${back.id}/file`, "u-admin")).status).toBe(200);
+  });
+
+  it("L15 checks the file, the view, and never touches a store's private style", async () => {
     const noView = await call("POST", `/api/admin/hairstyles/${styleId}/images`, { user: "u-admin", form: png() });
     expect(noView.status).toBe(400);
     const txt = new FormData(); txt.append("image", new Blob(["hello"], { type: "text/plain" }), "x.txt"); txt.append("view", "front");
@@ -193,17 +254,18 @@ describe("reference image approval (admins only)", () => {
     const f = png(); f.append("view", "front");
     expect((await call("POST", `/api/admin/hairstyles/5492/images`, { user: "u-admin", form: f })).status).toBe(404);
     expect((await call("GET", `/api/admin/hairstyles/5492`, { user: "u-admin" })).status).toBe(404);
-    const list = await call("GET", "/api/admin/hairstyles?images=pending", { user: "u-admin" });
-    expect(list.body.hairstyles.every((h: any) => h.pending > 0)).toBe(true);
     const missing = await call("GET", "/api/admin/hairstyles?images=missing", { user: "u-admin" });
     expect(missing.body.hairstyles.length).toBe(200);
     expect(missing.body.hairstyles.find((h: any) => h.slug === "mid-skin-fade").missingViews).toEqual(["left", "right", "back"]);
   });
 
-  it("L14 the barber's read-only Last Cut panel source gets the approved images of the client's style", async () => {
+  it("L16 the barber's read-only Last Cut panel source gets only the approved, published images", async () => {
     const t = await call("GET", "/api/haircut-formula/for-ticket/6402", { store: A, user: "u-owner" });
     expect(t.status).toBe(200);
     expect(t.body.hairstyle).toMatchObject({ name: "Mid Skin Fade" });
     expect(t.body.images.map((i: any) => i.view)).toEqual(["front"]);
+    // Even an "approved" row whose file is still private (an interrupted approval) is never sent to barbers.
+    await q(`UPDATE hairstyle_template_images SET approval_status = 'approved', approved_by_user_id = 'u-admin', approved_at = now() WHERE r2_key LIKE 'review/%' AND view = 'back'`);
+    expect((await call("GET", `/api/hairstyles/${styleId}`, { store: A, user: "u-owner" })).body.images.map((i: any) => i.view)).toEqual(["front"]);
   });
 });
