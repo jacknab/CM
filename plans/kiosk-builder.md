@@ -116,5 +116,11 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   still use every add-on) and the Catalog lists. Made in Builder › Screens (panel, or "New extra" from a tap spot /
   button); button tiles can now be add-ons/extras (tile kind "addon"). Config files carry extras and an import
   makes missing ones. Checked on the isolated server: pick-one replace, review "+ Coffin +$5", appointment_addons row.
+- 2026-11-13: **Two builders, never mixed** (owner decision): layout.builder "easy" (button screens) or "picture"
+  (picture screens); normalize keeps only that builder's screens (old designs: the start screen's kind), save refuses
+  a mix; switching builders warns and starts the screens over. Picture screens: optional kiosk footer (bottom 8%,
+  marked on the template). Kiosk Extras groups can be "Clients must choose one" (layout.requiredGroups): Continue on a
+  screen showing that group waits for a pick. Screens tab has Edit / Live preview (same preview, "This screen" jump).
+  Preview is the 15" kiosk only (Tablet option removed). Checked on the isolated server (16/16).
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

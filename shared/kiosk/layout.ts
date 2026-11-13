@@ -98,11 +98,19 @@ export interface KioskMenu {
   /** Picture screens: the picture (made from the 1080 × 1920 template) and its tap spots. */
   imageUrl: string | null;
   spots: KioskSpot[];
+  /** Picture screens: the kiosk's footer (Back, what was chosen, total, Continue) over the bottom of the picture. */
+  footer: boolean;
 }
+
+export type KioskBuilderKind = "easy" | "picture";
+/** The kind of screen each builder makes. */
+export const builderScreenKind = (b: KioskBuilderKind): KioskMenu["kind"] => (b === "picture" ? "picture" : "buttons");
 
 export const KIOSK_MENU_LIMITS = { menus: 40, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40, spots: 80 } as const;
 /** The picture a picture screen is made for: the 15" kiosk, standing (9:16). */
 export const KIOSK_PICTURE = { width: 1080, height: 1920 } as const;
+/** With the footer on, it covers this much of the bottom of a picture screen (percent of its height): 154 of 1920 px. */
+export const KIOSK_PICTURE_FOOTER_PCT = 8;
 /** The smallest tap spot, in percent of the picture: about a fingertip on the 15" kiosk. */
 export const KIOSK_SPOT_MIN = { w: 4, h: 2.5 } as const;
 
@@ -151,7 +159,19 @@ export interface KioskLayout {
    */
   menuMode: "catalog" | "screens";
   startMenuId: string | null;
+  /**
+   * Which builder makes this kiosk's own screens — never both (owner, 2026-11-13):
+   * "easy": button screens Certxa draws from the catalog (grids, one centered).
+   * "picture": the business's own pictures with tap spots.
+   * Every screen in `menus` is of this builder's kind.
+   */
+  builder: KioskBuilderKind;
   menus: KioskMenu[];
+  /**
+   * Kiosk Extras groups a client must choose from ("Nail shape"): on a screen that shows extras of the group,
+   * Continue waits until one is chosen. Compared without case.
+   */
+  requiredGroups: string[];
 }
 
 export const KIOSK_LIMITS = {
@@ -171,7 +191,9 @@ export const KIOSK_DEFAULTS: Omit<KioskLayout, "preset"> = {
   text: {},
   menuMode: "catalog",
   startMenuId: null,
+  builder: "easy",
   menus: [],
+  requiredGroups: [],
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -222,6 +244,22 @@ function normalizeText(raw: unknown): Record<string, KioskText> {
   }
   return out;
 }
+
+/** Group names: trimmed, one of each (case aside), at most 40 of 40 characters. */
+export function normalizeGroupNames(raw: unknown): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const g of Array.isArray(raw) ? raw : []) {
+    const name = typeof g === "string" ? g.replace(/\s+/g, " ").trim().slice(0, 40) : "";
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    out.push(name);
+    if (out.length >= 40) break;
+  }
+  return out;
+}
+export const sameGroup = (a: string | null | undefined, b: string | null | undefined) =>
+  !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
 
 const MENU_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const cleanLabel = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -297,6 +335,7 @@ export function normalizeMenus(raw: unknown): KioskMenu[] {
       tiles: kind === "picture" ? [] : tiles,
       imageUrl: kind === "picture" && isKioskImageUrl(m.imageUrl) ? m.imageUrl : null,
       spots,
+      footer: kind === "picture" && m.footer === true,
     };
   });
 }
@@ -330,11 +369,20 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
     timing: { ticketResetSeconds: clampInt(r.timing?.ticketResetSeconds, KIOSK_LIMITS.ticketResetSeconds, d.timing.ticketResetSeconds) },
     text: normalizeText(r.text),
     ...(() => {
-      const menus = normalizeMenus(r.menus);
+      // The builder: as saved; for a design from before builders, the kind of its start screen.
+      const rawMenus: any[] = Array.isArray(r.menus) ? r.menus : [];
+      const startRaw = rawMenus.find((m) => isObj(m) && m.id === r.startMenuId);
+      const builder: KioskBuilderKind = r.builder === "picture" || r.builder === "easy" ? r.builder
+        : (startRaw?.kind === "picture" || (!startRaw && rawMenus.some((m) => isObj(m) && m.kind === "picture") && !rawMenus.some((m) => isObj(m) && m.kind !== "picture")))
+          ? "picture" : "easy";
+      // Never both kinds of screen: the other builder's screens (and links to them) are left out.
+      const kind = builderScreenKind(builder);
+      const menus = normalizeMenus(rawMenus.filter((m) => isObj(m) && (m.kind === "picture" ? "picture" : "buttons") === kind));
       const start = typeof r.startMenuId === "string" && menus.some((m) => m.id === r.startMenuId) ? r.startMenuId : null;
       // Own screens only with a start screen to open on.
-      return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, menus };
+      return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, builder, menus };
     })(),
+    requiredGroups: normalizeGroupNames(r.requiredGroups),
   };
 }
 
@@ -360,9 +408,16 @@ export function validateKioskLayout(raw: unknown): string[] {
   if (Array.isArray(raw.steps) && raw.steps.some((s: any) => s?.id === "services" && s.enabled === false)) {
     errors.push("The services step can't be switched off.");
   }
+  if (raw.builder != null && raw.builder !== "easy" && raw.builder !== "picture") errors.push("Unknown builder.");
   if (raw.menus != null) {
     if (!Array.isArray(raw.menus)) errors.push("The screens are missing.");
     else {
+      const kind = raw.builder === "picture" ? "picture" : "buttons";
+      if (raw.builder != null && raw.menus.some((m: any) => (m?.kind === "picture" ? "picture" : "buttons") !== kind)) {
+        errors.push(raw.builder === "picture"
+          ? "This kiosk uses the Picture builder, so it can't have button screens."
+          : "This kiosk uses the Easy builder, so it can't have picture screens.");
+      }
       if (raw.menus.length > KIOSK_MENU_LIMITS.menus) errors.push(`At most ${KIOSK_MENU_LIMITS.menus} screens.`);
       const ids = new Set(raw.menus.map((m: any) => m?.id));
       for (const m of raw.menus) {

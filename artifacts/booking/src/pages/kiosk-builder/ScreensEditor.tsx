@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { KioskMenuScreen, servicePicture, type MenuColors, type MenuService } from "@/components/kiosk/KioskMenuScreen";
 import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
 import {
-  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_SPOT_MIN, menuPageCount, menuSlotsPerPage,
+  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, builderScreenKind, sameGroup, type KioskBuilderKind, menuPageCount, menuSlotsPerPage,
   type KioskLayout, type KioskMenu, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
 } from "@shared/kiosk/layout";
 
@@ -94,6 +94,11 @@ function downloadTemplate() {
   g.setLineDash([18, 12]); g.strokeStyle = "#94a3b8"; g.lineWidth = 3;
   g.strokeRect(48, 48, W - 96, H - 96);
   g.setLineDash([]);
+  // Where the kiosk footer goes when a screen shows it (Back, total, Continue): keep tap spots out of it.
+  const fy = Math.round(H * (1 - KIOSK_PICTURE_FOOTER_PCT / 100));
+  g.fillStyle = "rgba(148,163,184,0.25)"; g.fillRect(0, fy, W, H - fy);
+  g.fillStyle = "#64748b"; g.textAlign = "center"; g.font = "28px sans-serif";
+  g.fillText(`Kiosk footer area (${H - fy} px), if you turn the footer on: Back · total · Continue`, W / 2, fy + (H - fy) / 2 + 10);
   g.fillStyle = "#334155"; g.textAlign = "center";
   g.font = "bold 56px sans-serif"; g.fillText("Certxa kiosk screen", W / 2, H / 2 - 120);
   g.font = "40px sans-serif"; g.fillText("1080 × 1920 px · 15\" kiosk, standing", W / 2, H / 2 - 50);
@@ -157,7 +162,7 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
     g.services.push(s);
   }
   const serviceScreen = (name: string, svcs: CatalogService[]): KioskMenu => ({
-    id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [],
+    id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [], footer: false,
     tiles: svcs.slice(0, 12 * KIOSK_MENU_LIMITS.pages).map((s) => ({ id: newId("btn"), kind: "service", serviceId: s.id })),
   });
   if (groups.length <= 1) {
@@ -168,7 +173,7 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
   const cols = subs.length <= 4 ? 2 : 3;
   const home: KioskMenu = {
     id: newId("screen"), kind: "buttons", name: "Start", title: {}, style: "grid", cols, rows: Math.min(6, Math.max(2, Math.ceil(subs.length / cols))),
-    imageUrl: null, spots: [],
+    imageUrl: null, spots: [], footer: false,
     tiles: subs.map(({ g, m }) => ({ id: newId("btn"), kind: "menu", menuId: m.id, ...(g.imageUrl ? { imageUrl: g.imageUrl } : {}) })),
   };
   return { menus: [home, ...subs.map((x) => x.m)], start: home.id };
@@ -182,6 +187,12 @@ export function ScreensEditor(props: {
   addons: CatalogAddon[];
   storeName: string;
   uploadImage: (file: File) => Promise<string | null>;
+  /** The live kiosk preview (the Settings tab's), with extra buttons in its bar. */
+  renderPreview: (extraButtons?: React.ReactNode) => React.ReactNode;
+  view: "edit" | "preview";
+  onView: (v: "edit" | "preview") => void;
+  /** Sends the live preview to one of these screens. */
+  previewScreen: (menuId: string) => void;
 }) {
   const { draft, update, services, categories } = props;
   const [menuId, setMenuId] = useState<string | null>(draft.startMenuId ?? draft.menus[0]?.id ?? null);
@@ -254,8 +265,8 @@ export function ScreensEditor(props: {
     return { ...m, tiles };
   });
 
-  const addScreen = (name = "New screen", kind: KioskMenu["kind"] = "buttons"): string => {
-    const m: KioskMenu = { id: newId("screen"), kind, name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [] };
+  const addScreen = (name = "New screen", kind: KioskMenu["kind"] = builderScreenKind(draft.builder)): string => {
+    const m: KioskMenu = { id: newId("screen"), kind, name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [], footer: false };
     update((d) => ({ ...d, menus: [...d.menus, m], startMenuId: d.startMenuId ?? m.id }));
     return m.id;
   };
@@ -333,28 +344,76 @@ export function ScreensEditor(props: {
     if (m.kind !== "picture") return [];
     const out: string[] = [];
     if (!m.imageUrl) out.push("Upload the picture for this screen.");
+    if (m.footer) {
+      // The footer has its own Back and Continue; a spot under it can't be tapped.
+      if (m.spots.some((sp) => sp.y + sp.h > 100 - KIOSK_PICTURE_FOOTER_PCT + 0.01))
+        out.push("A tap spot reaches into the footer at the bottom; that part can't be tapped. Move it up.");
+      return out;
+    }
     const picks = m.spots.some((sp) => sp.action.kind === "service" || sp.action.kind === "addon");
     const moves = m.spots.some((sp) => sp.action.kind === "function" && sp.action.fn === "continue");
-    if (picks && !moves) out.push("Clients can choose services here but can't move on: add a tap spot set to Continue.");
+    if (picks && !moves) out.push("Clients can choose services here but can't move on: add a tap spot set to Continue, or turn on the footer.");
     if (!m.spots.some((sp) => sp.action.kind === "function" && (sp.action.fn === "back" || sp.action.fn === "startOver")))
-      out.push("Add a Back or Start over tap spot so clients aren't stuck on this screen.");
+      out.push("Add a Back or Start over tap spot, or turn on the footer, so clients aren't stuck on this screen.");
     return out;
   };
+
+  // ── The builder: Easy or Picture, never both in one kiosk (owner, 2026-11-13) ──
+  const switchBuilder = (b: KioskBuilderKind) => {
+    if (b === draft.builder) return;
+    if (draft.menus.length && !window.confirm(
+      `Switch to the ${b === "picture" ? "Picture" : "Easy"} builder? Your ${draft.menus.length} ${draft.menus.length === 1 ? "screen is" : "screens are"} removed from this draft `
+      + "(the two builders can't be mixed) and your kiosk goes back to its category cards until you make new screens. "
+      + "To keep them, save this design under Configurations first.")) return;
+    update((d) => ({ ...d, builder: b, menus: [], startMenuId: null, menuMode: "catalog" }));
+    setMenuId(null);
+  };
+  const builderChoice = (
+    <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2" data-testid="builder-choice">
+      <p className="text-sm font-medium text-slate-800">Builder</p>
+      <div className="grid grid-cols-2 gap-2">
+        {([["easy", "Easy builder", "Grids of buttons made from your services. Prices and names stay up to date by themselves."],
+           ["picture", "Picture builder", "Design every screen yourself as a picture, then place tap spots on it."]] as const).map(([key, name, about]) => (
+          <button key={key} type="button" onClick={() => switchBuilder(key)} data-testid={`builder-${key}`}
+            className={`text-left rounded-xl border p-3 ${draft.builder === key ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+            <p className="text-sm font-medium text-slate-800">{name}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{about}</p>
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-slate-500">A kiosk uses one builder. Switching starts the screens over.</p>
+    </section>
+  );
 
   if (!draft.menus.length) {
     return (
       <div className="max-w-xl mx-auto p-8 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Your own screens</h2>
-        <p className="text-sm text-slate-600">
-          Design the screens clients tap through to pick their services, like the buttons on a POS: choose how many buttons go
-          across and down, and put a service or a link to another screen on each one. Until you switch them on, your kiosk keeps
-          its category cards and service list.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={buildFromCatalog} disabled={!services.length} data-testid="screens-build-from-catalog">Build screens from my catalog</Button>
-          <Button variant="outline" onClick={() => setMenuId(addScreen())}>Start with a blank button screen</Button>
-          <Button variant="outline" onClick={() => setMenuId(addScreen("Picture screen", "picture"))} data-testid="screens-new-picture">Start with a picture screen</Button>
-        </div>
+        {builderChoice}
+        {draft.builder === "easy" ? (
+          <>
+            <p className="text-sm text-slate-600">
+              Design the screens clients tap through to pick their services, like the buttons on a POS: choose how many buttons go
+              across and down, and put a service or a link to another screen on each one. Until you switch them on, your kiosk keeps
+              its category cards and service list.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={buildFromCatalog} disabled={!services.length} data-testid="screens-build-from-catalog">Build screens from my catalog</Button>
+              <Button variant="outline" onClick={() => setMenuId(addScreen())} data-testid="screens-new-buttons">Start with a blank screen</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-slate-600">
+              Design each screen as one picture ({KIOSK_PICTURE.width} × {KIOSK_PICTURE.height} px, from the template), upload it and place tap
+              spots over the parts clients tap: a service, an extra like a nail shape, Continue or Back, or another screen.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setMenuId(addScreen("Picture screen"))} data-testid="screens-new-picture">Start with a picture screen</Button>
+              <Button variant="outline" onClick={downloadTemplate}>Download template</Button>
+            </div>
+          </>
+        )}
       </div>
     );
   }
@@ -388,6 +447,7 @@ export function ScreensEditor(props: {
     <div className="h-full min-h-0 flex flex-col lg:flex-row">
       {/* ── Screens and their settings ── */}
       <div className="lg:w-[340px] shrink-0 overflow-y-auto p-4 space-y-4 border-r border-slate-200">
+        {builderChoice}
         <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -420,10 +480,15 @@ export function ScreensEditor(props: {
             ))}
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={() => setMenuId(addScreen())}>New button screen</Button>
-            <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={() => setMenuId(addScreen("Picture screen", "picture"))}
-              data-testid="screens-new-picture">New picture screen</Button>
-            <Button variant="outline" size="sm" disabled={!services.length || draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={buildFromCatalog}>Add screens from my catalog</Button>
+            {draft.builder === "easy" ? (
+              <>
+                <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={() => setMenuId(addScreen())} data-testid="screens-new-buttons">New screen</Button>
+                <Button variant="outline" size="sm" disabled={!services.length || draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={buildFromCatalog}>Add screens from my catalog</Button>
+              </>
+            ) : (
+              <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={() => setMenuId(addScreen("Picture screen"))}
+                data-testid="screens-new-picture">New picture screen</Button>
+            )}
           </div>
         </section>
 
@@ -444,7 +509,22 @@ export function ScreensEditor(props: {
             {[...(extras ?? [])].sort((a, b) => (a.group ?? "\uffff").localeCompare(b.group ?? "\uffff") || a.id - b.id).map((x, i, list) => (
               <div key={x.id}>
                 {(i === 0 || list[i - 1].group !== x.group) && (
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 pt-1">{x.group || "No group"}</p>
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{x.group || "No group"}</p>
+                    {x.group && (() => {
+                      const g = x.group;
+                      const on = draft.requiredGroups.some((r) => sameGroup(r, g));
+                      return (
+                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600" data-testid="extra-group-required">
+                          <input type="checkbox" checked={on}
+                            onChange={(e) => update((d) => ({ ...d, requiredGroups: e.target.checked
+                              ? [...d.requiredGroups.filter((r) => !sameGroup(r, g)), g]
+                              : d.requiredGroups.filter((r) => !sameGroup(r, g)) }))} />
+                          Clients must choose one
+                        </label>
+                      );
+                    })()}
+                  </div>
                 )}
                 {extraForm === x.id ? (
                   <ExtraForm groups={extraGroups} submitLabel="Save" initial={x} onCancel={() => setExtraForm(null)}
@@ -497,6 +577,14 @@ export function ScreensEditor(props: {
                 </label>
               </div>
               {pictureWarning && <p className="text-xs text-amber-700">{pictureWarning}</p>}
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-800">Show the kiosk footer</p>
+                <p className="text-xs text-slate-500">Back, what the client chose, the total and Continue, over the bottom {KIOSK_PICTURE_FOOTER_PCT}% of your picture (the strip marked on the template).</p>
+              </div>
+              <Switch checked={menu.footer} aria-label="Show the kiosk footer" data-testid="picture-footer"
+                onCheckedChange={(v) => changeMenu(menu.id, (m) => ({ ...m, footer: v }))} />
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -581,8 +669,23 @@ export function ScreensEditor(props: {
         )}
       </div>
 
-      {/* ── The 15" kiosk canvas ── */}
+      {/* ── The 15" kiosk canvas, or the live preview ── */}
       <div className="flex-1 min-w-0 min-h-[560px] flex flex-col items-center p-4 gap-2">
+        <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 self-center" data-testid="screens-view">
+          {([["edit", "Edit screen"], ["preview", "Live preview"]] as const).map(([k, name]) => (
+            <button key={k} type="button" data-testid={`screens-view-${k}`}
+              onClick={() => { props.onView(k); if (k === "preview" && menu) props.previewScreen(menu.id); }}
+              className={`px-3 h-8 text-sm rounded ${props.view === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>{name}</button>
+          ))}
+        </div>
+        {props.view === "preview" ? (
+          <div className="w-full flex-1 min-h-0 flex">
+            {props.renderPreview(menu ? (
+              <button type="button" onClick={() => props.previewScreen(menu.id)} data-testid="preview-this-screen"
+                className="px-2.5 h-8 text-xs rounded-md border border-slate-900 bg-white text-slate-900 hover:bg-slate-50">This screen</button>
+            ) : null)}
+          </div>
+        ) : (<>
         {menu && menu.kind === "picture" && (
           <>
             <p className="text-sm text-slate-600">15" kiosk · your picture fills the whole screen</p>
@@ -595,7 +698,8 @@ export function ScreensEditor(props: {
                 if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); changeSpots((list) => list.filter((x) => x.id !== spot.id)); setSpotId(null); }
               }}>
               <div style={{ width: KIOSK_W * scale, height: KIOSK_H * scale }} className="rounded-[18px] border-[6px] border-slate-800 bg-slate-800 shadow-md overflow-hidden" data-testid="screens-canvas">
-                <KioskPictureScreen menu={menu} mode="editor" colors={{ primary: palette.primary, bg: palette.bg }}
+                <KioskPictureScreen menu={menu} mode="editor" colors={{ primary: palette.primary, bg: palette.bg, surface: palette.surface, text: palette.text, muted: palette.muted, border: palette.border }}
+                  footer={{ backLabel: "← Back", continueLabel: "Continue →", summary: "What the client chose", total: draft.services.showPrice ? "$0" : null }}
                   activeSpotId={spotId} onSelectSpot={(id) => { setSpotId(id); if (id) canvasBox.current?.focus(); }}
                   onChangeSpot={(id, rect) => changeSpots((list) => list.map((x) => (x.id === id ? { ...x, ...rect } : x)))}
                   spotLabel={spotName} emptyText="Upload your picture (1080 × 1920). Download the template to start." />
@@ -640,10 +744,11 @@ export function ScreensEditor(props: {
             <p className="text-xs text-slate-500">Tap a slot to fill it, tap a button to change it, drag a button to move it.</p>
           </>
         )}
+        </>)}
       </div>
 
       {/* ── The chosen slot ── */}
-      {menu && menu.kind === "picture" && spot && (
+      {props.view === "edit" && menu && menu.kind === "picture" && spot && (
         <div className="lg:w-[320px] shrink-0 overflow-y-auto p-4 border-l border-slate-200 bg-white space-y-3" data-testid="picture-spot-panel">
           <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
           <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 p-0.5">
@@ -753,14 +858,14 @@ export function ScreensEditor(props: {
         </div>
       )}
       {/* Always there while a screen is open, so the canvas never changes size when something is chosen. */}
-      {menu && (menu.kind === "picture" ? !spot : slot == null) && (
+      {props.view === "edit" && menu && (menu.kind === "picture" ? !spot : slot == null) && (
         <div className="lg:w-[320px] shrink-0 p-4 border-l border-slate-200 bg-white text-sm text-slate-500">
           {menu.kind === "picture"
             ? "Tap a tap spot on the picture to choose what it does, or add one with Add tap spot."
             : "Tap an empty slot to add a button, or tap a button to change it."}
         </div>
       )}
-      {menu && menu.kind !== "picture" && slot != null && (
+      {props.view === "edit" && menu && menu.kind !== "picture" && slot != null && (
         <div className="lg:w-[320px] shrink-0 overflow-y-auto p-4 border-l border-slate-200 bg-white space-y-3" data-testid="screens-slot-panel">
           {tile ? (
             <>

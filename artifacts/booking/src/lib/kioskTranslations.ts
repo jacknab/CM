@@ -139,6 +139,8 @@ export interface KioskStrings {
   chooseServiceFirst: string;
   /** Picture screens: an add-on spot for an add-on the chosen service doesn't take. */
   addonNotForService: string;
+  /** A Kiosk Extras group the client must choose from (the business's own group name, e.g. "Nail shape"). */
+  chooseFromGroup: (group: string) => string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -284,6 +286,7 @@ const en: KioskStrings = {
   servicesMax: (n, h) => n === 1 ? "One service per check-in here. Please ask the front desk to add more." : `Up to ${n} services (${h} hours) here. Please ask the front desk to add more.`,
   chooseServiceFirst: "Please choose a service first.",
   addonNotForService: "That add-on doesn't go with the service you chose.",
+  chooseFromGroup: (g) => `Please choose your ${g.toLowerCase()}.`,
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -421,6 +424,7 @@ const es: KioskStrings = {
   servicesMax: (n, h) => n === 1 ? "Un servicio por registro aquí. Pide en recepción que agreguen más." : `Hasta ${n} servicios (${h} horas) aquí. Pide en recepción que agreguen más.`,
   chooseServiceFirst: "Primero elige un servicio.",
   addonNotForService: "Ese extra no está disponible con el servicio que elegiste.",
+  chooseFromGroup: (g) => `Elige una opción: ${g}`,
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -558,6 +562,7 @@ const vi: KioskStrings = {
   servicesMax: (n, h) => n === 1 ? "Mỗi lần check-in chỉ một dịch vụ tại đây. Vui lòng nhờ quầy lễ tân thêm dịch vụ khác." : `Tối đa ${n} dịch vụ (${h} giờ) tại đây. Vui lòng nhờ quầy lễ tân thêm dịch vụ khác.`,
   chooseServiceFirst: "Vui lòng chọn dịch vụ trước.",
   addonNotForService: "Dịch vụ thêm này không áp dụng cho dịch vụ bạn đã chọn.",
+  chooseFromGroup: (g) => `Vui lòng chọn: ${g}`,
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -695,6 +700,7 @@ const zh: KioskStrings = {
   servicesMax: (n, h) => n === 1 ? "此处每次签到只能选 1 项服务。如需更多，请联系前台。" : `此处最多可选 ${n} 项服务（${h} 小时）。如需更多，请联系前台。`,
   chooseServiceFirst: "请先选择一项服务。",
   addonNotForService: "此附加项不适用于您选择的服务。",
+  chooseFromGroup: (g) => `请选择：${g}`,
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -832,6 +838,7 @@ const ko: KioskStrings = {
   servicesMax: (n, h) => n === 1 ? "여기서는 체크인당 1개 서비스만 선택할 수 있습니다. 추가는 프런트에 문의하세요." : `여기서는 최대 ${n}개 서비스(${h}시간)까지 선택할 수 있습니다. 추가는 프런트에 문의하세요.`,
   chooseServiceFirst: "먼저 서비스를 선택해 주세요.",
   addonNotForService: "선택하신 서비스에는 이 추가 옵션을 이용할 수 없습니다.",
+  chooseFromGroup: (g) => `선택해 주세요: ${g}`,
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",

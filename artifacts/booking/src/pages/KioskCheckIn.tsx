@@ -10,7 +10,7 @@ import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
 import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
-  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep,
+  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, type KioskMenu,
   type KioskLayout, type KioskLook, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
 import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
@@ -217,7 +217,7 @@ const STARTING_LAYOUT: KioskLayout = normalizeKioskLayout(null, "other");
  */
 const PREVIEW = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "draft";
 const configPath = (slug: string) => `/api/public/kiosk/${slug}/config${PREVIEW ? "?preview=draft" : ""}`;
-export type KioskPreviewTarget = "welcome" | "phone" | "category" | "services" | "addons" | "provider" | "review" | "ticket";
+export type KioskPreviewTarget = "welcome" | "phone" | "category" | "services" | "addons" | "provider" | "review" | "ticket" | "screen";
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
 
 // ─── Category colours (lighter versions for light theme) ─────────────────────
@@ -546,6 +546,8 @@ function KioskCheckInScreens() {
     if (isInitialLoad) {
       // The kiosk stands inside the salon: never a "closed" screen.
       setScreen("idle");
+      // The builder's preview: the design is in, so the builder may send it to a screen now.
+      if (PREVIEW) setTimeout(() => window.parent?.postMessage({ type: "kiosk-preview-ready" }, window.location.origin), 0);
       // Check-in calls need a device the salon set up: signed in (the Certxa app), or paired once.
       if (slug && !PREVIEW) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
     }
@@ -969,6 +971,23 @@ function KioskCheckInScreens() {
       return [...kept, addon];
     });
   };
+  /**
+   * Continue from one of the business's own screens: a service must be chosen, and every "must choose one" Kiosk
+   * Extras group this screen shows (layout.requiredGroups) needs its pick. Otherwise the screen says what's missing.
+   */
+  const continueFromScreen = (screenMenu: KioskMenu, note: (text: string) => void) => {
+    kick();
+    if (!selectedServices.length) return note(t.chooseServiceFirst);
+    const shownIds = [
+      ...screenMenu.spots.flatMap((sp) => (sp.action.kind === "addon" ? [sp.action.addonId] : [])),
+      ...screenMenu.tiles.flatMap((tl) => (tl?.kind === "addon" && tl.addonId != null ? [tl.addonId] : [])),
+    ];
+    for (const group of layout.requiredGroups) {
+      const shown = shownIds.some((id) => { const a = allAddons.find((x) => x.id === id); return !!a?.kioskExtra && sameGroup(a.kioskExtraGroup, group); });
+      if (shown && !selectedAddons.some((a) => a.kioskExtra && sameGroup(a.kioskExtraGroup, group))) return note(t.chooseFromGroup(group));
+    }
+    void afterServiceChosen();
+  };
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
     !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
@@ -1158,7 +1177,7 @@ function KioskCheckInScreens() {
     setScreen("ticket");
   };
   // The builder's "show this screen" buttons: sets up a sample client and service where the screen needs one.
-  const previewGoto = (target: KioskPreviewTarget) => {
+  const previewGoto = (target: KioskPreviewTarget, menuId?: string) => {
     const sample = allServices.find((sv) => addonsFor(sv).length > 0) ?? allServices[0];
     const withSample = () => { if (!clientInfo && !newClientName) setNewClientName("Alex"); if (sample && !selectedServices.length) setSel([sample]); };
     switch (target) {
@@ -1169,6 +1188,13 @@ function KioskCheckInScreens() {
       case "addons": withSample(); return enterStep("addons", selectedServices[0] ?? sample, null);
       case "provider": withSample(); return setScreen("stylist");
       case "review": withSample(); return setScreen("review");
+      case "screen": {
+        // One of the business's own screens (Kiosk Builder › Screens › Live preview).
+        if (!menuId || !layout.menus.some((m) => m.id === menuId)) return;
+        if (!newClientName) setNewClientName("Alex");
+        setMenuStack([menuId]); setMenuPage(0);
+        return setScreen("menu");
+      }
       case "ticket": return showPreviewTicket(selectedServices.length ? selectedServices : sample ? [sample] : [], selectedAddons);
     }
   };
@@ -1184,10 +1210,9 @@ function KioskCheckInScreens() {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== window.location.origin || !e.data || typeof e.data !== "object") return;
       if (e.data.type === "kiosk-preview-refresh") reloadConfigRef.current();
-      if (e.data.type === "kiosk-preview-goto") previewGotoRef.current(e.data.target);
+      if (e.data.type === "kiosk-preview-goto") previewGotoRef.current(e.data.target, typeof e.data.menuId === "string" ? e.data.menuId : undefined);
     };
     window.addEventListener("message", onMessage);
-    window.parent?.postMessage({ type: "kiosk-preview-ready" }, window.location.origin);
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
@@ -2259,6 +2284,9 @@ function KioskCheckInScreens() {
         if (menuStack.length > 1) { setMenuStack((st) => st.slice(0, -1)); setMenuPage(0); return; }
         goBack("services");
       };
+      // What was chosen on these screens (services, then extras and add-ons), and its total.
+      const chosenSummary = [...selectedServices.map((sv) => sv.name), ...selectedAddons.map((ad) => `+ ${ad.name}`)].join("  ·  ");
+      const screenTotal = selTotal + selectedAddons.reduce((sum, ad) => sum + (Number(ad.price) || 0), 0);
       const limitText = layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
         : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10));
 
@@ -2269,7 +2297,7 @@ function KioskCheckInScreens() {
           const a = spot.action;
           if (a.kind === "service" || a.kind === "menu") return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId } : { kind: "menu", menuId: a.menuId });
           if (a.kind === "addon") return chooseAddonOnScreen(a.addonId, showPictureNote);
-          if (a.fn === "continue") return selectedServices.length ? void afterServiceChosen() : showPictureNote(t.chooseServiceFirst);
+          if (a.fn === "continue") return continueFromScreen(current, showPictureNote);
           if (a.fn === "back") return back();
           if (a.fn === "startOver") return resetToIdle();
         };
@@ -2278,7 +2306,13 @@ function KioskCheckInScreens() {
           || (sp.action.kind === "addon" && selectedAddons.some((ad) => ad.id === (sp.action as { addonId: number }).addonId))).map((sp) => sp.id);
         return (
           <div className="fixed inset-0 select-none" onContextMenu={e => e.preventDefault()} style={NO_SELECT} data-testid="kiosk-menu-screen">
-            <KioskPictureScreen menu={current} mode="kiosk" colors={{ primary: PRIMARY, bg: BG }} selectedSpotIds={chosen}
+            <KioskPictureScreen menu={current} mode="kiosk" colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER }} selectedSpotIds={chosen}
+              footer={{
+                backLabel: t.backBtn, continueLabel: t.continueBtn, continueDisabled: selectedServices.length === 0,
+                summary: chosenSummary || t.noServiceSelected,
+                total: showPrice && selectedServices.length ? fmtPrice(screenTotal) : null,
+                onBack: back, onContinue: () => continueFromScreen(current, showPictureNote),
+              }}
               onSpot={tapSpot} note={pictureNote ?? (svcLimitNote ? limitText : null)}
               spotLabel={(sp) => sp.action.kind === "service" ? svcById.get(sp.action.serviceId)?.name ?? "" : sp.action.kind === "addon" ? allAddons.find((x) => x.id === (sp.action as { addonId: number }).addonId)?.name ?? "" : ""} />
           </div>
@@ -2303,12 +2337,12 @@ function KioskCheckInScreens() {
                 <div className="flex-1 min-w-0 truncate text-base" style={{ color: SUBTLE }}>
                   {svcLimitNote
                     ? limitText
-                    : selectedServices.length ? selectedServices.map((sv) => sv.name).join(" + ") : t.noServiceSelected}
+                    : chosenSummary || t.noServiceSelected}
                 </div>
                 {selectedServices.length > 0 && showPrice && (
-                  <p className="text-2xl font-black shrink-0" style={{ color: TEXT }}>{fmtPrice(selTotal)}</p>
+                  <p className="text-2xl font-black shrink-0" style={{ color: TEXT }}>{fmtPrice(screenTotal)}</p>
                 )}
-                <PrimaryBtn onPress={() => selectedServices.length > 0 && afterServiceChosen()} disabled={selectedServices.length === 0} size="md">
+                <PrimaryBtn onPress={() => continueFromScreen(current, showPictureNote)} disabled={selectedServices.length === 0} size="md">
                   {t.continueBtn}
                 </PrimaryBtn>
               </div>

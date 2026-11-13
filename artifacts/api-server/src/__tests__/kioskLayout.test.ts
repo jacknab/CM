@@ -172,7 +172,7 @@ describe("screens", () => {
 describe("picture screens", () => {
   const base = { id: "pic", name: "Shapes", kind: "picture", imageUrl: "https://cdn.example.com/kiosk/shapes.webp" };
   it("keeps tap spots inside the picture and drops broken ones", () => {
-    const l = normalizeKioskLayout({ menus: [
+    const l = normalizeKioskLayout({ builder: "picture", menus: [
       { ...base, tiles: [{ id: "t", kind: "service", serviceId: 1 }], spots: [
         { id: "s1", x: 10, y: 20, w: 30, h: 10, action: { kind: "service", serviceId: 5 } },
         { id: "s2", x: 95, y: -5, w: 1, h: 200, action: { kind: "addon", addonId: 9 } },  // too small, too tall, off the edge
@@ -182,7 +182,7 @@ describe("picture screens", () => {
         { id: "s6", x: 0, y: 0, w: 10, h: 10, action: { kind: "menu", menuId: "other" } },
         { id: "s1", x: 0, y: 0, w: 10, h: 10, action: { kind: "service", serviceId: 6 } },   // repeated id
       ] },
-      { id: "other", name: "Other" },
+      { id: "other", name: "Other", kind: "picture" },
     ] }, "nail");
     const [pic] = l.menus;
     expect(pic.kind).toBe("picture");
@@ -190,7 +190,7 @@ describe("picture screens", () => {
     expect(pic.spots.map((s) => s.id)).toEqual(["s1", "s2", "s3", "s6"]);
     expect(pic.spots[1]).toMatchObject({ x: 95, y: 0, w: 4, h: 100 });
     expect(menuPageCount(pic)).toBe(1);
-    expect(l.menus[1]).toMatchObject({ kind: "buttons", imageUrl: null, spots: [] });
+    expect(l.menus[1]).toMatchObject({ kind: "picture", imageUrl: null, spots: [], tiles: [] });
   });
   it("only keeps an uploaded picture", () => {
     const [pic] = normalizeKioskLayout({ menus: [{ ...base, imageUrl: "data:image/png;base64,xx" }] }, "nail").menus;
@@ -199,5 +199,45 @@ describe("picture screens", () => {
   it("says when a tap spot opens a screen that doesn't exist", () => {
     expect(validateKioskLayout({ menus: [{ ...base, spots: [{ id: "a", action: { kind: "menu", menuId: "zzz" } }] }] }))
       .toEqual(['"Shapes" has a tap spot to a screen that doesn\'t exist.']);
+  });
+});
+
+describe("footer and required groups", () => {
+  it("keeps the footer only on picture screens", () => {
+    const pics = normalizeKioskLayout({ builder: "picture", menus: [
+      { id: "p", name: "P", kind: "picture", footer: true },
+      { id: "q", name: "Q", kind: "picture" },
+    ] }, "nail");
+    expect(pics.menus.map((m) => m.footer)).toEqual([true, false]);
+    const buttons = normalizeKioskLayout({ builder: "easy", menus: [{ id: "b", name: "B", kind: "buttons", footer: true }] }, "nail");
+    expect(buttons.menus[0].footer).toBe(false);
+  });
+  it("cleans the required groups", () => {
+    const l = normalizeKioskLayout({ requiredGroups: ["  Nail   shape ", "nail shape", "", 7, "Length"] }, "nail");
+    expect(l.requiredGroups).toEqual(["Nail shape", "Length"]);
+    expect(normalizeKioskLayout({}, "nail").requiredGroups).toEqual([]);
+  });
+});
+
+describe("one builder per kiosk", () => {
+  const pic = { id: "p", name: "P", kind: "picture", spots: [{ id: "s", x: 0, y: 0, w: 10, h: 10, action: { kind: "menu", menuId: "b" } }] };
+  const btn = { id: "b", name: "B", kind: "buttons", tiles: [{ id: "t", kind: "menu", menuId: "p" }] };
+  it("keeps only the chosen builder's screens, and links between kinds go with them", () => {
+    const l = normalizeKioskLayout({ builder: "picture", menuMode: "screens", startMenuId: "p", menus: [pic, btn] }, "nail");
+    expect(l.builder).toBe("picture");
+    expect(l.menus.map((m) => m.id)).toEqual(["p"]);
+    expect(l.menus[0].spots).toEqual([]);
+    const e = normalizeKioskLayout({ builder: "easy", menus: [pic, btn] }, "nail");
+    expect(e.menus.map((m) => m.id)).toEqual(["b"]);
+    expect(e.menus[0].tiles).toEqual([]);
+  });
+  it("gives a design from before builders the builder of its start screen", () => {
+    expect(normalizeKioskLayout({ startMenuId: "p", menus: [pic] }, "nail").builder).toBe("picture");
+    expect(normalizeKioskLayout({ startMenuId: "b", menus: [btn, pic] }, "nail").builder).toBe("easy");
+    expect(normalizeKioskLayout({}, "nail").builder).toBe("easy");
+  });
+  it("refuses to save a mix", () => {
+    expect(validateKioskLayout({ builder: "easy", menus: [btn, pic] })).toEqual(["This kiosk uses the Easy builder, so it can't have picture screens."]);
+    expect(validateKioskLayout({ builder: "picture", menus: [{ ...pic, spots: [] }] })).toEqual([]);
   });
 });

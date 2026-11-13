@@ -136,16 +136,17 @@ export function sameKioskLayout(a: KioskLayout, b: KioskLayout): boolean {
 
 export const KIOSK_CONFIGS_MAX = 50;
 
-export interface KioskConfigRow { id: number; name: string; source: "saved" | "imported"; createdAt: string; updatedAt: string }
+export interface KioskConfigRow { id: number; name: string; source: "saved" | "imported"; builder: "easy" | "picture"; createdAt: string; updatedAt: string }
 
 const configRow = (r: any): KioskConfigRow => ({
   id: Number(r.id), name: r.name, source: r.source,
+  builder: r.layout ? normalizeKioskLayout(r.layout, "other").builder : "easy",
   createdAt: new Date(r.created_at).toISOString(), updatedAt: new Date(r.updated_at).toISOString(),
 });
 
 export async function listKioskConfigs(storeId: number): Promise<KioskConfigRow[]> {
   const r = await pool.query(
-    `SELECT id, name, source, created_at, updated_at FROM kiosk_configs WHERE store_id = $1 ORDER BY updated_at DESC LIMIT ${KIOSK_CONFIGS_MAX}`,
+    `SELECT id, name, source, layout, created_at, updated_at FROM kiosk_configs WHERE store_id = $1 ORDER BY updated_at DESC LIMIT ${KIOSK_CONFIGS_MAX}`,
     [storeId],
   );
   return r.rows.map(configRow);
@@ -176,7 +177,7 @@ export async function createKioskConfig(ctx: StoreKioskContext, name: string, ra
   const layout = normalizeKioskLayout(raw, fallbackPreset(ctx));
   const r = await pool.query(
     `INSERT INTO kiosk_configs (store_id, name, layout, source, created_by) VALUES ($1, $2, $3::jsonb, $4, $5)
-     RETURNING id, name, source, created_at, updated_at`,
+     RETURNING id, name, source, layout, created_at, updated_at`,
     [ctx.storeId, await freeConfigName(ctx.storeId, name), JSON.stringify(layout), source, userId],
   );
   return configRow(r.rows[0]);
@@ -184,7 +185,7 @@ export async function createKioskConfig(ctx: StoreKioskContext, name: string, ra
 
 export async function renameKioskConfig(storeId: number, id: number, name: string): Promise<KioskConfigRow | null> {
   const r = await pool.query(
-    `UPDATE kiosk_configs SET name = $3, updated_at = now() WHERE id = $1 AND store_id = $2 RETURNING id, name, source, created_at, updated_at`,
+    `UPDATE kiosk_configs SET name = $3, updated_at = now() WHERE id = $1 AND store_id = $2 RETURNING id, name, source, layout, created_at, updated_at`,
     [id, storeId, await freeConfigName(storeId, name, id)],
   );
   return r.rows[0] ? configRow(r.rows[0]) : null;

@@ -39,7 +39,7 @@ interface BuilderState {
   presets?: Array<{ key: BusinessTypeKey; name: string; description: string }>;
   textKeys?: KioskTextKey[];
 }
-interface ConfigRow { id: number; name: string; source: "saved" | "imported"; createdAt: string; updatedAt: string }
+interface ConfigRow { id: number; name: string; source: "saved" | "imported"; builder: "easy" | "picture"; createdAt: string; updatedAt: string }
 interface ImportResult { name: string; unmatched: { services: string[]; addons: string[] }; createdExtras: string[] }
 interface VersionRow { version: number; status: "published" | "archived"; note: string | null; publishedAt: string }
 
@@ -77,8 +77,8 @@ const PREVIEW_SCREENS: Array<{ target: KioskPreviewTarget; name: string }> = [
   { target: "ticket", name: "Ticket" },
 ];
 
+/** The kiosk Certxa sells: a 15" screen, standing (9:16). The only shape the kiosk is designed and previewed for. */
 const FRAMES = {
-  landscape: { w: 1280, h: 800, name: "Tablet" },
   portrait: { w: 720, h: 1280, name: "15\" kiosk" },
 } as const;
 
@@ -130,7 +130,7 @@ export default function KioskBuilder() {
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState("");
-  const [frame, setFrame] = useState<keyof typeof FRAMES>("landscape");
+  const frame: keyof typeof FRAMES = "portrait";
   const [openLang, setOpenLang] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -141,6 +141,8 @@ export default function KioskBuilder() {
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<void> }>(null);
   const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
   const [tab, setTab] = useState<"settings" | "screens">("settings");
+  // Screens tab: editing the screen, or the live kiosk preview (the same one the Settings tab shows).
+  const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
   // Saved configurations (named designs to load, export, import).
   const [configsOpen, setConfigsOpen] = useState(false);
   const [configs, setConfigs] = useState<ConfigRow[] | null>(null);
@@ -187,6 +189,18 @@ export default function KioskBuilder() {
   const postToPreview = useCallback((msg: object) => {
     iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
   }, []);
+  // The screen the Screens tab wants the preview on; sent again when the preview (re)loads.
+  const pendingScreenRef = useRef<string | null>(null);
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.data?.type !== "kiosk-preview-ready") return;
+      if (tab === "screens" && screensView === "preview" && pendingScreenRef.current) {
+        postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId: pendingScreenRef.current });
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [tab, screensView, postToPreview]);
 
   useEffect(() => {
     const box = previewBoxRef.current;
@@ -199,7 +213,7 @@ export default function KioskBuilder() {
     const ro = new ResizeObserver(fit);
     ro.observe(box);
     return () => ro.disconnect();
-  }, [frame, state, tab]);
+  }, [frame, state, tab, screensView]);
 
   // ── Save (every change, after a short pause) ──
   const applyState = (b: BuilderState) => setState((s) => ({ ...s, ...b }));
@@ -380,6 +394,37 @@ export default function KioskBuilder() {
   const fmtMinutes = (m: number) => (m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? "hour" : "hours"}`);
   const previewUrl = slug ? `/kiosk/${slug}?preview=draft` : null;
   const f = FRAMES[frame];
+  /** The live kiosk preview with its bar (frame, screen jumps): on the Settings tab, and Screens › Live preview. */
+  const renderPreview = (extraButtons?: React.ReactNode) => (
+    <div className="flex-1 min-w-0 min-h-[480px] flex flex-col p-4 gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="px-3 h-8 inline-flex items-center text-sm rounded-md bg-slate-900 text-white">{FRAMES[frame].name}</span>
+        <div className="flex flex-wrap gap-1">
+          {extraButtons}
+        {PREVIEW_SCREENS.map((p) => (
+            <button key={p.target} type="button" onClick={() => postToPreview({ type: "kiosk-preview-goto", target: p.target })}
+              className="px-2.5 h-8 text-xs rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">{p.name}</button>
+          ))}
+        </div>
+        {previewUrl && (
+          <a href={previewUrl} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-sm text-slate-600 underline">
+            Open full screen <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        )}
+      </div>
+      <p className="text-xs text-slate-500">Preview of your draft. Tap through it like a client; nothing here checks anyone in.</p>
+      <div ref={previewBoxRef} className="flex-1 min-h-0 flex items-start justify-center overflow-hidden">
+        {previewUrl ? (
+          <div style={{ width: f.w * scale, height: f.h * scale }} className="relative rounded-xl overflow-hidden border border-slate-300 bg-white shadow-sm">
+            <iframe ref={iframeRef} key={frame} src={previewUrl} title="Kiosk preview" data-testid="kiosk-builder-preview"
+              style={{ width: f.w, height: f.h, transform: `scale(${scale})`, transformOrigin: "0 0", border: 0, position: "absolute", top: 0, left: 0 }} />
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500 pt-10">Set your booking link in Business Settings to preview the kiosk.</p>
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <AppLayout fullHeight>
@@ -423,7 +468,9 @@ export default function KioskBuilder() {
         {tab === "screens" ? (
           <div className="flex-1 min-h-0">
             {catalog
-              ? <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage} />
+              ? <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
+                  renderPreview={renderPreview} view={screensView} onView={setScreensView}
+                  previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }} />
               : <div className="flex items-center justify-center gap-2 text-slate-500 py-24"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>}
           </div>
         ) : (
@@ -612,38 +659,7 @@ export default function KioskBuilder() {
           </div>
 
           {/* ── Preview ── */}
-          <div className="flex-1 min-w-0 min-h-[480px] flex flex-col p-4 gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5">
-                {(Object.keys(FRAMES) as Array<keyof typeof FRAMES>).map((k) => (
-                  <button key={k} type="button" onClick={() => setFrame(k)}
-                    className={`px-3 h-8 text-sm rounded ${frame === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>{FRAMES[k].name}</button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {PREVIEW_SCREENS.map((p) => (
-                  <button key={p.target} type="button" onClick={() => postToPreview({ type: "kiosk-preview-goto", target: p.target })}
-                    className="px-2.5 h-8 text-xs rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">{p.name}</button>
-                ))}
-              </div>
-              {previewUrl && (
-                <a href={previewUrl} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-sm text-slate-600 underline">
-                  Open full screen <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
-            </div>
-            <p className="text-xs text-slate-500">Preview of your draft. Tap through it like a client; nothing here checks anyone in.</p>
-            <div ref={previewBoxRef} className="flex-1 min-h-0 flex items-start justify-center overflow-hidden">
-              {previewUrl ? (
-                <div style={{ width: f.w * scale, height: f.h * scale }} className="relative rounded-xl overflow-hidden border border-slate-300 bg-white shadow-sm">
-                  <iframe ref={iframeRef} key={frame} src={previewUrl} title="Kiosk preview" data-testid="kiosk-builder-preview"
-                    style={{ width: f.w, height: f.h, transform: `scale(${scale})`, transformOrigin: "0 0", border: 0, position: "absolute", top: 0, left: 0 }} />
-                </div>
-              ) : (
-                <p className="text-sm text-slate-500 pt-10">Set your booking link in Business Settings to preview the kiosk.</p>
-              )}
-            </div>
-          </div>
+          {renderPreview()}
         </div>
         )}
       </div>
@@ -743,7 +759,7 @@ export default function KioskBuilder() {
                   ) : (
                     <div>
                       <p className="text-sm font-medium text-slate-800">{c.name}</p>
-                      <p className="text-xs text-slate-500">{c.source === "imported" ? "Imported" : "Saved"} {new Date(c.updatedAt).toLocaleString()}</p>
+                      <p className="text-xs text-slate-500">{c.builder === "picture" ? "Picture builder" : "Easy builder"} · {c.source === "imported" ? "Imported" : "Saved"} {new Date(c.updatedAt).toLocaleString()}</p>
                     </div>
                   )}
                   <div className="flex flex-wrap gap-1.5">

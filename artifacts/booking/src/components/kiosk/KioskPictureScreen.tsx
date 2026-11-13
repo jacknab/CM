@@ -10,9 +10,20 @@
  * corners.
  */
 import { useRef, useState } from "react";
-import { KIOSK_SPOT_MIN, type KioskMenu, type KioskSpot } from "@shared/kiosk/layout";
+import { KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, type KioskMenu, type KioskSpot } from "@shared/kiosk/layout";
 
-export interface PictureColors { primary: string; bg: string }
+export interface PictureColors { primary: string; bg: string; surface?: string; text?: string; muted?: string; border?: string }
+
+/** The kiosk's footer on a picture screen (menu.footer): Back, what was chosen, the total, Continue. */
+export interface PictureFooter {
+  backLabel: string;
+  continueLabel: string;
+  summary: string;
+  total?: string | null;
+  continueDisabled?: boolean;
+  onBack?: () => void;
+  onContinue?: () => void;
+}
 
 type Rect = Pick<KioskSpot, "x" | "y" | "w" | "h">;
 type Drag = { id: string; mode: "move" | "nw" | "ne" | "sw" | "se"; startX: number; startY: number; start: Rect; frameW: number; frameH: number };
@@ -39,6 +50,8 @@ export function KioskPictureScreen(p: {
   onChangeSpot?: (id: string, rect: Rect) => void;
   spotLabel?: (spot: KioskSpot) => string;
   emptyText?: string;
+  /** Drawn when menu.footer is on. In the builder it is shown but does nothing. */
+  footer?: PictureFooter | null;
 }) {
   const { menu, colors: c } = p;
   const frameRef = useRef<HTMLDivElement>(null);
@@ -87,7 +100,7 @@ export function KioskPictureScreen(p: {
     <div style={{ width: "100%", height: "100%", containerType: "size", display: "flex", alignItems: "center", justifyContent: "center", background: c.bg, userSelect: "none" }}
       onPointerDown={() => editor && p.onSelectSpot?.(null)}>
       <div ref={frameRef} data-testid="kiosk-picture-frame"
-        style={{ position: "relative", width: "min(100cqw, calc(100cqh * 9 / 16))", aspectRatio: "9 / 16", overflow: "hidden", touchAction: "none" }}
+        style={{ position: "relative", width: "min(100cqw, calc(100cqh * 9 / 16))", aspectRatio: "9 / 16", overflow: "hidden", touchAction: "none", containerType: "size" }}
         onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
         {menu.imageUrl ? (
           <img src={menu.imageUrl} alt="" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
@@ -136,8 +149,30 @@ export function KioskPictureScreen(p: {
             </div>
           );
         })}
+        {menu.footer && p.footer && (() => {
+          const f = p.footer;
+          const pill = (primary: boolean, disabled = false): React.CSSProperties => ({
+            flexShrink: 0, height: "4.6cqh", padding: "0 4cqw", borderRadius: 999, fontWeight: 800, fontSize: "1.9cqh",
+            border: primary ? "none" : `2px solid ${c.border ?? "#e5e7eb"}`,
+            background: primary ? (disabled ? "#e5e7eb" : c.primary) : (c.surface ?? "#fff"),
+            color: primary ? (disabled ? "#9ca3af" : "#fff") : (c.text ?? "#111827"),
+            pointerEvents: editor ? "none" : "auto",
+          });
+          return (
+            <div data-testid="kiosk-picture-footer"
+              style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${KIOSK_PICTURE_FOOTER_PCT}%`, display: "flex", alignItems: "center", gap: "3cqw",
+                padding: "0 4cqw", background: c.surface ?? "#fff", borderTop: `2px solid ${c.border ?? "#e5e7eb"}`, opacity: editor ? 0.92 : 1 }}
+              onPointerDown={(e) => e.stopPropagation()}>
+              <button type="button" style={pill(false)} onPointerDown={(e) => { e.preventDefault(); f.onBack?.(); }}>{f.backLabel}</button>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: c.muted ?? "#6b7280", fontSize: "1.7cqh" }}>{f.summary}</span>
+              {f.total && <span style={{ flexShrink: 0, fontWeight: 900, fontSize: "2.4cqh", color: c.text ?? "#111827" }}>{f.total}</span>}
+              <button type="button" style={pill(true, f.continueDisabled)} data-testid="kiosk-picture-continue"
+                onPointerDown={(e) => { e.preventDefault(); f.onContinue?.(); }}>{f.continueLabel}</button>
+            </div>
+          );
+        })()}
         {p.note && (
-          <div role="status" style={{ position: "absolute", left: "8%", right: "8%", bottom: "4%", padding: "2.4cqmin 3cqmin", borderRadius: 16, textAlign: "center",
+          <div role="status" style={{ position: "absolute", left: "8%", right: "8%", bottom: menu.footer && p.footer ? `${KIOSK_PICTURE_FOOTER_PCT + 2}%` : "4%", padding: "2.4cqmin 3cqmin", borderRadius: 16, textAlign: "center",
             background: "rgba(15,23,42,.88)", color: "#fff", fontWeight: 700, fontSize: "clamp(13px, 3.2cqmin, 26px)", pointerEvents: "none" }}>
             {p.note}
           </div>
