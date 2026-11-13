@@ -160,6 +160,8 @@ export const KIOSK_HELP: HelpTopic[] = [
       { tip: "Example: a nail-shape spot with \"Then go to… Choosing staff\" takes the client straight on as soon as they tap their shape." },
       { h: "3. The footer (optional)" },
       { p: "Turn on \"Show the kiosk footer\" to put the kiosk's own bar at the bottom: Back, what the client chose, the total and Continue. It covers the bottom strip of your picture (marked on the template), so keep tap spots out of it. With the footer on you don't need your own Back and Continue spots." },
+      { h: "Where Continue goes" },
+      { p: "You don't set this; the kiosk works it out from your screens. Continue goes to the screen picked in \"Then go to…\" for what the client chose, else a screen a tap spot here leads to, else your next screen in the Screens list (a screen only opened from a tap spot, like a category's own page, is skipped). After your last screen it goes on to add-ons, staff and the review." },
       { h: "Warnings" },
       { p: "Orange notes under the settings tell you when clients could get stuck, for example \"add a tap spot set to Continue\". Fix them before you put it on your kiosk." },
       { see: [{ topic: "recipe-shapes", label: "Make a nail-shape screen, step by step" }] },

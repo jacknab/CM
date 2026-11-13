@@ -989,7 +989,7 @@ function KioskCheckInScreens() {
     addons: new Set([...m.tiles.flatMap((x) => (x?.kind === "addon" && x.addonId != null ? [x.addonId] : [])),
       ...m.spots.flatMap((sp) => (sp.action.kind === "addon" ? [sp.action.addonId] : []))]),
   });
-  const continueFromScreen = (screenMenu: KioskMenu, note: (text: string) => void, dest: "next" | "staff" | "review" = "next") => {
+  const continueFromScreen = (screenMenu: KioskMenu, note: (text: string) => void, dest: "next" | "staff" | "review" | { menuId: string } = "next") => {
     kick();
     // "They must choose before moving on" (the screen's own setting).
     if (screenMenu.mustChoose) {
@@ -1005,6 +1005,8 @@ function KioskCheckInScreens() {
       const shown = shownIds.some((id) => { const a = allAddons.find((x) => x.id === id); return !!a?.kioskExtra && sameGroup(a.kioskExtraGroup, group); });
       if (shown && !selectedAddons.some((a) => a.kioskExtra && sameGroup(a.kioskExtraGroup, group))) return note(t.chooseFromGroup(group));
     }
+    // Another of the business's own screens (Continue on a picture screen, see continueFromPicture).
+    if (typeof dest === "object") { setMenuStack((st) => [...st, dest.menuId]); setMenuPage(0); return; }
     // Go to Staff / Finish (owner, 2026-11-13): straight there, past the steps in between.
     if (dest === "staff" && allStaff.length > 0) return setScreen("stylist");
     if (dest === "staff" || dest === "review") return setScreen("review");
@@ -1030,6 +1032,26 @@ function KioskCheckInScreens() {
     if (from) continueFromScreen(from, (text) => showPictureNote(text), p.next.kind === "continue" ? "next" : p.next.kind);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingNext, selectedServices, selectedAddons]);
+  /**
+   * Continue on a picture screen (owner, 2026-11-13: part of the logic, not a setting). Where the screen's own links
+   * lead: (1) the "Then go to…" of what the client chose here, (2) else a screen any tap spot here leads to, (3) else
+   * the next screen in the builder's list the client hasn't been on (not one only opened from a tap spot, like a
+   * category's own page), (4) after the last one, the kiosk's next step.
+   */
+  const continueFromPicture = (m: KioskMenu, note: (text: string) => void) => {
+    const chosen = (sp: KioskMenu["spots"][number]) =>
+      (sp.action.kind === "service" && selectedServices.some((x) => x.id === (sp.action as { serviceId: number }).serviceId))
+      || (sp.action.kind === "addon" && selectedAddons.some((x) => x.id === (sp.action as { addonId: number }).addonId));
+    const exists = (id: string) => id !== m.id && layout.menus.some((x) => x.id === id);
+    const fromChoice = m.spots.find((sp) => sp.next && chosen(sp) && (sp.next.kind !== "menu" || exists(sp.next.menuId)))?.next;
+    if (fromChoice) return continueFromScreen(m, note, fromChoice.kind === "menu" ? { menuId: fromChoice.menuId } : fromChoice.kind === "continue" ? "next" : fromChoice.kind);
+    const linked = m.spots.find((sp) => sp.next?.kind === "menu" && exists(sp.next.menuId))?.next;
+    if (linked?.kind === "menu") return continueFromScreen(m, note, { menuId: linked.menuId });
+    const branches = new Set(layout.menus.flatMap((x) => x.spots.flatMap((sp) => (sp.action.kind === "menu" ? [sp.action.menuId] : []))));
+    const seen = new Set([...menuStack, layout.startMenuId ?? ""]);
+    const after = layout.menus.slice(layout.menus.findIndex((x) => x.id === m.id) + 1).find((x) => !seen.has(x.id) && !branches.has(x.id));
+    return continueFromScreen(m, note, after ? { menuId: after.id } : "next");
+  };
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
     !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
@@ -2382,7 +2404,7 @@ body *{cursor:default}`;
             return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId, next: spot.next }
               : a.kind === "addon" ? { kind: "addon", addonId: a.addonId, next: spot.next } : { kind: "menu", menuId: a.menuId });
           }
-          if (a.fn === "continue") return continueFromScreen(current, showPictureNote);
+          if (a.fn === "continue") return continueFromPicture(current, showPictureNote);
           if (a.fn === "staff") return continueFromScreen(current, showPictureNote, "staff");
           if (a.fn === "review") return continueFromScreen(current, showPictureNote, "review");
           if (a.fn === "back") return back();
@@ -2398,7 +2420,7 @@ body *{cursor:default}`;
                 backLabel: t.backBtn, continueLabel: t.continueBtn, continueDisabled: selectedServices.length === 0,
                 summary: chosenSummary || t.noServiceSelected,
                 total: showPrice && selectedServices.length ? fmtPrice(screenTotal) : null,
-                onBack: back, onContinue: () => continueFromScreen(current, showPictureNote),
+                onBack: back, onContinue: () => continueFromPicture(current, showPictureNote),
               }}
               onSpot={tapSpot} note={pictureNote ?? (svcLimitNote ? limitText : null)}
               spotLabel={(sp) => sp.action.kind === "service" ? svcById.get(sp.action.serviceId)?.name ?? "" : sp.action.kind === "addon" ? allAddons.find((x) => x.id === (sp.action as { addonId: number }).addonId)?.name ?? "" : ""} />
