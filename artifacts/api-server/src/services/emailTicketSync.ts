@@ -11,6 +11,7 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser, type ParsedMail, type AddressObject } from "mailparser";
 import { pool, waitForDb } from "../db";
+import { isBlockedSender } from "../lib/supportEmailBlocks";
 import { broadcastToAgents } from "../routes/liveChat";
 
 const IMAP_HOST     = "mail.privateemail.com";
@@ -420,6 +421,13 @@ async function processEmail(parsed: ParsedMail): Promise<"new" | "duplicate"> {
 
   if (senderEmail === IMAP_USER.toLowerCase()) {
     log(`Skipping self-sent email ${messageId}`);
+    return "duplicate";
+  }
+
+  // Senders marked as junk in isTeam › Tickets (lib/supportEmailBlocks.ts): never a ticket, never reopens one.
+  if (await isBlockedSender(senderEmail)) {
+    log(`Skipping email ${messageId} from blocked sender ${senderEmail}`);
+    await markProcessed(messageId, 0);
     return "duplicate";
   }
 

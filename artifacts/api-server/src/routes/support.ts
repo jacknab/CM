@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { blockJunkSender, unblockSender } from "../lib/supportEmailBlocks";
 import { BOOKING_THEMES } from "./bookingSite";
 import { liftTrialSuspension } from "../services/trial-expiration";
 import { emailButton, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
@@ -1640,8 +1641,13 @@ router.patch("/api/support/tickets/:ticketId", requireSupportAuth, async (req: R
       }
     }
     params.push(ticketId);
+    const before = category !== undefined ? (await pool.query("SELECT category FROM support_tickets WHERE id = $1", [ticketId])).rows[0]?.category ?? null : null;
     await pool.query(`UPDATE support_tickets SET ${sets.join(", ")} WHERE id = $${params.length}`, params);
-    res.json({ ok: true });
+    // Junk blocks the sender (and closes their other open tickets); taking junk off lifts the block.
+    let blocked: Awaited<ReturnType<typeof blockJunkSender>> = null;
+    if (category === "junk" && before !== "junk") blocked = await blockJunkSender(ticketId, req.session.supportAgentName ?? null);
+    if (category !== undefined && category !== "junk" && before === "junk") await unblockSender(ticketId);
+    res.json({ ok: true, blocked });
   } catch (e: any) {
     console.error("[Update Ticket]", e.message);
     res.status(500).json({ error: "Failed to update ticket" });

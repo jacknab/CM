@@ -925,7 +925,9 @@ function TicketDetailView({
               {/* Mark as Junk */}
               {junkConfirm ? (
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-rose-600 font-medium">Confirm junk?</span>
+                  <span className="text-[11px] text-rose-600 font-medium">
+                    {ticket.channel === "EMAIL" && ticket.customer_email ? `Junk it and block ${ticket.customer_email}?` : "Confirm junk?"}
+                  </span>
                   <button
                     onClick={markJunk}
                     disabled={update.isPending}
