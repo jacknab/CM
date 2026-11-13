@@ -96,8 +96,7 @@ router.post("/logout", (req: any, res) => {
 });
 
 // PATCH /api/manage/profile — update the account owner's personal details.
-// Email is intentionally NOT editable here (changing the login email needs a
-// verification flow).
+// The account email can never be changed, and the mobile number changes only with a text code (owner, 2026-11-13).
 router.patch("/profile", requireAuth, async (req: any, res) => {
   try {
     const userId: string = req.session.userId;
@@ -107,18 +106,12 @@ router.patch("/profile", requireAuth, async (req: any, res) => {
     if (typeof b.firstName === "string") updates.firstName = b.firstName.trim().slice(0, 100);
     if (typeof b.lastName === "string") updates.lastName = b.lastName.trim().slice(0, 100);
     if (typeof b.phone === "string") {
+      // The account's mobile number only ever changes through POST /api/account/phone/send-code + verify, with a code
+      // texted to the new number (lib/proPhoneVerification.ts) — never by typing it here, for any account
+      // (owner, 2026-11-13: stops free-trial abuse).
       const phone = b.phone.trim().slice(0, 40) || null;
-      // An account with a code-verified mobile number changes it through POST /api/account/phone/send-code
-      // (lib/proPhoneVerification.ts), never by typing a new one here.
-      const { rows: [own] } = await pool.query(
-        `SELECT (SELECT phone FROM users WHERE id = $1) AS current,
-                EXISTS (SELECT 1 FROM account_phone_numbers WHERE user_id = $1) AS verified`,
-        [userId],
-      );
-      if (phone !== (own?.current ?? null)) {
-        if (own?.verified) return res.status(409).json({ error: "Change your mobile number with a text code." });
-        updates.phone = phone;
-      }
+      const { rows: [own] } = await pool.query(`SELECT phone FROM users WHERE id = $1`, [userId]);
+      if (phone !== (own?.phone ?? null)) return res.status(409).json({ error: "Change your mobile number with a text code." });
     }
     if (typeof b.profileImageUrl === "string") updates.profileImageUrl = b.profileImageUrl.trim() || null;
 

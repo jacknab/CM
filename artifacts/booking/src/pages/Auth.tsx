@@ -542,13 +542,19 @@ export default function Auth() {
       if (!firstName.trim() || !lastName.trim() || phoneDigits.length !== 10 || !email.trim() || !email.includes("@")) return;
 
       // The e-mail only: a mobile number already in use gets its own message from owner-request-otp.
+      // An e-mail that already has an account used to stop the form with no message at all (callers were stuck):
+      // say so, and point to sign-in / password reset (owner, 2026-11-13).
+      setOtpSendError("");
       try {
         const availRes = await fetch(
           `/api/auth/check-availability?email=${encodeURIComponent(email)}`
         );
         if (availRes.ok) {
           const availData = await availRes.json();
-          if (!availData.available) return;
+          if (!availData.available) {
+            setOtpSendError("This email already has a Certxa account. Sign in instead, or use Forgot password to reset it. Each email can only be used for one account.");
+            return;
+          }
         }
       } catch {
         // On network error, allow the flow to continue
@@ -1056,7 +1062,12 @@ export default function Auth() {
                       inputMode="tel"
                       required
                       value={formatPhoneDisplay(phone)}
-                      onChange={e => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                      onChange={e => {
+                        // A pasted "+1 212 982 1234" keeps 2129821234: drop the country code 1 (no US area code starts
+                        // with 1), then the 10 digits (it used to keep the first 10, "1212982123").
+                        const d = e.target.value.replace(/\D/g, "");
+                        setPhone((d.length > 10 && d.startsWith("1") ? d.slice(1) : d).slice(0, 10));
+                      }}
                       placeholder="(555) 000-0000"
                       style={{ height: 42, borderRadius: 9, borderColor: "#e5e7eb", background: "#fafafa", fontSize: ".88rem" }}
                     />

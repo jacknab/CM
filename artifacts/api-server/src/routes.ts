@@ -24382,8 +24382,8 @@ or
     }
   });
 
-  // Changing the account's own mobile number (app and website): a number the account had before switches back with
-  // no code; a new one gets a texted code; a number another account ever had is refused.
+  // Changing the account's own mobile number (app and website): ALWAYS a code texted to the number being switched to,
+  // also when it is one this account had before; a number another account ever had is refused (owner, 2026-11-13).
   app.post("/api/account/phone/send-code", isAuthenticated, async (req, res) => {
     try {
       const userId = (req.session as any)?.userId as string | undefined;
@@ -24392,13 +24392,9 @@ or
       const lib = await import("./lib/proPhoneVerification");
       const phone = toE164US(String(req.body?.phone ?? ""));
       if (!phone) return res.status(400).json({ message: "Enter a 10-digit US mobile number." });
-      const owner = await lib.phoneNumberOwner(phone);
-      if (owner === userId) {
-        await lib.reactivateOwnPhone(phone, userId);
-        await db.update(users).set({ phone: phone.slice(2), updatedAt: new Date() }).where(eq(users.id, userId));
-        return res.json({ changed: true, phone: phone.slice(2) });
-      }
-      const result = await lib.startPhoneVerification(phone, getClientIp(req) ?? "");
+      const [me] = await db.select({ phone: users.phone }).from(users).where(eq(users.id, userId));
+      if (me?.phone && `+1${me.phone}` === phone) return res.status(400).json({ message: "That is already your mobile number." });
+      const result = await lib.startPhoneVerification(phone, getClientIp(req) ?? "", undefined, userId);
       if (!result.ok) return res.status(result.status).json({ message: result.message });
       return res.json({ sent: true });
     } catch (err) {
@@ -24416,7 +24412,11 @@ or
       const checked = await lib.checkPhoneCode(phoneInput, String(req.body?.code ?? "").trim());
       if (!checked.ok) return res.status(checked.status).json({ message: checked.message });
       const verified = await lib.findVerifiedPhone(phoneInput, checked.token);
-      if (!verified || !(await lib.claimPhoneNumber(verified, userId))) {
+      // A number this account had before comes back (its code was just checked); a new one is claimed.
+      const linked = verified && (await lib.phoneNumberOwner(verified.phone)) === userId
+        ? (await lib.markVerificationUsed(verified.id), await lib.reactivateOwnPhone(verified.phone, userId))
+        : verified && (await lib.claimPhoneNumber(verified, userId));
+      if (!verified || !linked) {
         return res.status(409).json({ message: "This mobile number is already linked to a Certxa account. Use a different number." });
       }
       await db.update(users).set({ phone: verified.phone.slice(2), updatedAt: new Date() }).where(eq(users.id, userId));

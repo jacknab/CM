@@ -7,7 +7,8 @@
  *
  * account_phone_numbers keeps every number ever linked to an account and is never deleted from: a replaced
  * number is marked inactive and still counts as taken (migration 0294). Changing the number in account settings
- * texts a code to a new number; a number the account had before switches back with no code.
+ * always texts a code to the number being switched to — a new one, or one this account had before (owner,
+ * 2026-11-13: no phone change without a code, to stop free-trial abuse).
  */
 
 import crypto from "crypto";
@@ -35,11 +36,15 @@ export async function phoneNumberOwner(e164: string): Promise<string | null> {
 
 const TAKEN = "This mobile number is already linked to a Certxa account. Use a different number, or sign in to your account.";
 
-/** Checks the number and texts it a code. */
-export async function startPhoneVerification(input: string, ip: string, email?: string): Promise<PhoneStepResult> {
+/**
+ * Checks the number and texts it a code. `ownUserId`: an account changing its own number may switch back to a number
+ * it had before (still with a code); any other account's number, ever, is refused.
+ */
+export async function startPhoneVerification(input: string, ip: string, email?: string, ownUserId?: string): Promise<PhoneStepResult> {
   const phone = toE164US(input);
   if (!phone) return { ok: false, status: 400, message: "Enter a 10-digit US mobile number." };
-  if (await phoneNumberOwner(phone)) return { ok: false, status: 409, message: TAKEN };
+  const owner = await phoneNumberOwner(phone);
+  if (owner && owner !== ownUserId) return { ok: false, status: 409, message: TAKEN };
 
   const { rows: [counts] } = await pool.query(
     `SELECT count(*) FILTER (WHERE phone = $1 AND created_at > NOW() - make_interval(secs => $3))::int AS recent,
@@ -103,6 +108,11 @@ export async function checkPhoneCode(input: string, code: string): Promise<{ ok:
   return { ok: true, token };
 }
 
+/** A checked code is spent once it has been used to change a number. */
+export async function markVerificationUsed(id: number): Promise<void> {
+  await pool.query(`UPDATE pro_phone_verifications SET used_at = NOW() WHERE id = $1`, [id]);
+}
+
 /** The verification a sign-up token stands for, when it is for this number, fresh and not used yet. */
 export async function findVerifiedPhone(input: string, token: string): Promise<{ id: number; phone: string; lineType: string | null; carrier: string | null } | null> {
   const phone = toE164US(input);
@@ -148,8 +158,8 @@ export async function claimPhoneNumber(verification: { id: number; phone: string
 }
 
 /**
- * Makes a number this account already proved its active number again, with no code: it never left the account.
- * False when the number isn't one of this account's.
+ * Makes a number this account had before its active number again — only after a new text code to it was checked
+ * (POST /api/account/phone/verify). False when the number isn't one of this account's.
  */
 export async function reactivateOwnPhone(e164: string, userId: string): Promise<boolean> {
   const client = await pool.connect();

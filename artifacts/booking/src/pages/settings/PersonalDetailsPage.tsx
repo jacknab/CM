@@ -33,7 +33,6 @@ export default function PersonalDetailsPage() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [phone, setPhone] = useState("");
   const [photo, setPhoto] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -41,7 +40,6 @@ export default function PersonalDetailsPage() {
     if (!user) return;
     setFirstName(user.firstName ?? "");
     setLastName(user.lastName ?? "");
-    setPhone(user.phone ?? "");
     setPhoto(user.profileImageUrl ?? null);
   }, [user]);
 
@@ -49,7 +47,6 @@ export default function PersonalDetailsPage() {
     !!user &&
     (firstName !== (user.firstName ?? "") ||
       lastName !== (user.lastName ?? "") ||
-      phone !== (user.phone ?? "") ||
       photo !== (user.profileImageUrl ?? null));
 
   const save = useMutation({
@@ -103,7 +100,7 @@ export default function PersonalDetailsPage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            save.mutate({ firstName, lastName, phone, profileImageUrl: photo });
+            save.mutate({ firstName, lastName, profileImageUrl: photo });
           }}
           className="space-y-8"
         >
@@ -152,25 +149,14 @@ export default function PersonalDetailsPage() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-[15px] font-medium">Phone</label>
-              <Input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="(555) 555-5555"
-                className="text-[15px]"
-                data-testid="input-owner-phone"
-              />
-              <p className="text-[13px] text-muted-foreground">Your personal number — separate from the business phone.</p>
-            </div>
+            <MobileNumberField current={user.phone} />
 
             <div className="space-y-1.5">
               <label className="text-[15px] font-medium">Account email</label>
               <Input value={user.email} disabled className="text-[15px]" />
               <p className="text-[13px] text-muted-foreground">
                 You sign in with this address, and billing and subscription notices are sent here.
-                Contact support to change it.
+                The account email can't be changed.
               </p>
             </div>
           </div>
@@ -184,5 +170,86 @@ export default function PersonalDetailsPage() {
         </form>
       </div>
     </AppLayout>
+  );
+}
+
+const fmtPhone = (digits: string | null) => {
+  const d = (digits ?? "").replace(/\D/g, "").slice(-10);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : d || "None";
+};
+
+/**
+ * The account's mobile number (owner, 2026-11-13): read-only here. Changing it needs the new mobile number and the
+ * 6-digit code texted to it (POST /api/account/phone/send-code + verify); a number another Certxa account has ever
+ * had is refused. Stops free-trial abuse.
+ */
+function MobileNumberField({ current }: { current: string | null }) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"view" | "number" | "code">("view");
+  const [number, setNumber] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const digits = number.replace(/\D/g, "");
+
+  const post = async (url: string, body: unknown) => {
+    const res = await fetch(url, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data?.message || "Something went wrong. Please try again.");
+    return data;
+  };
+  const sendCode = async () => {
+    setBusy(true); setError("");
+    try { await post("/api/account/phone/send-code", { phone: digits }); setStep("code"); setCode(""); }
+    catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const verify = async () => {
+    setBusy(true); setError("");
+    try {
+      await post("/api/account/phone/verify", { phone: digits, code: code.trim() });
+      await queryClient.invalidateQueries({ queryKey: ["/api/manage/overview"] });
+      toast({ title: "Mobile number changed" });
+      setStep("view"); setNumber(""); setCode("");
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(false); }
+  };
+  const cancel = () => { setStep("view"); setNumber(""); setCode(""); setError(""); };
+
+  return (
+    <div className="space-y-1.5" data-testid="owner-mobile">
+      <label className="text-[15px] font-medium">Mobile number</label>
+      {step === "view" ? (
+        <div className="flex items-center gap-3">
+          <Input value={fmtPhone(current)} disabled className="text-[15px]" data-testid="input-owner-phone" />
+          <Button type="button" variant="outline" onClick={() => setStep("number")} data-testid="button-change-phone">Change number</Button>
+        </div>
+      ) : (
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          {step === "number" ? (
+            <>
+              <p className="text-[13px] text-muted-foreground">Enter your new mobile number. We'll text it a 6-digit code.</p>
+              <Input type="tel" inputMode="tel" autoFocus value={number} onChange={(e) => setNumber(e.target.value)} placeholder="(555) 555-5555" className="text-[15px]" data-testid="input-new-phone" />
+              <div className="flex gap-2">
+                <Button type="button" disabled={busy || digits.length !== 10} onClick={() => void sendCode()} data-testid="button-send-phone-code">{busy ? "Sending…" : "Text me a code"}</Button>
+                <Button type="button" variant="ghost" onClick={cancel}>Cancel</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-[13px] text-muted-foreground">Enter the 6-digit code we texted to {fmtPhone(digits)}.</p>
+              <Input inputMode="numeric" autoComplete="one-time-code" autoFocus maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} placeholder="123456" className="text-[15px]" data-testid="input-phone-code" />
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" disabled={busy || code.length !== 6} onClick={() => void verify()} data-testid="button-verify-phone-code">{busy ? "Checking…" : "Confirm"}</Button>
+                <Button type="button" variant="ghost" disabled={busy} onClick={() => void sendCode()}>Send a new code</Button>
+                <Button type="button" variant="ghost" onClick={cancel}>Cancel</Button>
+              </div>
+            </>
+          )}
+          {error && <p className="text-[13px] text-destructive" role="alert">{error}</p>}
+        </div>
+      )}
+      <p className="text-[13px] text-muted-foreground">The number you verified with a text code. A new number must receive a code too. Separate from the business phone.</p>
+    </div>
   );
 }
