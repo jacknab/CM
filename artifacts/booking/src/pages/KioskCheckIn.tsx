@@ -6,6 +6,7 @@ import { printNativeCheckinTicket, slipServiceNames } from "../lib/native-checki
 import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
 import { KioskMenuScreen } from "../components/kiosk/KioskMenuScreen";
+import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
 import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
@@ -438,6 +439,14 @@ function KioskCheckInScreens() {
   // and the page shown on the top one.
   const [menuStack, setMenuStack] = useState<string[]>([]);
   const [menuPage, setMenuPage] = useState(0);
+  // Picture screens: a short message over the picture ("Please choose a service first"), gone after a few seconds.
+  const [pictureNote, setPictureNote] = useState<string | null>(null);
+  const pictureNoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showPictureNote = (text: string) => {
+    setPictureNote(text);
+    if (pictureNoteTimer.current) clearTimeout(pictureNoteTimer.current);
+    pictureNoteTimer.current = setTimeout(() => setPictureNote(null), 3500);
+  };
   useEffect(() => {
     document.documentElement.classList.toggle("kx-nail", NAIL_LOOK);
     return () => { document.documentElement.classList.remove("kx-nail"); };
@@ -2230,6 +2239,38 @@ function KioskCheckInScreens() {
         if (menuStack.length > 1) { setMenuStack((st) => st.slice(0, -1)); setMenuPage(0); return; }
         goBack("services");
       };
+      const limitText = layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
+        : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10));
+
+      // The business's own picture of the whole screen, with tap spots on it.
+      if (current.kind === "picture") {
+        const tapSpot = (spot: (typeof current.spots)[number]) => {
+          kick();
+          const a = spot.action;
+          if (a.kind === "service" || a.kind === "menu") return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId } : { kind: "menu", menuId: a.menuId });
+          if (a.kind === "addon") {
+            const first = selectedServices[0];
+            if (!first) return showPictureNote(t.chooseServiceFirst);
+            const addon = allAddons.find((x) => x.id === a.addonId);
+            if (!addon) return;
+            if (addon.serviceIds.length && !addon.serviceIds.includes(first.id)) return showPictureNote(t.addonNotForService);
+            return setSelectedAddons((cur) => (cur.some((x) => x.id === addon.id) ? cur.filter((x) => x.id !== addon.id) : [...cur, addon]));
+          }
+          if (a.fn === "continue") return selectedServices.length ? void afterServiceChosen() : showPictureNote(t.chooseServiceFirst);
+          if (a.fn === "back") return back();
+          if (a.fn === "startOver") return resetToIdle();
+        };
+        const chosen = current.spots.filter((sp) =>
+          (sp.action.kind === "service" && selectedServices.some((sv) => sv.id === (sp.action as { serviceId: number }).serviceId))
+          || (sp.action.kind === "addon" && selectedAddons.some((ad) => ad.id === (sp.action as { addonId: number }).addonId))).map((sp) => sp.id);
+        return (
+          <div className="fixed inset-0 select-none" onContextMenu={e => e.preventDefault()} style={NO_SELECT} data-testid="kiosk-menu-screen">
+            <KioskPictureScreen menu={current} mode="kiosk" colors={{ primary: PRIMARY, bg: BG }} selectedSpotIds={chosen}
+              onSpot={tapSpot} note={pictureNote ?? (svcLimitNote ? limitText : null)}
+              spotLabel={(sp) => sp.action.kind === "service" ? svcById.get(sp.action.serviceId)?.name ?? "" : sp.action.kind === "addon" ? allAddons.find((x) => x.id === (sp.action as { addonId: number }).addonId)?.name ?? "" : ""} />
+          </div>
+        );
+      }
       return (
         <div className="fixed inset-0 select-none" onContextMenu={e => e.preventDefault()} style={NO_SELECT} data-testid="kiosk-menu-screen">
           <KioskMenuScreen
@@ -2247,8 +2288,7 @@ function KioskCheckInScreens() {
                 <GhostBtn onPress={back} size="sm">{t.backBtn}</GhostBtn>
                 <div className="flex-1 min-w-0 truncate text-base" style={{ color: SUBTLE }}>
                   {svcLimitNote
-                    ? (layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
-                      : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10)))
+                    ? limitText
                     : selectedServices.length ? selectedServices.map((sv) => sv.name).join(" + ") : t.noServiceSelected}
                 </div>
                 {selectedServices.length > 0 && showPrice && (

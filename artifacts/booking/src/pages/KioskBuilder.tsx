@@ -26,7 +26,7 @@ import {
 import type { BusinessType, BusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
-import { ScreensEditor, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensEditor, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 
 interface BuilderState {
   businessType: BusinessType;
@@ -140,7 +140,7 @@ export default function KioskBuilder() {
   const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
   const [tab, setTab] = useState<"settings" | "screens">("settings");
   // The salon's catalog as its kiosk sees it, for the screen editor.
-  const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; storeName: string } | null>(null);
+  const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; addons: CatalogAddon[]; storeName: string } | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewBoxRef = useRef<HTMLDivElement>(null);
@@ -160,7 +160,7 @@ export default function KioskBuilder() {
   useEffect(() => {
     if (!slug || tab !== "screens" || catalog) return;
     api<any>(`/api/public/kiosk/${slug}/config?preview=draft`)
-      .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], storeName: d.store?.name ?? "" }))
+      .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }))
       .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
   }, [slug, tab, catalog, toast]);
   const uploadImage = async (file: File): Promise<string | null> => {
@@ -363,7 +363,7 @@ export default function KioskBuilder() {
         {tab === "screens" ? (
           <div className="flex-1 min-h-0">
             {catalog
-              ? <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} storeName={catalog.storeName} uploadImage={uploadImage} />
+              ? <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage} />
               : <div className="flex items-center justify-center gap-2 text-slate-500 py-24"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>}
           </div>
         ) : (

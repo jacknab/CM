@@ -98,5 +98,11 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   the kiosk screen and the builder canvas (container units → same look at any size). Builder › Screens tab
   (pages/kiosk-builder/ScreensEditor.tsx): build from catalog, fill from a category, tap/drag slots, pages.
   Checked on the isolated server: build → 4×2 → fill → publish → client walk on 1080×1920 → real check-in.
+- 2026-11-13: **Picture screens LIVE** (owner's second method): the owner designs the whole screen as one picture
+  (template 1080 × 1920 downloaded from the builder, made in the browser), uploads it, adds tap spots (drag to move,
+  corner handles to size, arrow keys to nudge) and assigns each to a service, add-on, function (Continue / Back /
+  Start over) or another screen. Menu kind "picture" + spots in % of a 9:16 frame (shared/kiosk/layout.ts);
+  components/kiosk/KioskPictureScreen.tsx draws kiosk + editor. Builder warns when a picture screen can't be left.
+  Checked on the isolated server (16/16, real touches on a 1080×1920 kiosk). Store 2 (Prime Nails) published v1 11-13.
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

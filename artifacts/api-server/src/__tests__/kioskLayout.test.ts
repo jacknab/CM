@@ -168,3 +168,36 @@ describe("screens", () => {
     expect(errors).toEqual(['"A": columns must be 1 to 4.', '"A" has a button to a screen that doesn\'t exist.', "Choose the screen clients start on."]);
   });
 });
+
+describe("picture screens", () => {
+  const base = { id: "pic", name: "Shapes", kind: "picture", imageUrl: "https://cdn.example.com/kiosk/shapes.webp" };
+  it("keeps tap spots inside the picture and drops broken ones", () => {
+    const l = normalizeKioskLayout({ menus: [
+      { ...base, tiles: [{ id: "t", kind: "service", serviceId: 1 }], spots: [
+        { id: "s1", x: 10, y: 20, w: 30, h: 10, action: { kind: "service", serviceId: 5 } },
+        { id: "s2", x: 95, y: -5, w: 1, h: 200, action: { kind: "addon", addonId: 9 } },  // too small, too tall, off the edge
+        { id: "s3", x: 0, y: 0, w: 10, h: 10, action: { kind: "function", fn: "continue" } },
+        { id: "s4", x: 0, y: 0, w: 10, h: 10, action: { kind: "function", fn: "explode" } }, // unknown function
+        { id: "s5", x: 0, y: 0, w: 10, h: 10, action: { kind: "menu", menuId: "pic" } },     // itself
+        { id: "s6", x: 0, y: 0, w: 10, h: 10, action: { kind: "menu", menuId: "other" } },
+        { id: "s1", x: 0, y: 0, w: 10, h: 10, action: { kind: "service", serviceId: 6 } },   // repeated id
+      ] },
+      { id: "other", name: "Other" },
+    ] }, "nail");
+    const [pic] = l.menus;
+    expect(pic.kind).toBe("picture");
+    expect(pic.tiles).toEqual([]);
+    expect(pic.spots.map((s) => s.id)).toEqual(["s1", "s2", "s3", "s6"]);
+    expect(pic.spots[1]).toMatchObject({ x: 95, y: 0, w: 4, h: 100 });
+    expect(menuPageCount(pic)).toBe(1);
+    expect(l.menus[1]).toMatchObject({ kind: "buttons", imageUrl: null, spots: [] });
+  });
+  it("only keeps an uploaded picture", () => {
+    const [pic] = normalizeKioskLayout({ menus: [{ ...base, imageUrl: "data:image/png;base64,xx" }] }, "nail").menus;
+    expect(pic.imageUrl).toBe(null);
+  });
+  it("says when a tap spot opens a screen that doesn't exist", () => {
+    expect(validateKioskLayout({ menus: [{ ...base, spots: [{ id: "a", action: { kind: "menu", menuId: "zzz" } }] }] }))
+      .toEqual(['"Shapes" has a tap spot to a screen that doesn\'t exist.']);
+  });
+});

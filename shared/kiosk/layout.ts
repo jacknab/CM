@@ -62,8 +62,29 @@ export interface KioskTile {
  * footer (never scrolling). "single": one big button in the middle of each page. `tiles[i]` is slot i, counted
  * across pages (page = floor(i / slotsPerPage)); null is an empty slot.
  */
+/** What a tap spot does when tapped. */
+export type KioskSpotAction =
+  | { kind: "service"; serviceId: number }
+  | { kind: "addon"; addonId: number }
+  | { kind: "menu"; menuId: string }
+  | { kind: "function"; fn: KioskSpotFunction };
+/** continue: on to the next step · back: the screen before · startOver: back to the welcome screen. */
+export type KioskSpotFunction = "continue" | "back" | "startOver";
+export const KIOSK_SPOT_FUNCTIONS: KioskSpotFunction[] = ["continue", "back", "startOver"];
+
+/**
+ * A tap spot on a picture screen: an invisible button over part of the business's own picture. x, y, w, h are
+ * percentages of the picture (0–100), so a spot stays on the same part of the picture at any screen size.
+ */
+export interface KioskSpot { id: string; x: number; y: number; w: number; h: number; action: KioskSpotAction }
+
 export interface KioskMenu {
   id: string;
+  /**
+   * "buttons": Certxa draws the screen (heading, a grid of buttons, footer).
+   * "picture": the business's own picture fills the screen and tap spots on it do the work.
+   */
+  kind: "buttons" | "picture";
   /** For the builder's list. */
   name: string;
   /** The heading on the screen; empty: the kiosk's own greeting. */
@@ -72,14 +93,22 @@ export interface KioskMenu {
   cols: number;
   rows: number;
   tiles: Array<KioskTile | null>;
+  /** Picture screens: the picture (made from the 1080 × 1920 template) and its tap spots. */
+  imageUrl: string | null;
+  spots: KioskSpot[];
 }
 
-export const KIOSK_MENU_LIMITS = { menus: 40, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40 } as const;
+export const KIOSK_MENU_LIMITS = { menus: 40, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40, spots: 80 } as const;
+/** The picture a picture screen is made for: the 15" kiosk, standing (9:16). */
+export const KIOSK_PICTURE = { width: 1080, height: 1920 } as const;
+/** The smallest tap spot, in percent of the picture: about a fingertip on the 15" kiosk. */
+export const KIOSK_SPOT_MIN = { w: 4, h: 2.5 } as const;
 
 /** Slots on one page of a screen. */
 export const menuSlotsPerPage = (m: Pick<KioskMenu, "style" | "cols" | "rows">) => (m.style === "single" ? 1 : m.cols * m.rows);
 /** Pages a screen has (at least one). */
 export const menuPageCount = (m: KioskMenu) => {
+  if (m.kind === "picture") return 1;
   const per = menuSlotsPerPage(m);
   let last = -1;
   m.tiles.forEach((t, i) => { if (t) last = i; });
@@ -212,6 +241,16 @@ function normalizeTile(raw: unknown, menuIds: Set<string>): KioskTile | null {
   return tile;
 }
 
+function normalizeSpotAction(raw: unknown, menuIds: Set<string>, ownId: string): KioskSpotAction | null {
+  if (!isObj(raw)) return null;
+  const id = (v: unknown) => (Number.isInteger(Number(v)) && Number(v) > 0 ? Number(v) : null);
+  if (raw.kind === "service") { const n = id(raw.serviceId); return n ? { kind: "service", serviceId: n } : null; }
+  if (raw.kind === "addon") { const n = id(raw.addonId); return n ? { kind: "addon", addonId: n } : null; }
+  if (raw.kind === "menu") return typeof raw.menuId === "string" && menuIds.has(raw.menuId) && raw.menuId !== ownId ? { kind: "menu", menuId: raw.menuId } : null;
+  if (raw.kind === "function") return KIOSK_SPOT_FUNCTIONS.includes(raw.fn) ? { kind: "function", fn: raw.fn } : null;
+  return null;
+}
+
 /** The business's screens: unknown links and broken buttons dropped, sizes clamped, at most 10 pages each. */
 export function normalizeMenus(raw: unknown): KioskMenu[] {
   const list = (Array.isArray(raw) ? raw : []).filter((m) => isObj(m) && typeof m.id === "string" && MENU_ID.test(m.id));
@@ -234,7 +273,25 @@ export function normalizeMenus(raw: unknown): KioskMenu[] {
     while (tiles.length && tiles[tiles.length - 1] == null) tiles.pop();
     const title: KioskText = {};
     if (isObj(m.title)) for (const lang of KIOSK_LANG_CODES) { const v = cleanLabel(m.title[lang], 60); if (v) title[lang] = v; }
-    return { id: m.id, name: cleanLabel(m.name, KIOSK_MENU_LIMITS.name) || "Screen", title, style, cols, rows, tiles };
+    const kind: KioskMenu["kind"] = m.kind === "picture" ? "picture" : "buttons";
+    const spotIds = new Set<string>();
+    const spots: KioskSpot[] = kind !== "picture" ? [] : (Array.isArray(m.spots) ? m.spots : []).slice(0, KIOSK_MENU_LIMITS.spots).flatMap((sp: any) => {
+      if (!isObj(sp) || typeof sp.id !== "string" || !MENU_ID.test(sp.id) || spotIds.has(sp.id)) return [];
+      const action = normalizeSpotAction(sp.action, ids, m.id);
+      if (!action) return [];
+      spotIds.add(sp.id);
+      const num = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
+      const w = Math.min(100, Math.max(KIOSK_SPOT_MIN.w, num(sp.w, 20)));
+      const h = Math.min(100, Math.max(KIOSK_SPOT_MIN.h, num(sp.h, 10)));
+      const round = (n: number) => Math.round(n * 100) / 100;
+      return [{ id: sp.id, x: round(Math.min(100 - w, Math.max(0, num(sp.x, 0)))), y: round(Math.min(100 - h, Math.max(0, num(sp.y, 0)))), w: round(w), h: round(h), action }];
+    });
+    return {
+      id: m.id, kind, name: cleanLabel(m.name, KIOSK_MENU_LIMITS.name) || "Screen", title, style, cols, rows,
+      tiles: kind === "picture" ? [] : tiles,
+      imageUrl: kind === "picture" && isKioskImageUrl(m.imageUrl) ? m.imageUrl : null,
+      spots,
+    };
   });
 }
 
@@ -309,6 +366,14 @@ export function validateKioskLayout(raw: unknown): string[] {
             const n = Number(m[k]), lim = KIOSK_MENU_LIMITS[k];
             if (!Number.isInteger(n) || n < lim.min || n > lim.max) errors.push(`"${m.name}": ${k === "cols" ? "columns" : "rows"} must be ${lim.min} to ${lim.max}.`);
           }
+        }
+        if (m.kind === "picture") {
+          if (m.imageUrl != null && m.imageUrl !== "" && !isKioskImageUrl(m.imageUrl)) errors.push(`"${m.name}": the picture must be an uploaded picture.`);
+          if (Array.isArray(m.spots) && m.spots.length > KIOSK_MENU_LIMITS.spots) errors.push(`"${m.name}" has more than ${KIOSK_MENU_LIMITS.spots} tap spots.`);
+          for (const sp of Array.isArray(m.spots) ? m.spots : []) {
+            if (sp?.action?.kind === "menu" && !ids.has(sp.action.menuId)) errors.push(`"${m.name}" has a tap spot to a screen that doesn't exist.`);
+          }
+          continue;
         }
         const per = m.style === "single" ? 1 : Number(m.cols) * Number(m.rows);
         if (Array.isArray(m.tiles) && per > 0 && m.tiles.length > per * KIOSK_MENU_LIMITS.pages) errors.push(`"${m.name}" has more than ${KIOSK_MENU_LIMITS.pages} pages.`);
