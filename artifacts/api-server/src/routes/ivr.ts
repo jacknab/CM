@@ -9,14 +9,15 @@
  *   GET  /api/webhook/twilio/ivr/audio/:name   the owner's recorded prompts (menu, after-hours, please-hold), cut from
  *                                              /apps/CM/IVR.wav into booking/public/ivr/
  *
- * Open 7 days a week, 10 a.m.–9 p.m. Eastern (owner, 2026-11-12; as the after-hours recording says). Every webhook checks Twilio's signature.
+ * Open 24 hours for now (owner, 2026-11-13); the usual hours are 7 days a week, 10 a.m.–9 p.m. Eastern (IVR_HOURS.allDay). Every webhook checks Twilio's signature.
  */
 import path from "node:path";
 import fs from "node:fs";
 import twilio from "twilio";
 import type { Express, Request, Response } from "express";
 
-export const IVR_HOURS = { timeZone: "America/New_York", open: 10 * 60, close: 21 * 60 }; // minutes after midnight (owner, 2026-11-12: 10 a.m.–9 p.m., as the recording says)
+// Owner, 2026-11-13: open 24 hours for now (allDay). The usual hours stay here: set allDay to false to go back to 10 a.m.–9 p.m.
+export const IVR_HOURS = { timeZone: "America/New_York", allDay: true, open: 10 * 60, close: 21 * 60 }; // minutes after midnight
 const PROMPTS = new Set(["menu", "after-hours", "please-hold"]);
 const LOG = "[IVR]";
 
@@ -31,11 +32,12 @@ const xml = (v: string) => v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const twiml = (res: Response, body: string) => res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response>${body}</Response>`);
 const audio = (name: string) => `${appUrl()}/api/webhook/twilio/ivr/audio/${name}.wav`;
 
-/** Open now? Minutes since midnight in Eastern time against 10:00–21:00, every day. */
-export function ivrOpen(now = new Date()): boolean {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: IVR_HOURS.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+/** Open now? Always, while allDay is on; otherwise minutes since midnight in Eastern time against 10:00–21:00, every day. */
+export function ivrOpen(now = new Date(), hours: { timeZone: string; allDay: boolean; open: number; close: number } = IVR_HOURS): boolean {
+  if (hours.allDay) return true;
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: hours.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
   const mins = Number(parts.find((p) => p.type === "hour")?.value) * 60 + Number(parts.find((p) => p.type === "minute")?.value);
-  return mins >= IVR_HOURS.open && mins < IVR_HOURS.close;
+  return mins >= hours.open && mins < hours.close;
 }
 
 /** Where each key goes (each line keeps its own webhook; `via=ivr` skips its own intro). */
