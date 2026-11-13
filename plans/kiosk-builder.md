@@ -128,5 +128,9 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   Edit / Live preview). The chosen button / tap spot is edited in a card at the top of the panel. "Starting
   design" card removed: Words › "What clients call your staff" (shared STAFF_TITLES, all 5 languages) and
   Configurations › "Start over from a business-type design". Kiosk Extras: pages/kiosk-builder/extras.tsx.
+- 2026-11-13: **Built-in guide** (owner: "I have no idea how to use this builder"): Help in the top bar, "How this
+  works" under every section, opens by itself on Start here the first time a browser opens the builder. Content in
+  pages/kiosk-builder/help.ts (19 topics: getting started, each section, how-to recipes, glossary, troubleshooting);
+  KEEP IT TRUE when the builder changes. Template now shows example buttons at real size + pixel rulers.
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

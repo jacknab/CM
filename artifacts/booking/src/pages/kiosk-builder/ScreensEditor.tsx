@@ -44,6 +44,34 @@ function downloadTemplate() {
   g.setLineDash([18, 12]); g.strokeStyle = "#94a3b8"; g.lineWidth = 3;
   g.strokeRect(48, 48, W - 96, H - 96);
   g.setLineDash([]);
+  // Pixel numbers along the top and left edges, every 120 px (one grey square), to measure any part of a design.
+  g.fillStyle = "#94a3b8"; g.font = "18px sans-serif";
+  g.textAlign = "center";
+  for (let x = 120; x < W; x += 120) g.fillText(String(x), x, 30);
+  g.textAlign = "left";
+  for (let y = 120; y < H; y += 120) g.fillText(String(y), 58, y - 6);
+  // Example buttons at real size: the smallest a finger can tap reliably, a comfortable one, a big one.
+  const examples: Array<{ x: number; w: number; h: number; name: string }> = [
+    { x: 96, w: 160, h: 100, name: "Smallest" },
+    { x: 296, w: 240, h: 160, name: "Comfortable" },
+    { x: 576, w: 440, h: 200, name: "Big" },
+  ];
+  const top = 210;
+  g.fillStyle = "#334155"; g.font = "bold 30px sans-serif"; g.textAlign = "left";
+  g.fillText("Button sizes, shown at real size", 96, 160);
+  g.fillStyle = "#64748b"; g.font = "22px sans-serif";
+  g.fillText("A guide only: design over it, or keep it as a bottom layer and hide it before you save.", 96, 192);
+  for (const e of examples) {
+    const r = 18;
+    g.beginPath();
+    g.moveTo(e.x + r, top); g.arcTo(e.x + e.w, top, e.x + e.w, top + e.h, r); g.arcTo(e.x + e.w, top + e.h, e.x, top + e.h, r);
+    g.arcTo(e.x, top + e.h, e.x, top, r); g.arcTo(e.x, top, e.x + e.w, top, r); g.closePath();
+    g.fillStyle = "#e2e8f0"; g.fill();
+    g.strokeStyle = "#475569"; g.lineWidth = 3; g.stroke();
+    g.fillStyle = "#1e293b"; g.textAlign = "center";
+    g.font = "bold 26px sans-serif"; g.fillText(`${e.w} × ${e.h}`, e.x + e.w / 2, top + e.h / 2 - 4);
+    g.font = "22px sans-serif"; g.fillText(e.name, e.x + e.w / 2, top + e.h / 2 + 26);
+  }
   // Where the kiosk footer goes when a screen shows it (Back, total, Continue): keep tap spots out of it.
   const fy = Math.round(H * (1 - KIOSK_PICTURE_FOOTER_PCT / 100));
   g.fillStyle = "rgba(148,163,184,0.25)"; g.fillRect(0, fy, W, H - fy);
@@ -54,7 +82,7 @@ function downloadTemplate() {
   g.font = "40px sans-serif"; g.fillText("1080 × 1920 px · 15\" kiosk, standing", W / 2, H / 2 - 50);
   g.font = "30px sans-serif"; g.fillStyle = "#64748b";
   ["Design the whole screen on this canvas, then save it as JPG or PNG.", "Keep words and buttons inside the dashed line.",
-    "Make each button at least 160 × 100 px so a finger can tap it.", "Each grey square is 120 × 120 px."]
+    "Make each button at least 160 × 100 px (see the examples at the top).", "Each grey square is 120 × 120 px; the numbers on the edges are pixels."]
     .forEach((line, i) => g.fillText(line, W / 2, H / 2 + 40 + i * 48));
   const a = document.createElement("a");
   a.href = cv.toDataURL("image/png");
@@ -145,6 +173,8 @@ export function ScreensEditor(props: {
   previewScreen: (menuId: string) => void;
   /** The Kiosk Extras (one list for the whole builder). */
   extras: KioskExtrasStore;
+  /** Opens the built-in guide on a topic (./help.ts). */
+  onHelp?: (topic: "builders" | "easy" | "picture" | "recipe-shapes") => void;
   /** Where the page puts the two parts: the settings panel, and the canvas (null: show the live preview). */
   children: (parts: { panel: React.ReactNode; canvas: React.ReactNode | null }) => React.ReactNode;
 }) {
@@ -334,7 +364,10 @@ export function ScreensEditor(props: {
           </button>
         ))}
       </div>
-      <p className="text-xs text-slate-500">A kiosk uses one builder. Switching starts the screens over.</p>
+      <p className="text-xs text-slate-500">
+        A kiosk uses one builder. Switching starts the screens over.{" "}
+        {props.onHelp && <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("builders")} data-testid="help-builders">Which should I choose?</button>}
+      </p>
     </section>
   );
 
@@ -701,7 +734,10 @@ export function ScreensEditor(props: {
                 <p className="text-sm font-medium text-slate-800">Tap spots</p>
                 <Button size="sm" variant="outline" disabled={menu.spots.length >= KIOSK_MENU_LIMITS.spots} onClick={() => addSpot()} data-testid="picture-add-spot">Add tap spot</Button>
               </div>
-              <p className="text-xs text-slate-500">A tap spot is an invisible button. Place it over a part of your picture and choose what it does.</p>
+              <p className="text-xs text-slate-500">
+                A tap spot is an invisible button. Place it over a part of your picture and choose what it does.{" "}
+                {props.onHelp && <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("picture")}>Show me how</button>}
+              </p>
               <div className="space-y-1">
                 {menu.spots.map((sp) => (
                   <button key={sp.id} type="button" onClick={() => setSpotId(sp.id)}
@@ -732,7 +768,9 @@ export function ScreensEditor(props: {
               <span className="block mt-1">Empty: the kiosk's own greeting, in every language. {"{name}"} is the client's first name.</span>
             </label>
             <div>
-              <p className="text-xs text-slate-500 mb-1.5">Layout</p>
+              <p className="text-xs text-slate-500 mb-1.5">
+                Layout{props.onHelp && <> · <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("easy")}>How layouts work</button></>}
+              </p>
               <div className="grid grid-cols-5 gap-1.5">
                 {LAYOUTS.map((l) => (
                   <button key={l.key} type="button" data-testid={`screens-layout-${l.key}`}

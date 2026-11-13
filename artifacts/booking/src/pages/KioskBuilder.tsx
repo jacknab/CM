@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowLeft, ArrowUp, ExternalLink, FolderOpen, History, Loader2, Upload } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, CircleHelp, ExternalLink, FolderOpen, History, Loader2, Upload } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,8 @@ import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kio
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensEditor, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
+import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
+import { SECTION_HELP, type HelpTopicId } from "@/pages/kiosk-builder/help";
 import { currentStaffTitle, STAFF_TEXT_KEYS, STAFF_TITLES, staffTextFor } from "@shared/kiosk/presets";
 
 interface BuilderState {
@@ -155,6 +157,17 @@ export default function KioskBuilder() {
   // The builder's sections (left rail); the middle panel shows the chosen one, the right the 15" kiosk.
   const [section, setSection] = useState<SectionKey>("look");
   const extrasStore = useKioskExtras();
+  // The built-in guide. It opens by itself on Start here the first time this browser opens the builder.
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpTopic, setHelpTopic] = useState<HelpTopicId>("start");
+  const openHelp = (t: HelpTopicId) => { setHelpTopic(t); setHelpOpen(true); };
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("certxa.kioskBuilder.helpSeen") === "1") return;
+      localStorage.setItem("certxa.kioskBuilder.helpSeen", "1");
+    } catch { return; }
+    openHelp("start");
+  }, []);
   // Screens tab: editing the screen, or the live kiosk preview (the same one the Settings tab shows).
   const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
   // Saved configurations (named designs to load, export, import).
@@ -473,6 +486,7 @@ export default function KioskBuilder() {
             <span className="text-xs text-slate-500" data-testid="kiosk-builder-save-status">
               {saving === "saving" ? "Saving…" : saving === "saved" ? "Draft saved" : saving === "error" ? "Not saved" : ""}
             </span>
+            <Button variant="outline" size="sm" onClick={() => openHelp(helpTopic)} className="gap-1.5" data-testid="kiosk-builder-help"><CircleHelp className="w-4 h-4" /> Help</Button>
             <Button variant="outline" size="sm" onClick={openConfigs} className="gap-1.5" data-testid="kiosk-builder-configs"><FolderOpen className="w-4 h-4" /> Configurations</Button>
             <Button variant="outline" size="sm" onClick={openHistory} className="gap-1.5"><History className="w-4 h-4" /> History</Button>
             <Button size="sm" disabled={!state.unpublishedChanges || saving === "saving" || saving === "error"} onClick={() => setPublishOpen(true)}
@@ -502,7 +516,10 @@ export default function KioskBuilder() {
               <div className="w-[420px] shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50">
                 <div className="px-5 pt-5 pb-3">
                   <h2 className="text-lg font-semibold text-slate-900">{sec.name}</h2>
-                  <p className="text-sm text-slate-500">{sec.about}</p>
+                  <p className="text-sm text-slate-500">
+                    {sec.about}{" "}
+                    <button type="button" className="underline text-slate-700" onClick={() => openHelp(SECTION_HELP[sec.key])} data-testid="section-help">How this works</button>
+                  </p>
                 </div>
                 <div className="px-4 pb-6 space-y-4">{panel}</div>
               </div>
@@ -513,7 +530,7 @@ export default function KioskBuilder() {
             if (!catalog) return layout(<div className="flex items-center gap-2 text-slate-500 py-10"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>, renderPreview());
             return (
               <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
-                renderPreview={renderPreview} view={screensView} onView={setScreensView} extras={extrasStore}
+                renderPreview={renderPreview} view={screensView} onView={setScreensView} extras={extrasStore} onHelp={openHelp}
                 previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
                 {({ panel, canvas }) => layout(panel, canvas ?? renderPreview())}
               </ScreensEditor>
@@ -749,7 +766,8 @@ export default function KioskBuilder() {
           <SheetHeader><SheetTitle>Kiosk configurations</SheetTitle></SheetHeader>
           <p className="text-sm text-slate-500 mt-1">
             Save designs under a name, load one back into your draft, or export one to a file to keep or use at another location.
-            Nothing here changes your kiosk until you publish.
+            Nothing here changes your kiosk until you publish.{" "}
+            <button type="button" className="underline text-slate-700" onClick={() => openHelp("configurations")}>How this works</button>
           </p>
 
           <div className="mt-5 space-y-2">
@@ -851,6 +869,8 @@ export default function KioskBuilder() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <HelpGuide open={helpOpen} onOpenChange={setHelpOpen} topic={helpTopic} onTopic={setHelpTopic} />
 
       {/* ── History ── */}
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
