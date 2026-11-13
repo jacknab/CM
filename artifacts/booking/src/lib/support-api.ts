@@ -18,6 +18,8 @@ export interface OfflineFix { id: number; deviceId: string | null; command: stri
 export interface OfflineHealthVerdict { score: number | null; problems: OfflineHealthProblem[]; devices: number; fixes?: OfflineFix[] }
 export interface OfflineHealthSalon extends OfflineHealthVerdict { storeId: number; name: string; slug: string | null; checkedAt: string; lastReportAt: string | null }
 
+export interface EmailBlock { id: number; kind: "address" | "domain"; value: string; ticketId: number | null; createdBy: string | null; createdAt: string; ticketSubject: string | null }
+
 export const supportApi = {
   /** Every salon with tablets reporting their offline health, worst first. */
   offlineHealth: () => request<{ salons: OfflineHealthSalon[] }>(`/offline-health`),
@@ -112,6 +114,11 @@ export const supportApi = {
       request<{ ok: boolean; scanned: number; errors: string[] }>(`/email-rescan`, { method: "POST", body: JSON.stringify({ days }) }),
     emailStatus: () =>
       request<EmailSyncStatus>(`/email-status`),
+  },
+  /** Senders blocked by Mark as Junk. */
+  emailBlocks: {
+    list: () => request<{ blocks: EmailBlock[] }>(`/email-blocks`),
+    remove: (id: number) => request<{ ok: boolean }>(`/email-blocks/${id}`, { method: "DELETE" }),
   },
 };
 

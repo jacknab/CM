@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { appAlert } from "@/lib/confirm";
+import { appAlert, confirm } from "@/lib/confirm";
 import { useDraft } from "@/hooks/use-draft";
 import {
   MessageSquare, RefreshCw, ChevronDown, Filter, SlidersHorizontal,
@@ -9,11 +9,11 @@ import {
   User, Clock, Tag, Link2, LogIn, Zap, Lock, Activity,
   Mail, Phone, Globe, MessageCircle, ChevronRight, ChevronLeft,
   AlertTriangle, CheckCircle, StickyNote, X, Wifi, WifiOff, Info,
-  Send, Reply, Search,
+  Send, Reply, Search, Ban,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { safeDistanceToNow, safeFormat } from "@/lib/utils";
-import { supportApi, type TicketListItem, type TicketDetail, type TicketMessage, type EmailSyncStatus } from "@/lib/support-api";
+import { supportApi, type EmailBlock, type TicketListItem, type TicketDetail, type TicketMessage, type EmailSyncStatus } from "@/lib/support-api";
 
 // ─── Badge helpers ────────────────────────────────────────────────────────────
 const CHANNEL_CONFIG: Record<string, { icon: React.ReactNode; bg: string; text: string; label: string }> = {
@@ -221,12 +221,67 @@ function EmailStatusPanel({ onClose }: { onClose: () => void }) {
 }
 
 // ─── Ticket list panel ────────────────────────────────────────────────────────
+/** Senders blocked by Mark as Junk: their mail never becomes a ticket. Unblock lets it through again. */
+function BlockedSendersPanel() {
+  const qc = useQueryClient();
+  const [q, setQ] = useState("");
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["support-email-blocks"],
+    queryFn: () => supportApi.emailBlocks.list(),
+    staleTime: 10_000,
+  });
+  const unblock = useMutation({
+    mutationFn: (id: number) => supportApi.emailBlocks.remove(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["support-email-blocks"] }),
+    onError: (e: Error) => { void appAlert(e.message, "Error"); },
+  });
+  const blocks: EmailBlock[] = data?.blocks ?? [];
+  const shown = q.trim() ? blocks.filter((b) => b.value.includes(q.trim().toLowerCase())) : blocks;
+  return (
+    <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 max-h-80 flex flex-col" data-testid="blocked-senders">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] font-semibold text-slate-700">Blocked senders{blocks.length ? ` (${blocks.length})` : ""}</span>
+      </div>
+      <p className="text-[10px] text-slate-500 mb-1.5">Mail from these never becomes a ticket. A domain covers every address at it.</p>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a sender…"
+        className="w-full mb-1.5 px-2 py-1 border border-slate-200 rounded text-[11px] bg-white focus:outline-none focus:border-indigo-300" />
+      <div className="overflow-y-auto flex-1 min-h-0">
+        {isLoading ? <p className="text-[11px] text-slate-400 py-1">Loading…</p>
+          : error ? <p className="text-[11px] text-rose-600 py-1">{(error as Error).message}</p>
+          : shown.length === 0 ? <p className="text-[11px] text-slate-400 py-1">{blocks.length ? "No match." : "No blocked senders."}</p>
+          : shown.map((b) => (
+            <div key={b.id} className="flex items-center justify-between gap-2 py-1 border-b border-slate-100 last:border-0" data-testid="blocked-sender">
+              <div className="min-w-0">
+                <p className="text-[11px] text-slate-800 truncate" title={b.value}>{b.kind === "domain" ? `Anyone at ${b.value}` : b.value}</p>
+                <p className="text-[10px] text-slate-400 truncate" title={b.ticketSubject ?? undefined}>
+                  {b.createdBy ?? "Junk"} · {safeFormat(b.createdAt, "MMM d")}{b.ticketSubject ? ` · ${b.ticketSubject}` : ""}
+                </p>
+              </div>
+              <button type="button" disabled={unblock.isPending}
+                onClick={async () => {
+                  const ok = await confirm(b.kind === "domain"
+                    ? `Unblock everyone at ${b.value}? Their new e-mails will become tickets again.`
+                    : `Unblock ${b.value}? Their new e-mails will become tickets again.`);
+                  if (ok) unblock.mutate(b.id);
+                }}
+                className="flex-shrink-0 px-2 py-0.5 border border-slate-200 rounded text-[10px] text-slate-600 hover:border-indigo-300 hover:text-indigo-600 bg-white transition"
+                data-testid="unblock-sender">
+                Unblock
+              </button>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
 function TicketListPanel({ selectedId, onSelect }: { selectedId: number | null; onSelect: (id: number) => void }) {
   const qc = useQueryClient();
   const [filter, setFilter] = useState("open");
   const [search, setSearch] = useState("");
   const [showFilterDrop, setShowFilterDrop] = useState(false);
   const [showEmailStatus, setShowEmailStatus] = useState(false);
+  const [showBlocked, setShowBlocked] = useState(false);
   const filterLabel = FILTER_OPTIONS.find(f => f.value === filter)?.label ?? "Tickets";
 
   const { data, isLoading } = useQuery({
@@ -251,6 +306,14 @@ function TicketListPanel({ selectedId, onSelect }: { selectedId: number | null; 
               className={clsx("p-1.5 rounded transition", showEmailStatus ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-indigo-600")}
             >
               <Mail size={12} />
+            </button>
+            <button
+              onClick={() => setShowBlocked(s => !s)}
+              title="Blocked senders"
+              data-testid="blocked-senders-toggle"
+              className={clsx("p-1.5 rounded transition", showBlocked ? "text-indigo-600 bg-indigo-50" : "text-slate-400 hover:text-indigo-600")}
+            >
+              <Ban size={12} />
             </button>
             <button onClick={() => qc.invalidateQueries({ queryKey: ["support-tickets-list"] })} className="p-1.5 text-slate-400 hover:text-slate-600 rounded transition">
               <RefreshCw size={12} className={isLoading ? "animate-spin" : ""} />
@@ -279,6 +342,7 @@ function TicketListPanel({ selectedId, onSelect }: { selectedId: number | null; 
       </div>
 
       {showEmailStatus && <EmailStatusPanel onClose={() => setShowEmailStatus(false)} />}
+      {showBlocked && <BlockedSendersPanel />}
 
       <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2">
         <button className="flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 rounded-lg text-[11px] text-slate-600 hover:bg-slate-50 transition">
@@ -831,6 +895,7 @@ function TicketDetailView({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["support-ticket-detail", ticketId] });
       qc.invalidateQueries({ queryKey: ["support-tickets-list"] });
+      qc.invalidateQueries({ queryKey: ["support-email-blocks"] });
     },
   });
 

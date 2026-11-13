@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { blockJunkSender, unblockSender } from "../lib/supportEmailBlocks";
+import { blockJunkSender, listEmailBlocks, removeEmailBlock, unblockSender } from "../lib/supportEmailBlocks";
 import { BOOKING_THEMES } from "./bookingSite";
 import { liftTrialSuspension } from "../services/trial-expiration";
 import { emailButton, emailGreeting, emailNote, emailText, escapeEmailHtml } from "../lib/emailLayout";
@@ -1651,6 +1651,31 @@ router.patch("/api/support/tickets/:ticketId", requireSupportAuth, async (req: R
   } catch (e: any) {
     console.error("[Update Ticket]", e.message);
     res.status(500).json({ error: "Failed to update ticket" });
+  }
+});
+
+// ─── Blocked e-mail senders (Mark as Junk, lib/supportEmailBlocks.ts) ──────────
+
+router.get("/api/support/email-blocks", requireSupportAuth, async (_req: Request, res: Response) => {
+  try {
+    res.json({ blocks: await listEmailBlocks() });
+  } catch (e: any) {
+    console.error("[Email Blocks]", e.message);
+    res.status(500).json({ error: "Couldn't load the blocked senders" });
+  }
+});
+
+router.delete("/api/support/email-blocks/:blockId", requireSupportAuth, async (req: Request, res: Response) => {
+  const id = paramInt(req.params.blockId);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid block ID" });
+  try {
+    const removed = await removeEmailBlock(id);
+    if (!removed) return res.status(404).json({ error: "That sender isn't blocked" });
+    await logActivity(req.session.supportAgentId!, null, "email_unblocked", req.session.supportAgentName!, removed);
+    res.json({ ok: true });
+  } catch (e: any) {
+    console.error("[Email Unblock]", e.message);
+    res.status(500).json({ error: "Couldn't unblock the sender" });
   }
 });
 

@@ -86,3 +86,21 @@ export async function unblockSender(ticketId: number): Promise<void> {
     [clean(email), baseDomain(email)],
   );
 }
+
+export interface EmailBlockRow { id: number; kind: "address" | "domain"; value: string; ticketId: number | null; createdBy: string | null; createdAt: string; ticketSubject: string | null }
+
+/** Every blocked address and domain, newest first, with the subject of the junk ticket that blocked it. */
+export async function listEmailBlocks(): Promise<EmailBlockRow[]> {
+  const r = await pool.query(
+    `SELECT b.id, b.kind, b.value, b.ticket_id, b.created_by_name, b.created_at, t.subject
+     FROM support_email_blocks b LEFT JOIN support_tickets t ON t.id = b.ticket_id
+     ORDER BY b.created_at DESC, b.value`,
+  );
+  return r.rows.map((x) => ({ id: x.id, kind: x.kind, value: x.value, ticketId: x.ticket_id, createdBy: x.created_by_name, createdAt: x.created_at, ticketSubject: x.subject ?? null }));
+}
+
+/** Lifts one block. Their mail makes tickets again from the next sync; closed junk tickets stay closed. */
+export async function removeEmailBlock(id: number): Promise<{ kind: string; value: string } | null> {
+  const r = await pool.query(`DELETE FROM support_email_blocks WHERE id = $1 RETURNING kind, value`, [id]);
+  return r.rows[0] ?? null;
+}
