@@ -1,7 +1,7 @@
 /**
  * Kiosk Builder › the left Screens panel (owner, 2026-11-13: "exactly like" the /nail grid editor's Grids panel).
- * Lists the configuration's own screens; a click opens one in the editor. "New screen" adds a blank one, opens it
- * and asks for its name; the name box and Delete screen work on the open screen.
+ * Lists the configuration's own screens; a click opens one in the editor. "New screen" adds one with a temporary
+ * name ("Screen 3"), opens it and selects the name to type over; the name box and Delete screen work on the open screen.
  */
 import { useEffect, useRef } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -22,7 +22,8 @@ export function ScreensPanel(props: {
   const { draft, activeId } = props;
   const active = draft.menus.find((m) => m.id === activeId) ?? null;
   const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (props.focusName) nameRef.current?.focus(); }, [props.focusName]);
+  // A new screen's temporary name is selected, so typing replaces it.
+  useEffect(() => { if (props.focusName) { nameRef.current?.focus(); nameRef.current?.select(); } }, [props.focusName]);
   return (
     <div className="kx-screens-wrap">
       <aside className="kx-screens" data-testid="screens-panel">

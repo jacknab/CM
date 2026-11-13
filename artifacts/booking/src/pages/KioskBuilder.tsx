@@ -467,7 +467,13 @@ export default function KioskBuilder() {
   };
   const newScreen = () => {
     let sid = "";
-    update((d) => { const r = withNewScreen(d, ""); sid = r.id; return r.layout; });
+    // A temporary name ("Screen 3"), the next one not in use; the owner renames it any time.
+    update((d) => {
+      const taken = new Set(d.menus.map((m) => m.name.trim().toLowerCase()));
+      let n = d.menus.length + 1;
+      while (taken.has(`screen ${n}`)) n++;
+      const r = withNewScreen(d, `Screen ${n}`); sid = r.id; return r.layout;
+    });
     setScreenId(sid); openOwnScreens(); setFocusName((n) => n + 1);
   };
   const screensPanel = (
