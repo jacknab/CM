@@ -5,6 +5,7 @@ import { setSalonTimeZone } from "@/lib/salonClock";
 import { printNativeCheckinTicket, slipServiceNames } from "../lib/native-checkin-ticket";
 import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
+import { KioskMenuScreen } from "../components/kiosk/KioskMenuScreen";
 import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
@@ -36,7 +37,7 @@ import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 import { keepSocketAlive } from "@/lib/ws-keepalive";
 type Screen =
   | "idle" | "phone" | "loading" | "welcome"
-  | "name_entry" | "service_type" | "services" | "service_options"
+  | "name_entry" | "service_type" | "services" | "service_options" | "menu"
   | "nail_size" | "nail_shape" | "nail_effects"
   | "addons" | "stylist" | "review" | "ticket"
   | "appointment_confirmed" | "error" | "wait_confirm" | "fully_booked"
@@ -433,6 +434,10 @@ function KioskCheckInScreens() {
   const [layout, setLayout] = useState<KioskLayout>(STARTING_LAYOUT);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
+  // The business's own screens (layout.menuMode "screens"): the screens opened so far (back closes the last one)
+  // and the page shown on the top one.
+  const [menuStack, setMenuStack] = useState<string[]>([]);
+  const [menuPage, setMenuPage] = useState(0);
   useEffect(() => {
     document.documentElement.classList.toggle("kx-nail", NAIL_LOOK);
     return () => { document.documentElement.classList.remove("kx-nail"); };
@@ -682,6 +687,7 @@ function KioskCheckInScreens() {
     setParentServiceForOptions(null); setSelectedOption(null);
     setNailCfg(null); setNailSize(null); setNailShape(null); setNailEffect(null);
     setSmart(null); offeredRef.current = { serviceIds: [], addonId: null }; waitingServiceRef.current = null;
+    setMenuStack([]); setMenuPage(0);
     if (cdownRef.current) clearInterval(cdownRef.current);
   }, [cancelPendingMarker]);
 
@@ -706,8 +712,12 @@ function KioskCheckInScreens() {
   // `then`: where to go when someone is free — the category cards, or (a category picked on the welcome screen)
   // that category's services.
   // The category cards, unless the layout switched them off (then every service on one list).
-  const firstStepScreen = (then: "service_type" | "services"): Screen =>
-    then === "service_type" && !kioskFlow(layoutRef.current).includes("category") ? "services" : then;
+  const firstStepScreen = (then: "service_type" | "services"): Screen => {
+    const l = layoutRef.current;
+    // The business's own screens take the place of the category cards and the service list.
+    if (l.menuMode === "screens" && l.startMenuId) { setMenuStack([l.startMenuId]); setMenuPage(0); return "menu"; }
+    return then === "service_type" && !kioskFlow(l).includes("category") ? "services" : then;
+  };
 
   const checkAvailabilityAndRoute = useCallback(async (then: "service_type" | "services" = "service_type") => {
     if (PREVIEW) { setScreen(firstStepScreen(then)); return; }
@@ -937,6 +947,7 @@ function KioskCheckInScreens() {
     if (id === "questions") return nailCfgHasOptions(cfg);
     if (id === "addons") return addonsFor(svc).length > 0;
     if (id === "provider") return allStaff.length > 0;
+    if (id === "category") return layout.menuMode !== "screens";
     return true;
   };
 
@@ -958,7 +969,7 @@ function KioskCheckInScreens() {
     if (id === "provider") return setScreen("stylist");
     if (id === "review") return setScreen("review");
     if (id === "category") return setScreen("service_type");
-    if (id === "services") return setScreen("services");
+    if (id === "services") return setScreen(layout.menuMode === "screens" && menuStack.length ? "menu" : layout.menuMode === "screens" ? firstStepScreen("services") : "services");
     backToStart();
   };
 
@@ -1126,7 +1137,7 @@ function KioskCheckInScreens() {
       case "welcome": return resetToIdle();
       case "phone": return setScreen("phone");
       case "category": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); return setScreen(firstStepScreen("service_type"));
-      case "services": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); setSvcPage(0); return setScreen("services");
+      case "services": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); setSvcPage(0); return setScreen(layout.menuMode === "screens" ? firstStepScreen("services") : "services");
       case "addons": withSample(); return enterStep("addons", selectedServices[0] ?? sample, null);
       case "provider": withSample(); return setScreen("stylist");
       case "review": withSample(); return setScreen("review");
@@ -2197,6 +2208,63 @@ function KioskCheckInScreens() {
 
   const fmtPrice = (p: number) => `$${p % 1 === 0 ? p : p.toFixed(2)}`;
 
+  // ── THE BUSINESS'S OWN SCREENS (Kiosk Builder) ───────────────────────────────
+  if (screen === "menu") {
+    const menusById = new Map(layout.menus.map((m) => [m.id, m]));
+    const current = menusById.get(menuStack[menuStack.length - 1] ?? "") ?? (layout.startMenuId ? menusById.get(layout.startMenuId) : undefined);
+    if (current) {
+      const svcById = new Map(allServices.map((sv) => [sv.id, sv]));
+      const own = current.title[lang]?.trim() || current.title.en?.trim();
+      const tapTile = (tile: { kind: string; serviceId?: number; menuId?: string }) => {
+        kick();
+        if (tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId)) { setMenuStack((st) => [...st, tile.menuId!]); setMenuPage(0); return; }
+        const svc = tile.serviceId != null ? svcById.get(tile.serviceId) : undefined;
+        if (!svc) return;
+        if ((svc.optionCount ?? (serviceOptionsMap[svc.id]?.length ?? 0)) > 0) {
+          setParentServiceForOptions(svc); setSelectedOption(null); setScreen("service_options"); return;
+        }
+        toggleSvc(svc);
+      };
+      const back = () => {
+        kick();
+        if (menuStack.length > 1) { setMenuStack((st) => st.slice(0, -1)); setMenuPage(0); return; }
+        goBack("services");
+      };
+      return (
+        <div className="fixed inset-0 select-none" onContextMenu={e => e.preventDefault()} style={NO_SELECT} data-testid="kiosk-menu-screen">
+          <KioskMenuScreen
+            menu={current} page={menuPage} onPage={(pg) => { kick(); setMenuPage(pg); }}
+            services={svcById as any} menus={menusById}
+            heading={own ? fillKioskText(own, { name: clientFirst }) : t.whatBringsYouIn(clientFirst)}
+            eyebrow={storeConfig?.name ? `Check-in — ${storeConfig.name}` : undefined}
+            colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, tint: TINT }}
+            serif={NAIL_LOOK} showPrice={showPrice} showDuration={showDuration}
+            selectedServiceIds={selectedServices.map((sv) => sv.id)}
+            mode="kiosk" onTile={tapTile}
+            footer={
+              <div className="shrink-0 px-6 py-4 flex items-center gap-4"
+                style={{ background: SURFACE, borderTop: `2px solid ${BORDER}` }}>
+                <GhostBtn onPress={back} size="sm">{t.backBtn}</GhostBtn>
+                <div className="flex-1 min-w-0 truncate text-base" style={{ color: SUBTLE }}>
+                  {svcLimitNote
+                    ? (layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
+                      : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10)))
+                    : selectedServices.length ? selectedServices.map((sv) => sv.name).join(" + ") : t.noServiceSelected}
+                </div>
+                {selectedServices.length > 0 && showPrice && (
+                  <p className="text-2xl font-black shrink-0" style={{ color: TEXT }}>{fmtPrice(selTotal)}</p>
+                )}
+                <PrimaryBtn onPress={() => selectedServices.length > 0 && afterServiceChosen()} disabled={selectedServices.length === 0} size="md">
+                  {t.continueBtn}
+                </PrimaryBtn>
+              </div>
+            }
+          />
+        </div>
+      );
+    }
+  }
+
   // ── SERVICES ────────────────────────────────────────────────────────────────
   if (screen === "services") {
     const displayServices = filteredServices ?? allServices;
@@ -2586,7 +2654,7 @@ function KioskCheckInScreens() {
         {/* ── Footer ── */}
         <div className="shrink-0 px-6 py-4 flex items-center gap-4"
           style={{ background: SURFACE, borderTop: `2px solid ${BORDER}`, boxShadow: "0 -4px 20px rgba(80,0,120,0.06)" }}>
-          <GhostBtn onPress={() => setScreen("services")} size="sm">{t.backBtn}</GhostBtn>
+          <GhostBtn onPress={() => setScreen(layout.menuMode === "screens" && menuStack.length ? "menu" : "services")} size="sm">{t.backBtn}</GhostBtn>
           <div className="flex-1 flex items-center gap-2 overflow-hidden">
             {selectedOption ? (
               <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold flex-shrink-0"

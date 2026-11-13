@@ -91,5 +91,12 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   kiosk in a frame (/kiosk/:slug?preview=draft: draft layout, every active staff member, no lookup / check-in /
   slip / device report; the builder sends refresh and go-to-screen messages). Checked end to end on the isolated
   test server (scratch DB, 13/13).
-- Next: Phase 4 (grid layout per screen), Phase 5 (service questions for every business type). Still to retire:
+- 2026-11-13: **Phase 4 LIVE — Screens (POS-style grid editor).** Owner request: create their own menu screens, pick
+  the layout (one centered, or 1/2/3/4 across × 1–6 rows), always inside the 15" portrait kiosk (9:16). layout.menus /
+  menuMode "screens" / startMenuId (shared/kiosk/layout.ts normalizeMenus); buttons = a service or a link to another
+  screen (folder), own label/picture; up to 40 screens, 10 pages each. components/kiosk/KioskMenuScreen.tsx draws both
+  the kiosk screen and the builder canvas (container units → same look at any size). Builder › Screens tab
+  (pages/kiosk-builder/ScreensEditor.tsx): build from catalog, fill from a category, tap/drag slots, pages.
+  Checked on the isolated server: build → 4×2 → fill → publish → client walk on 1080×1920 → real check-in.
+- Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

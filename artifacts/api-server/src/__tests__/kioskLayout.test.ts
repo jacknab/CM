@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { businessTypeOf } from "@shared/kiosk/businessTypes";
-import { kioskFlow, nextKioskStep, normalizeKioskLayout, normalizeSteps, previousKioskStep, validateKioskLayout } from "@shared/kiosk/layout";
+import { kioskFlow, menuPageCount, nextKioskStep, normalizeKioskLayout, normalizeSteps, previousKioskStep, validateKioskLayout } from "@shared/kiosk/layout";
 import { defaultKioskLayout, KIOSK_PRESETS } from "@shared/kiosk/presets";
 import { fillKioskText, resolveKioskText } from "@shared/kiosk/text";
 
@@ -122,5 +122,49 @@ describe("kiosk text", () => {
   });
   it("fills the name", () => {
     expect(fillKioskText("Hi {name}!", { name: "Ann" })).toBe("Hi Ann!");
+  });
+});
+
+describe("screens", () => {
+  const svc = (id: string, serviceId: number) => ({ id, kind: "service", serviceId });
+  it("keeps good screens and drops broken buttons and links", () => {
+    const l = normalizeKioskLayout({
+      menuMode: "screens", startMenuId: "home",
+      menus: [
+        { id: "home", name: "Home", style: "grid", cols: 2, rows: 2, tiles: [
+          { id: "t1", kind: "menu", menuId: "nails", label: "  Nails  " },
+          svc("t2", 5),
+          { id: "t3", kind: "menu", menuId: "gone" },   // no such screen
+          { id: "t4", kind: "menu", menuId: "home" },   // links to itself
+          svc("t2", 6),                                 // repeated button id
+          null, null,
+        ] },
+        { id: "nails", name: "Nails", style: "single", cols: 4, rows: 6, tiles: [svc("t5", 7), { id: "bad", kind: "service", serviceId: "x" }] },
+        { id: "home", name: "Duplicate" },
+      ],
+    }, "nail");
+    expect(l.menuMode).toBe("screens");
+    expect(l.menus.map((m) => m.id)).toEqual(["home", "nails"]);
+    expect(l.menus[0].tiles).toEqual([{ id: "t1", kind: "menu", menuId: "nails", label: "Nails" }, { id: "t2", kind: "service", serviceId: 5 }]);
+    expect(l.menus[1]).toMatchObject({ style: "single", cols: 1, rows: 1, tiles: [{ id: "t5", kind: "service", serviceId: 7 }] });
+  });
+  it("clamps the grid and keeps at most 10 pages", () => {
+    const tiles = Array.from({ length: 300 }, (_, i) => svc(`t${i}`, i + 1));
+    const [m] = normalizeKioskLayout({ menus: [{ id: "a", name: "A", style: "grid", cols: 9, rows: 0, tiles }] }, "nail").menus;
+    expect([m.cols, m.rows]).toEqual([4, 1]);
+    expect(m.tiles).toHaveLength(40);
+    expect(menuPageCount(m)).toBe(10);
+  });
+  it("falls back to the catalog without a start screen", () => {
+    const l = normalizeKioskLayout({ menuMode: "screens", startMenuId: "nope", menus: [{ id: "a", name: "A", tiles: [] }] }, "nail");
+    expect(l.menuMode).toBe("catalog");
+    expect(l.startMenuId).toBe(null);
+  });
+  it("says what is wrong with a screen", () => {
+    const errors = validateKioskLayout({
+      menuMode: "screens", startMenuId: "x",
+      menus: [{ id: "a", name: "A", style: "grid", cols: 5, rows: 2, tiles: [{ id: "t", kind: "menu", menuId: "zzz" }] }],
+    });
+    expect(errors).toEqual(['"A": columns must be 1 to 4.', '"A" has a button to a screen that doesn\'t exist.', "Choose the screen clients start on."]);
   });
 });

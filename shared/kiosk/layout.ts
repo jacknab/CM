@@ -42,6 +42,50 @@ export interface KioskThemeColors {
   text?: string;
 }
 
+// ── Screens (the owner's own menu screens, like a POS grid) ───────────────────
+
+/**
+ * One button on a screen: a service the client can pick, or a link that opens another screen (a folder).
+ * `label` and `imageUrl` override the service's own name and picture.
+ */
+export interface KioskTile {
+  id: string;
+  kind: "service" | "menu";
+  serviceId?: number;
+  menuId?: string;
+  label?: string;
+  imageUrl?: string | null;
+}
+
+/**
+ * A screen of buttons. "grid": `cols` × `rows` slots per page, filling the screen between its heading and its
+ * footer (never scrolling). "single": one big button in the middle of each page. `tiles[i]` is slot i, counted
+ * across pages (page = floor(i / slotsPerPage)); null is an empty slot.
+ */
+export interface KioskMenu {
+  id: string;
+  /** For the builder's list. */
+  name: string;
+  /** The heading on the screen; empty: the kiosk's own greeting. */
+  title: KioskText;
+  style: "grid" | "single";
+  cols: number;
+  rows: number;
+  tiles: Array<KioskTile | null>;
+}
+
+export const KIOSK_MENU_LIMITS = { menus: 40, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40 } as const;
+
+/** Slots on one page of a screen. */
+export const menuSlotsPerPage = (m: Pick<KioskMenu, "style" | "cols" | "rows">) => (m.style === "single" ? 1 : m.cols * m.rows);
+/** Pages a screen has (at least one). */
+export const menuPageCount = (m: KioskMenu) => {
+  const per = menuSlotsPerPage(m);
+  let last = -1;
+  m.tiles.forEach((t, i) => { if (t) last = i; });
+  return Math.max(1, Math.ceil((last + 1) / per));
+};
+
 export interface KioskLayout {
   schemaVersion: number;
   /** The preset this layout started from. */
@@ -70,6 +114,13 @@ export interface KioskLayout {
   };
   /** The business's own words, by text key (shared/kiosk/text.ts). */
   text: Record<string, KioskText>;
+  /**
+   * "catalog": the category cards and service list built from the catalog (the categories and services steps).
+   * "screens": the business's own screens instead, starting at `startMenuId`.
+   */
+  menuMode: "catalog" | "screens";
+  startMenuId: string | null;
+  menus: KioskMenu[];
 }
 
 export const KIOSK_LIMITS = {
@@ -87,6 +138,9 @@ export const KIOSK_DEFAULTS: Omit<KioskLayout, "preset"> = {
   smartCheckin: true,
   timing: { ticketResetSeconds: 30 },
   text: {},
+  menuMode: "catalog",
+  startMenuId: null,
+  menus: [],
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -138,6 +192,52 @@ function normalizeText(raw: unknown): Record<string, KioskText> {
   return out;
 }
 
+const MENU_ID = /^[A-Za-z0-9_-]{1,40}$/;
+const cleanLabel = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+
+function normalizeTile(raw: unknown, menuIds: Set<string>): KioskTile | null {
+  if (!isObj(raw) || typeof raw.id !== "string" || !MENU_ID.test(raw.id)) return null;
+  const tile: KioskTile = { id: raw.id, kind: raw.kind === "menu" ? "menu" : "service" };
+  if (tile.kind === "service") {
+    const sid = Number(raw.serviceId);
+    if (!Number.isInteger(sid) || sid <= 0) return null;
+    tile.serviceId = sid;
+  } else {
+    if (typeof raw.menuId !== "string" || !menuIds.has(raw.menuId)) return null;
+    tile.menuId = raw.menuId;
+  }
+  const label = cleanLabel(raw.label, KIOSK_MENU_LIMITS.label);
+  if (label) tile.label = label;
+  if (isKioskImageUrl(raw.imageUrl)) tile.imageUrl = raw.imageUrl;
+  return tile;
+}
+
+/** The business's screens: unknown links and broken buttons dropped, sizes clamped, at most 10 pages each. */
+export function normalizeMenus(raw: unknown): KioskMenu[] {
+  const list = (Array.isArray(raw) ? raw : []).filter((m) => isObj(m) && typeof m.id === "string" && MENU_ID.test(m.id));
+  const seen = new Set<string>();
+  const unique = list.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true))).slice(0, KIOSK_MENU_LIMITS.menus);
+  const ids = new Set(unique.map((m) => m.id as string));
+  const tileIds = new Set<string>();
+  return unique.map((m) => {
+    const style: KioskMenu["style"] = m.style === "single" ? "single" : "grid";
+    const cols = style === "single" ? 1 : clampInt(m.cols, KIOSK_MENU_LIMITS.cols, 3);
+    const rows = style === "single" ? 1 : clampInt(m.rows, KIOSK_MENU_LIMITS.rows, 3);
+    const per = style === "single" ? 1 : cols * rows;
+    const tiles = (Array.isArray(m.tiles) ? m.tiles : []).slice(0, per * KIOSK_MENU_LIMITS.pages).map((t: unknown) => {
+      const tile = normalizeTile(t, ids);
+      // A screen never links to itself, and a button id is used once.
+      if (!tile || (tile.kind === "menu" && tile.menuId === m.id) || tileIds.has(tile.id)) return null;
+      tileIds.add(tile.id);
+      return tile;
+    });
+    while (tiles.length && tiles[tiles.length - 1] == null) tiles.pop();
+    const title: KioskText = {};
+    if (isObj(m.title)) for (const lang of KIOSK_LANG_CODES) { const v = cleanLabel(m.title[lang], 60); if (v) title[lang] = v; }
+    return { id: m.id, name: cleanLabel(m.name, KIOSK_MENU_LIMITS.name) || "Screen", title, style, cols, rows, tiles };
+  });
+}
+
 /** Any stored value → a complete layout. `fallbackPreset` is used when the value names none. */
 export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeKey): KioskLayout {
   const r = isObj(raw) ? raw : {};
@@ -166,6 +266,12 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
     smartCheckin: bool(r.smartCheckin, d.smartCheckin),
     timing: { ticketResetSeconds: clampInt(r.timing?.ticketResetSeconds, KIOSK_LIMITS.ticketResetSeconds, d.timing.ticketResetSeconds) },
     text: normalizeText(r.text),
+    ...(() => {
+      const menus = normalizeMenus(r.menus);
+      const start = typeof r.startMenuId === "string" && menus.some((m) => m.id === r.startMenuId) ? r.startMenuId : null;
+      // Own screens only with a start screen to open on.
+      return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, menus };
+    })(),
   };
 }
 
@@ -190,6 +296,29 @@ export function validateKioskLayout(raw: unknown): string[] {
   }
   if (Array.isArray(raw.steps) && raw.steps.some((s: any) => s?.id === "services" && s.enabled === false)) {
     errors.push("The services step can't be switched off.");
+  }
+  if (raw.menus != null) {
+    if (!Array.isArray(raw.menus)) errors.push("The screens are missing.");
+    else {
+      if (raw.menus.length > KIOSK_MENU_LIMITS.menus) errors.push(`At most ${KIOSK_MENU_LIMITS.menus} screens.`);
+      const ids = new Set(raw.menus.map((m: any) => m?.id));
+      for (const m of raw.menus) {
+        if (!isObj(m) || typeof m.id !== "string" || !MENU_ID.test(m.id)) { errors.push("A screen has no id."); continue; }
+        if (m.style === "grid") {
+          for (const k of ["cols", "rows"] as const) {
+            const n = Number(m[k]), lim = KIOSK_MENU_LIMITS[k];
+            if (!Number.isInteger(n) || n < lim.min || n > lim.max) errors.push(`"${m.name}": ${k === "cols" ? "columns" : "rows"} must be ${lim.min} to ${lim.max}.`);
+          }
+        }
+        const per = m.style === "single" ? 1 : Number(m.cols) * Number(m.rows);
+        if (Array.isArray(m.tiles) && per > 0 && m.tiles.length > per * KIOSK_MENU_LIMITS.pages) errors.push(`"${m.name}" has more than ${KIOSK_MENU_LIMITS.pages} pages.`);
+        for (const t of Array.isArray(m.tiles) ? m.tiles : []) {
+          if (t?.kind === "menu" && !ids.has(t.menuId)) errors.push(`"${m.name}" has a button to a screen that doesn't exist.`);
+          if (typeof t?.label === "string" && t.label.trim().length > KIOSK_MENU_LIMITS.label) errors.push(`"${m.name}": a button name is too long.`);
+        }
+      }
+      if (raw.menuMode === "screens" && !ids.has(raw.startMenuId)) errors.push("Choose the screen clients start on.");
+    }
   }
   if (isObj(raw.text)) {
     for (const [key, val] of Object.entries(raw.text)) {

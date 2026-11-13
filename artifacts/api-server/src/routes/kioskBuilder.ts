@@ -7,7 +7,7 @@
  *   GET  /api/kiosk-builder/versions                 published history, newest first
  *   POST /api/kiosk-builder/versions/:version/restore  an old version → the draft
  *   POST /api/kiosk-builder/reset                    a preset → the draft { preset }
- *   POST /api/kiosk-builder/welcome-image            upload the welcome picture (multipart "image") → { url }
+ *   POST /api/kiosk-builder/image                    upload a picture: welcome screen, a screen button (multipart "image") → { url }
  *
  * Needs the store-settings permission (owners and managers by default). The kiosk itself reads the published
  * layout from /api/public/kiosk/:slug/config.
@@ -130,8 +130,9 @@ router.post("/api/kiosk-builder/reset", ...guard, async (req: Request, res: Resp
   }
 });
 
-// The welcome picture. Only stored as a file here; the builder puts its address in the draft.
-router.post("/api/kiosk-builder/welcome-image", ...guard, memoryUpload({ maxSizeMb: 10 }).single("image"), async (req: Request, res: Response) => {
+// A picture for the kiosk (the welcome screen, a button on a screen). Only stored as a file here; the builder puts
+// its address in the draft. (/welcome-image is the first name it had.)
+router.post(["/api/kiosk-builder/image", "/api/kiosk-builder/welcome-image"], ...guard, memoryUpload({ maxSizeMb: 10 }).single("image"), async (req: Request, res: Response) => {
   try {
     const ctx = await storeContext(req, res); if (!ctx) return;
     const file = (req as any).file as { buffer: Buffer; originalname: string; mimetype: string } | undefined;

@@ -26,6 +26,7 @@ import {
 import type { BusinessType, BusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
+import { ScreensEditor, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 
 interface BuilderState {
   businessType: BusinessType;
@@ -76,7 +77,7 @@ const PREVIEW_SCREENS: Array<{ target: KioskPreviewTarget; name: string }> = [
 
 const FRAMES = {
   landscape: { w: 1280, h: 800, name: "Tablet" },
-  portrait: { w: 720, h: 1280, name: "Standing kiosk" },
+  portrait: { w: 720, h: 1280, name: "15\" kiosk" },
 } as const;
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -137,6 +138,9 @@ export default function KioskBuilder() {
   const [versions, setVersions] = useState<VersionRow[] | null>(null);
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<void> }>(null);
   const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
+  const [tab, setTab] = useState<"settings" | "screens">("settings");
+  // The salon's catalog as its kiosk sees it, for the screen editor.
+  const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; storeName: string } | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const previewBoxRef = useRef<HTMLDivElement>(null);
@@ -153,6 +157,22 @@ export default function KioskBuilder() {
       setState(b); setDraft(b.draft); setSlug(k.bookingSlug);
     }).catch((e) => setLoadError(e.message));
   }, []);
+  useEffect(() => {
+    if (!slug || tab !== "screens" || catalog) return;
+    api<any>(`/api/public/kiosk/${slug}/config?preview=draft`)
+      .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], storeName: d.store?.name ?? "" }))
+      .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
+  }, [slug, tab, catalog, toast]);
+  const uploadImage = async (file: File): Promise<string | null> => {
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      return (await api<{ url: string }>("/api/kiosk-builder/image", { method: "POST", body: fd })).url;
+    } catch (e: any) {
+      toast({ title: "Couldn't upload the picture", description: e.message, variant: "destructive" });
+      return null;
+    }
+  };
 
   // ── Preview ──
   const postToPreview = useCallback((msg: object) => {
@@ -170,7 +190,7 @@ export default function KioskBuilder() {
     const ro = new ResizeObserver(fit);
     ro.observe(box);
     return () => ro.disconnect();
-  }, [frame, state]);
+  }, [frame, state, tab]);
 
   // ── Save (every change, after a short pause) ──
   const applyState = (b: BuilderState) => setState((s) => ({ ...s, ...b }));
@@ -245,7 +265,7 @@ export default function KioskBuilder() {
     try {
       const fd = new FormData();
       fd.append("image", file);
-      const { url } = await api<{ url: string }>("/api/kiosk-builder/welcome-image", { method: "POST", body: fd });
+      const { url } = await api<{ url: string }>("/api/kiosk-builder/image", { method: "POST", body: fd });
       update((d) => ({ ...d, welcome: { ...d.welcome, imageUrl: url } }));
       postToPreview({ type: "kiosk-preview-goto", target: "welcome" });
     } catch (e: any) {
@@ -331,7 +351,22 @@ export default function KioskBuilder() {
         {saveError && (
           <div className="shrink-0 px-5 py-2 text-sm text-red-700 bg-red-50 border-b border-red-200">{saveError}</div>
         )}
+        <div className="shrink-0 flex gap-1 px-5 pt-2 border-b border-slate-200 bg-white">
+          {([["settings", "Settings"], ["screens", "Screens"]] as const).map(([k, name]) => (
+            <button key={k} type="button" onClick={() => setTab(k)} data-testid={`kiosk-builder-tab-${k}`}
+              className={`px-3 pb-2 text-sm border-b-2 -mb-px ${tab === k ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}>
+              {name}
+            </button>
+          ))}
+        </div>
 
+        {tab === "screens" ? (
+          <div className="flex-1 min-h-0">
+            {catalog
+              ? <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} storeName={catalog.storeName} uploadImage={uploadImage} />
+              : <div className="flex items-center justify-center gap-2 text-slate-500 py-24"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>}
+          </div>
+        ) : (
         <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
           {/* ── Settings ── */}
           <div className="lg:w-[440px] shrink-0 overflow-y-auto p-4 space-y-4 border-r border-slate-200">
@@ -550,6 +585,7 @@ export default function KioskBuilder() {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* ── Publish ── */}
