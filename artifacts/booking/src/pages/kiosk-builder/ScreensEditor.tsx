@@ -469,15 +469,24 @@ export function ScreensEditor(props: {
         <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2">
           <p className="text-sm font-medium text-slate-800">Screens</p>
           <div className="space-y-1">
-            {draft.menus.map((m) => (
-              <button key={m.id} type="button" onClick={() => setMenuId(m.id)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm ${m.id === menu?.id ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`}>
-                {m.name}{m.id === draft.startMenuId ? " · start" : ""}
-                <span className={`block text-xs ${m.id === menu?.id ? "text-slate-300" : "text-slate-500"}`}>
-                  {m.kind === "picture" ? `Picture · ${m.spots.length} tap spots` : `${m.style === "single" ? "One, centered" : `${m.cols} × ${m.rows}`} · ${m.tiles.filter(Boolean).length} buttons`}
-                </span>
-              </button>
-            ))}
+            {draft.menus.map((m) => {
+              const on = m.id === menu?.id;
+              return (
+                <div key={m.id} className={`flex items-stretch rounded-lg ${on ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50"}`} data-testid="screen-row">
+                  <button type="button" onClick={() => setMenuId(m.id)} className="flex-1 min-w-0 text-left px-3 py-2 text-sm">
+                    <span className="block truncate">{m.name}{m.id === draft.startMenuId ? " · start" : ""}</span>
+                    <span className={`block text-xs ${on ? "text-slate-300" : "text-slate-500"}`}>
+                      {m.kind === "picture" ? `Picture · ${m.spots.length} tap spots` : `${m.style === "single" ? "One, centered" : `${m.cols} × ${m.rows}`} · ${m.tiles.filter(Boolean).length} buttons`}
+                    </span>
+                  </button>
+                  <button type="button" aria-label={`Delete ${m.name}`} title="Delete this screen" data-testid="screen-delete"
+                    className={`shrink-0 px-2.5 rounded-r-lg ${on ? "text-slate-300 hover:text-white" : "text-slate-400 hover:text-slate-700"}`}
+                    onClick={() => { if (window.confirm(`Delete "${m.name}"? Buttons and tap spots that open it are removed too.`)) deleteScreen(m.id); }}>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
             {draft.builder === "easy" ? (

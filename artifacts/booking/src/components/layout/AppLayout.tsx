@@ -34,7 +34,7 @@ export function AppLayout({ children, fullHeight = false }: { children: ReactNod
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop-only sidebar */}
         <div className="hidden md:block">
-          <Sidebar />
+          <Sidebar collapsible />
         </div>
 
         <main className={fullHeight ? "flex-1 overflow-hidden flex flex-col" : "flex-1 overflow-y-auto"}>

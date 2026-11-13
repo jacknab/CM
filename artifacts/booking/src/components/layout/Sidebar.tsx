@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import {
   Percent,
   LayoutDashboard,
@@ -44,6 +44,8 @@ import {
   CreditCard as CreditCardIcon,
   PhoneCall,
   Store,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -231,6 +233,12 @@ const TEAM_MATCHES = ["/team", "/staff", "/commissions", "/payroll", "/team-perm
 
 // ── Sub-item link ──────────────────────────────────────────────────────────────
 
+// ── Collapsed sidebar (desktop) ───────────────────────────────────────────────
+// Collapsed, the sidebar is a narrow strip of icons (names on hover). A section icon opens the sidebar on that
+// section. The choice is kept per browser.
+const COLLAPSED_KEY = "certxa.sidebar.collapsed";
+const CollapsedContext = createContext<{ collapsed: boolean; expand: () => void }>({ collapsed: false, expand: () => {} });
+
 function SubLink({
   item,
   isActive,
@@ -242,6 +250,7 @@ function SubLink({
   badge?: React.ReactNode;
   onLinkClick?: () => void;
 }) {
+  if (useContext(CollapsedContext).collapsed) return null;
   return (
     <Link
       to={item.to}
@@ -281,8 +290,10 @@ function NavItem({
   to?: string;
   onLinkClick?: () => void;
 }) {
+  const { collapsed } = useContext(CollapsedContext);
   const cls = cn(
-    "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
+    "flex items-center gap-3 w-full py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
+    collapsed ? "justify-center px-0" : "px-3",
     isActive
       ? "bg-gray-100 text-gray-900"
       : "text-gray-800 hover:bg-gray-100/70 hover:text-gray-900"
@@ -291,19 +302,20 @@ function NavItem({
   const inner = (
     <>
       <Icon className={cn("h-[18px] w-[18px] flex-shrink-0", isActive ? "text-gray-700" : "text-gray-500")} />
-      <span className="flex-1">{label}</span>
-      {badge}
+      {!collapsed && <span className="flex-1">{label}</span>}
+      {!collapsed && badge}
     </>
   );
+  const tip = collapsed ? { title: label, "aria-label": label } : {};
 
   if (onClick) {
-    return <button onClick={onClick} className={cls}>{inner}</button>;
+    return <button onClick={onClick} className={cls} {...tip}>{inner}</button>;
   }
   if (href) {
-    return <a href={href} onClick={onLinkClick} className={cls}>{inner}</a>;
+    return <a href={href} onClick={onLinkClick} className={cls} {...tip}>{inner}</a>;
   }
   return (
-    <Link to={to!} onClick={onLinkClick} className={cls}>
+    <Link to={to!} onClick={onLinkClick} className={cls} {...tip}>
       {inner}
     </Link>
   );
@@ -326,25 +338,31 @@ function ExpandableTrigger({
   badge?: React.ReactNode;
   onToggle: () => void;
 }) {
+  const { collapsed, expand } = useContext(CollapsedContext);
   return (
     <button
-      onClick={onToggle}
+      // Collapsed: open the sidebar on this section.
+      onClick={collapsed ? () => { expand(); if (!isOpen) onToggle(); } : onToggle}
+      {...(collapsed ? { title: label, "aria-label": label } : {})}
       className={cn(
-        "flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
+        "flex items-center gap-3 w-full py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
+        collapsed ? "justify-center px-0" : "px-3",
         isActive
           ? "text-gray-900 hover:bg-black/5"
           : "text-gray-800 hover:bg-gray-100 hover:text-gray-900"
       )}
     >
       <Icon className={cn("h-[18px] w-[18px] flex-shrink-0", isActive ? "text-gray-700" : "text-gray-500")} />
-      <span className="flex-1 text-left">{label}</span>
-      {badge}
-      <ChevronDown
-        className={cn(
-          "h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200 text-gray-400",
-          isOpen ? "rotate-180" : ""
-        )}
-      />
+      {!collapsed && <span className="flex-1 text-left">{label}</span>}
+      {!collapsed && badge}
+      {!collapsed && (
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200 text-gray-400",
+            isOpen ? "rotate-180" : ""
+          )}
+        />
+      )}
     </button>
   );
 }
@@ -352,6 +370,7 @@ function ExpandableTrigger({
 // ── Section divider label ──────────────────────────────────────────────────────
 
 function SectionHeading({ label }: { label: string }) {
+  if (useContext(CollapsedContext).collapsed) return null;
   return (
     <p className="px-3 pt-4 pb-1 text-[10.5px] font-semibold text-gray-400 uppercase tracking-widest">
       {label}
@@ -361,7 +380,16 @@ function SectionHeading({ label }: { label: string }) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
+export function Sidebar({ onLinkClick, collapsible = false }: { onLinkClick?: () => void; collapsible?: boolean }) {
+  // Desktop only (AppLayout): the sidebar can fold to a strip of icons; the mobile menu never does.
+  const [collapsed, setCollapsed] = useState(() => {
+    if (!collapsible) return false;
+    try { return localStorage.getItem(COLLAPSED_KEY) === "1"; } catch { return false; }
+  });
+  const setCollapsedKept = (v: boolean) => {
+    setCollapsed(v);
+    try { localStorage.setItem(COLLAPSED_KEY, v ? "1" : "0"); } catch { /* private mode */ }
+  };
   const location  = useLocation();
   const navigate  = useNavigate();
   const { user, logout }  = useAuth();
@@ -419,6 +447,8 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     myBusiness:       pick({ en: "My Business",        vi: "Doanh nghiệp của tôi",   es: "Mi negocio",           fr: "Mon entreprise" }),
     staffFallback:    pick({ en: "Staff",               vi: "Nhân viên",              es: "Personal",             fr: "Personnel" }),
     ownerFallback:    pick({ en: "Owner",               vi: "Chủ sở hữu",             es: "Propietario",          fr: "Propriétaire" }),
+    collapseMenu:     pick({ en: "Collapse menu",       vi: "Thu gọn menu",           es: "Contraer menú",        fr: "Réduire le menu" }),
+    expandMenu:       pick({ en: "Expand menu",         vi: "Mở rộng menu",           es: "Expandir menú",        fr: "Développer le menu" }),
   };
 
   const isInsightsActive = INSIGHTS_MATCHES.some(
@@ -540,12 +570,15 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
     .join("");
 
   return (
-    <aside className="w-[266px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen">
+    <CollapsedContext.Provider value={{ collapsed, expand: () => setCollapsedKept(false) }}>
+    <aside className={cn("flex-shrink-0 bg-white border-r border-gray-200 flex flex-col h-screen transition-[width] duration-200", collapsed ? "w-[64px]" : "w-[266px]")}
+      data-testid="app-sidebar" data-collapsed={collapsed ? "1" : "0"}>
       {/* Account header — business name + owner name, clickable dropdown */}
       <div className="relative flex-shrink-0" ref={menuRef}>
         <button
           onClick={() => setAccountMenuOpen((v) => !v)}
-          className="flex items-center gap-3 w-full h-[60px] px-4 border-b border-gray-100 hover:bg-gray-50 transition-colors duration-100 text-left"
+          className={cn("flex items-center gap-3 w-full h-[60px] border-b border-gray-100 hover:bg-gray-50 transition-colors duration-100 text-left", collapsed ? "justify-center px-0" : "px-4")}
+          {...(collapsed ? { title: businessName } : {})}
         >
           {/* Avatar */}
           <div
@@ -555,21 +588,25 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
             {initials || <User size={14} />}
           </div>
           {/* Text */}
-          <div className="flex-1 min-w-0">
-            <p className="text-[13px] font-semibold text-gray-900 truncate leading-tight">{businessName}</p>
-            <p className="text-[11px] text-gray-500 truncate leading-tight">{ownerFirstName}</p>
-          </div>
-          <ChevronDown
-            className={cn(
-              "h-3.5 w-3.5 flex-shrink-0 text-gray-400 transition-transform duration-200",
-              accountMenuOpen && "rotate-180"
-            )}
-          />
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-gray-900 truncate leading-tight">{businessName}</p>
+              <p className="text-[11px] text-gray-500 truncate leading-tight">{ownerFirstName}</p>
+            </div>
+          )}
+          {!collapsed && (
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 flex-shrink-0 text-gray-400 transition-transform duration-200",
+                accountMenuOpen && "rotate-180"
+              )}
+            />
+          )}
         </button>
 
         {/* Dropdown menu */}
         {accountMenuOpen && (
-          <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 shadow-lg rounded-b-xl overflow-hidden">
+          <div className={cn("absolute top-full left-0 z-50 bg-white border border-gray-200 shadow-lg rounded-b-xl overflow-hidden", collapsed ? "w-[240px]" : "right-0")}>
             {/* Account info header */}
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
               <p className="text-[12px] font-semibold text-gray-900 truncate">{ownerFullName}</p>
@@ -677,7 +714,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
 
               {/* ── Insights ── */}
               {!isStaff && can(PERMISSIONS.REPORTS_VIEW) && (
-                <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", insightsOpen && "bg-indigo-50 p-1.5")}>
+                <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", insightsOpen && !collapsed && "bg-indigo-50 p-1.5")}>
                   <ExpandableTrigger
                     icon={LineChart}
                     label={t.insights}
@@ -698,7 +735,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
 
               {/* ── Catalog ── */}
               {!isStaff && can(PERMISSIONS.SERVICES_MANAGE) && (
-                <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", catalogOpen && "bg-violet-50 p-1.5")}>
+                <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", catalogOpen && !collapsed && "bg-violet-50 p-1.5")}>
                   <ExpandableTrigger
                     icon={Package}
                     label={t.catalog}
@@ -719,7 +756,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
 
               {/* ── Team ── */}
               {!isStaff && can(PERMISSIONS.STAFF_MANAGE) && !isSolo && (
-                <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", teamOpen && "bg-sky-50 p-1.5")}>
+                <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", teamOpen && !collapsed && "bg-sky-50 p-1.5")}>
                   <ExpandableTrigger
                     icon={UserCircle}
                     label={t.team}
@@ -745,7 +782,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
 
         {/* ── Marketing ── */}
         {!isStaff && (
-          <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", marketingOpen && "bg-rose-50 p-1.5")}>
+          <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", marketingOpen && !collapsed && "bg-rose-50 p-1.5")}>
             <ExpandableTrigger
               icon={Megaphone}
               label={t.marketing}
@@ -773,7 +810,7 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
 
         {/* ── Finance & POS ── */}
         {!isStaff && can(PERMISSIONS.REPORTS_VIEW) && (
-          <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", financeOpen && "bg-emerald-50 p-1.5")}>
+          <div className={cn("mt-0.5 rounded-xl transition-colors duration-150", financeOpen && !collapsed && "bg-emerald-50 p-1.5")}>
             <ExpandableTrigger
               icon={DollarSign}
               label={features.pos ? t.financePos : t.finance}
@@ -845,8 +882,17 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
           />
         )}
 
+        {collapsible && (
+          <NavItem
+            icon={collapsed ? PanelLeftOpen : PanelLeftClose}
+            label={collapsed ? t.expandMenu : t.collapseMenu}
+            isActive={false}
+            onClick={() => setCollapsedKept(!collapsed)}
+          />
+        )}
+
         {/* Certxa branding wordmark */}
-        <div className="px-3 pt-2 pb-1">
+        {!collapsed && <div className="px-3 pt-2 pb-1">
           <Link to="/manage" onClick={onLinkClick}>
             <span
               style={{
@@ -861,9 +907,10 @@ export function Sidebar({ onLinkClick }: { onLinkClick?: () => void }) {
               Certxa<span style={{ color: "#F59E0B" }}>.</span>
             </span>
           </Link>
-        </div>
+        </div>}
 
       </div>
     </aside>
+    </CollapsedContext.Provider>
   );
 }
