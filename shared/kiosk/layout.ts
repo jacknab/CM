@@ -57,6 +57,8 @@ export interface KioskTile {
   menuId?: string;
   label?: string;
   imageUrl?: string | null;
+  /** For a button that chooses a service or add-on: where to go after (none: stay on the screen). */
+  next?: KioskNext;
 }
 
 /**
@@ -70,15 +72,33 @@ export type KioskSpotAction =
   | { kind: "addon"; addonId: number }
   | { kind: "menu"; menuId: string }
   | { kind: "function"; fn: KioskSpotFunction };
-/** continue: on to the next step · back: the screen before · startOver: back to the welcome screen. */
-export type KioskSpotFunction = "continue" | "back" | "startOver";
-export const KIOSK_SPOT_FUNCTIONS: KioskSpotFunction[] = ["continue", "back", "startOver"];
+/**
+ * continue: on to the next step (the layout's order) · staff: straight to choosing staff · review: finish, to the
+ * review screen where they press Check In · back: the screen before · startOver: back to the welcome screen.
+ */
+export type KioskSpotFunction = "continue" | "staff" | "review" | "back" | "startOver";
+export const KIOSK_SPOT_FUNCTIONS: KioskSpotFunction[] = ["continue", "staff", "review", "back", "startOver"];
+
+/**
+ * What happens after a button or tap spot chooses a service, add-on or Kiosk Extra (owner, 2026-11-13): stay so they
+ * can pick more, or go on — the next step, staff, the review, or another of the business's screens.
+ */
+export type KioskNext = { kind: "continue" | "staff" | "review" } | { kind: "menu"; menuId: string };
+
+function normalizeNext(raw: unknown, menuIds: Set<string>, ownId: string): KioskNext | undefined {
+  if (!isObj(raw)) return undefined;
+  if (raw.kind === "continue" || raw.kind === "staff" || raw.kind === "review") return { kind: raw.kind };
+  if (raw.kind === "menu" && typeof raw.menuId === "string" && menuIds.has(raw.menuId) && raw.menuId !== ownId) return { kind: "menu", menuId: raw.menuId };
+  return undefined;
+}
 
 /**
  * A tap spot on a picture screen: an invisible button over part of the business's own picture. x, y, w, h are
  * percentages of the picture (0–100), so a spot stays on the same part of the picture at any screen size.
  */
-export interface KioskSpot { id: string; x: number; y: number; w: number; h: number; action: KioskSpotAction }
+export interface KioskSpot { id: string; x: number; y: number; w: number; h: number; action: KioskSpotAction;
+  /** For a spot that chooses a service or add-on: where to go after (none: stay on the screen). */
+  next?: KioskNext }
 
 export interface KioskMenu {
   id: string;
@@ -264,7 +284,7 @@ export const sameGroup = (a: string | null | undefined, b: string | null | undef
 const MENU_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const cleanLabel = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
 
-function normalizeTile(raw: unknown, menuIds: Set<string>): KioskTile | null {
+function normalizeTile(raw: unknown, menuIds: Set<string>, ownId = ""): KioskTile | null {
   if (!isObj(raw) || typeof raw.id !== "string" || !MENU_ID.test(raw.id)) return null;
   const tile: KioskTile = { id: raw.id, kind: raw.kind === "menu" ? "menu" : raw.kind === "addon" ? "addon" : "service" };
   if (tile.kind === "service") {
@@ -282,6 +302,7 @@ function normalizeTile(raw: unknown, menuIds: Set<string>): KioskTile | null {
   const label = cleanLabel(raw.label, KIOSK_MENU_LIMITS.label);
   if (label) tile.label = label;
   if (isKioskImageUrl(raw.imageUrl)) tile.imageUrl = raw.imageUrl;
+  if (tile.kind !== "menu") { const next = normalizeNext(raw.next, menuIds, ownId); if (next) tile.next = next; }
   return tile;
 }
 
@@ -308,7 +329,7 @@ export function normalizeMenus(raw: unknown): KioskMenu[] {
     const rows = style === "single" ? 1 : clampInt(m.rows, KIOSK_MENU_LIMITS.rows, 3);
     const per = style === "single" ? 1 : cols * rows;
     const tiles = (Array.isArray(m.tiles) ? m.tiles : []).slice(0, per * KIOSK_MENU_LIMITS.pages).map((t: unknown) => {
-      const tile = normalizeTile(t, ids);
+      const tile = normalizeTile(t, ids, m.id);
       // A screen never links to itself, and a button id is used once.
       if (!tile || (tile.kind === "menu" && tile.menuId === m.id) || tileIds.has(tile.id)) return null;
       tileIds.add(tile.id);
@@ -328,7 +349,8 @@ export function normalizeMenus(raw: unknown): KioskMenu[] {
       const w = Math.min(100, Math.max(KIOSK_SPOT_MIN.w, num(sp.w, 20)));
       const h = Math.min(100, Math.max(KIOSK_SPOT_MIN.h, num(sp.h, 10)));
       const round = (n: number) => Math.round(n * 100) / 100;
-      return [{ id: sp.id, x: round(Math.min(100 - w, Math.max(0, num(sp.x, 0)))), y: round(Math.min(100 - h, Math.max(0, num(sp.y, 0)))), w: round(w), h: round(h), action }];
+      const next = action.kind === "service" || action.kind === "addon" ? normalizeNext(sp.next, ids, m.id) : undefined;
+      return [{ id: sp.id, x: round(Math.min(100 - w, Math.max(0, num(sp.x, 0)))), y: round(Math.min(100 - h, Math.max(0, num(sp.y, 0)))), w: round(w), h: round(h), action, ...(next ? { next } : {}) }];
     });
     return {
       id: m.id, kind, name: cleanLabel(m.name, KIOSK_MENU_LIMITS.name) || "Screen", title, style, cols, rows,

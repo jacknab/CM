@@ -16,17 +16,24 @@ import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
 import { ExtraForm, priceText, type KioskExtrasStore } from "./extras";
 import {
   KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, builderScreenKind, sameGroup, type KioskBuilderKind, menuPageCount, menuSlotsPerPage,
-  type KioskLayout, type KioskMenu, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
+  type KioskLayout, type KioskMenu, type KioskNext, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
 } from "@shared/kiosk/layout";
 
 export interface CatalogService extends MenuService { category: string | null; categoryId?: number | null }
 export interface CatalogCategory { id: number; name: string; imageUrl: string | null }
 export interface CatalogAddon { id: number; name: string; price: number; serviceIds: number[]; kioskExtra?: boolean; kioskExtraGroup?: string | null }
 const FUNCTION_NAMES: Record<KioskSpotFunction, { name: string; about: string }> = {
-  continue: { name: "Continue", about: "On to the next step with what the client chose" },
+  continue: { name: "Continue", about: "On to the next step in your order (add-ons, staff, then the review)" },
+  staff: { name: "Go to Staff", about: "Straight to choosing who does it" },
+  review: { name: "Finish", about: "Straight to the review, where they press Check In" },
   back: { name: "Back", about: "The screen before" },
   startOver: { name: "Start over", about: "Back to the welcome screen" },
 };
+
+/** "Then…" for a button or tap spot that chooses something, as a select value. */
+const nextValue = (n: KioskNext | undefined) => (!n ? "" : n.kind === "menu" ? `menu:${n.menuId}` : n.kind);
+const parseNext = (v: string): KioskNext | undefined =>
+  !v ? undefined : v.startsWith("menu:") ? { kind: "menu", menuId: v.slice(5) } : { kind: v as "continue" | "staff" | "review" };
 
 /**
  * The template for a picture screen: 1080 × 1920 (the 15" kiosk, standing), with a safe margin and a grid, made in
@@ -334,8 +341,8 @@ export function ScreensEditor(props: {
       return out;
     }
     const picks = m.spots.some((sp) => sp.action.kind === "service" || sp.action.kind === "addon");
-    const moves = m.spots.some((sp) => sp.action.kind === "function" && sp.action.fn === "continue");
-    if (picks && !moves) out.push("Clients can choose services here but can't move on: add a tap spot set to Continue, or turn on the footer.");
+    const moves = m.spots.some((sp) => (sp.action.kind === "function" && ["continue", "staff", "review"].includes(sp.action.fn)) || !!sp.next);
+    if (picks && !moves) out.push("Clients can choose services here but can't move on: give a tap spot \"Then… Continue\", add a Continue spot, or turn on the footer.");
     if (!m.spots.some((sp) => sp.action.kind === "function" && (sp.action.fn === "back" || sp.action.fn === "startOver")))
       out.push("Add a Back or Start over tap spot, or turn on the footer, so clients aren't stuck on this screen.");
     return out;
@@ -428,6 +435,21 @@ export function ScreensEditor(props: {
     } finally { setUploading(false); }
   };
 
+  /** "Then…": what happens after a button or tap spot chooses a service, add-on or extra. */
+  const thenField = (value: KioskNext | undefined, onChange: (n: KioskNext | undefined) => void) => (
+    <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600" data-testid="then-field">
+      <span className="block text-sm font-semibold text-slate-900 mb-1">Then…</span>
+      <select className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value={nextValue(value)} data-testid="then-select"
+        onChange={(e) => onChange(parseNext(e.target.value))}>
+        <option value="">Stay on this screen (they can choose more)</option>
+        <option value="continue">Continue to the next step</option>
+        <option value="staff">Go to choosing staff</option>
+        <option value="review">Finish (go to the review)</option>
+        {draft.menus.filter((m) => m.id !== menu?.id).map((m) => <option key={m.id} value={`menu:${m.id}`}>Open the screen "{m.name}"</option>)}
+      </select>
+      <span className="block mt-1">What happens after a client taps it and it's chosen.</span>
+    </label>
+  );
   const panel = (
     <div className="space-y-4">
       {/* The chosen tap spot or button: edited here, at the top of the panel. */}
@@ -435,6 +457,7 @@ export function ScreensEditor(props: {
       {props.view === "edit" && menu && menu.kind === "picture" && spot && (
         <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-spot-panel">
           <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
+          <p className="text-xs text-slate-500">What it does when tapped:</p>
           <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 p-0.5">
             {(["service", "addon", "function", "menu"] as const).map((k) => (
               <button key={k} type="button" onClick={() => setSpotTab(k)}
@@ -530,6 +553,8 @@ export function ScreensEditor(props: {
                 onClick={() => { const id = addScreen(); setSpotAction({ kind: "menu", menuId: id }); }}>New screen for this spot</Button>
             </div>
           )}
+          {(spot.action.kind === "service" || spot.action.kind === "addon") && thenField(spot.next,
+            (n) => changeSpots((list) => list.map((x) => (x.id === spot.id ? (n ? { ...x, next: n } : (({ next: _drop, ...rest }) => rest)(x)) : x))))}
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={() => {
               if (menu.spots.length >= KIOSK_MENU_LIMITS.spots) return;
@@ -577,6 +602,7 @@ export function ScreensEditor(props: {
               {tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId) && (
                 <Button variant="outline" size="sm" onClick={() => setMenuId(tile.menuId!)}>Edit that screen</Button>
               )}
+              {tile.kind !== "menu" && thenField(tile.next, (n) => setTile(slot, n ? { ...tile, next: n } : (({ next: _drop, ...rest }) => rest)(tile)))}
               <div className="flex gap-2 pt-1">
                 <Button variant="outline" size="sm" onClick={() => setTile(slot, null)} data-testid="screens-remove-button">Remove button</Button>
                 <Button variant="ghost" size="sm" onClick={() => setSlot(null)}>Done</Button>

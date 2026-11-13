@@ -10,7 +10,7 @@ import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
 import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
-  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, type KioskMenu,
+  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, type KioskMenu, type KioskNext,
   type KioskLayout, type KioskLook, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
 import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
@@ -216,6 +216,11 @@ const STARTING_LAYOUT: KioskLayout = normalizeKioskLayout(null, "other");
  * report — and the builder can refresh it or send it to a screen (postMessage, same origin only).
  */
 const PREVIEW = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "draft";
+/**
+ * The builder's screen editor (?preview=draft&edit=1): a click on something marked data-kx-edit tells the builder
+ * what to change instead of doing anything; parts that can be changed are outlined; the kiosk never resets by itself.
+ */
+const PREVIEW_EDIT = PREVIEW && new URLSearchParams(window.location.search).get("edit") === "1";
 const configPath = (slug: string) => `/api/public/kiosk/${slug}/config${PREVIEW ? "?preview=draft" : ""}`;
 export type KioskPreviewTarget = "welcome" | "phone" | "category" | "services" | "addons" | "provider" | "review" | "ticket" | "screen";
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
@@ -705,7 +710,7 @@ function KioskCheckInScreens() {
   }, [cancelPendingMarker]);
 
   useEffect(() => {
-    if (screen === "ticket" || screen === "appointment_confirmed" || screen === "no_thanks" || screen === "waitlist_added") {
+    if ((screen === "ticket" || screen === "appointment_confirmed" || screen === "no_thanks" || screen === "waitlist_added") && !PREVIEW_EDIT) {
       setCountdown(layoutRef.current.timing.ticketResetSeconds);
       cdownRef.current = setInterval(() => {
         setCountdown(p => { if (p <= 1) { resetToIdle(); return 0; } return p - 1; });
@@ -789,7 +794,7 @@ function KioskCheckInScreens() {
     if (idleRef.current) clearTimeout(idleRef.current);
     if (warnRef.current) clearInterval(warnRef.current);
     stillThere.set(null);
-    if (screen === "idle" || screen === "ticket") return;
+    if (screen === "idle" || screen === "ticket" || PREVIEW_EDIT) return;
     const nailStep = screen === "nail_size" || screen === "nail_shape" || screen === "nail_effects";
     idleRef.current = setTimeout(() => {
       let left = STILL_THERE_SECONDS;
@@ -975,7 +980,7 @@ function KioskCheckInScreens() {
    * Continue from one of the business's own screens: a service must be chosen, and every "must choose one" Kiosk
    * Extras group this screen shows (layout.requiredGroups) needs its pick. Otherwise the screen says what's missing.
    */
-  const continueFromScreen = (screenMenu: KioskMenu, note: (text: string) => void) => {
+  const continueFromScreen = (screenMenu: KioskMenu, note: (text: string) => void, dest: "next" | "staff" | "review" = "next") => {
     kick();
     if (!selectedServices.length) return note(t.chooseServiceFirst);
     const shownIds = [
@@ -986,8 +991,31 @@ function KioskCheckInScreens() {
       const shown = shownIds.some((id) => { const a = allAddons.find((x) => x.id === id); return !!a?.kioskExtra && sameGroup(a.kioskExtraGroup, group); });
       if (shown && !selectedAddons.some((a) => a.kioskExtra && sameGroup(a.kioskExtraGroup, group))) return note(t.chooseFromGroup(group));
     }
+    // Go to Staff / Finish (owner, 2026-11-13): straight there, past the steps in between.
+    if (dest === "staff" && allStaff.length > 0) return setScreen("stylist");
+    if (dest === "staff" || dest === "review") return setScreen("review");
     void afterServiceChosen();
   };
+  /**
+   * A button or tap spot's "then" (KioskNext), run once its choice is on screen: a render later, so the next step
+   * sees the service or add-on just chosen. Dropped if the choice didn't happen (a limit, or it was a second tap).
+   */
+  const [pendingNext, setPendingNext] = useState<null | { next: KioskNext; fromMenuId: string; serviceId?: number; addonId?: number }>(null);
+  useEffect(() => {
+    if (!pendingNext) return;
+    const p = pendingNext;
+    setPendingNext(null);
+    if (p.serviceId != null && !selectedServices.some((x) => x.id === p.serviceId)) return;
+    if (p.addonId != null && !selectedAddons.some((x) => x.id === p.addonId)) return;
+    if (p.next.kind === "menu") {
+      const to = p.next.menuId;
+      if (layout.menus.some((m) => m.id === to)) { setMenuStack((st) => [...st, to]); setMenuPage(0); }
+      return;
+    }
+    const from = layout.menus.find((m) => m.id === p.fromMenuId);
+    if (from) continueFromScreen(from, (text) => showPictureNote(text), p.next.kind === "continue" ? "next" : p.next.kind);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNext, selectedServices, selectedAddons]);
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
     !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
@@ -1198,6 +1226,26 @@ function KioskCheckInScreens() {
       case "ticket": return showPreviewTicket(selectedServices.length ? selectedServices : sample ? [sample] : [], selectedAddons);
     }
   };
+  // Screen editor: clicks pick what to change (they don't tap through the kiosk); the builder can mark the picked part.
+  useEffect(() => {
+    if (!PREVIEW_EDIT) return;
+    const style = document.createElement("style");
+    style.textContent = `[data-kx-edit]{cursor:pointer;outline:2px dashed transparent;outline-offset:6px;border-radius:6px;transition:outline-color .15s}
+[data-kx-edit]:hover{outline-color:rgba(37,99,235,.7)}
+[data-kx-edit][data-kx-selected]{outline:3px solid #2563eb}
+body *{cursor:default}`;
+    document.head.appendChild(style);
+    const pick = (e: Event) => {
+      const el = (e.target as HTMLElement | null)?.closest?.("[data-kx-edit]") as HTMLElement | null;
+      e.preventDefault(); e.stopPropagation();
+      if (e.type !== "pointerdown") return;
+      document.querySelectorAll("[data-kx-selected]").forEach((x) => x.removeAttribute("data-kx-selected"));
+      if (el) el.setAttribute("data-kx-selected", "");
+      window.parent?.postMessage({ type: "kiosk-preview-edit", target: el?.getAttribute("data-kx-edit") ?? null }, window.location.origin);
+    };
+    for (const type of ["pointerdown", "pointerup", "click", "mousedown", "touchstart"]) document.addEventListener(type, pick, true);
+    return () => { style.remove(); for (const type of ["pointerdown", "pointerup", "click", "mousedown", "touchstart"]) document.removeEventListener(type, pick, true); };
+  }, []);
   const previewGotoRef = useRef(previewGoto);
   previewGotoRef.current = previewGoto;
   const reloadConfigRef = useRef<() => void>(() => {});
@@ -1460,9 +1508,9 @@ function KioskCheckInScreens() {
       {/* The picture always fills the whole screen (owner, 2026-11-01: even if a little is cut off). It is a 9:16
           version of the owner's 2:3 artwork, its purple background extended top and bottom, so on a standing 9:16
           kiosk it fits exactly and nothing is cut; other screen shapes lose a little at the edges. */}
-      <img src={layout.welcome.imageUrl ?? kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image"
+      <img src={layout.welcome.imageUrl ?? kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image" data-kx-edit="welcome-picture"
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
-      <div className="absolute left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8"
+      <div className="absolute left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8" data-kx-edit="languages"
         style={{ bottom: "clamp(18px, 3vh, 30px)" }} onPointerDown={e => e.stopPropagation()}>
         {welcomeLangs.length > 1 && welcomeLangs.map(({ code, label }) => (
           <button
@@ -2168,14 +2216,14 @@ function KioskCheckInScreens() {
           <p className="text-sm font-semibold uppercase tracking-widest mb-1" style={{ color: PRIMARY }}>
             Check-in — {storeConfig?.name}
           </p>
-          <h2 className="text-4xl font-black leading-tight" style={{ color: TEXT }}>
+          <h2 className="text-4xl font-black leading-tight" style={{ color: TEXT }} data-kx-edit="text:whatBringsYouIn">
             {t.whatBringsYouIn(clientFirst)}
           </h2>
         </div>
 
         {/* ── Cards ── */}
         <div className="flex-1 overflow-y-auto px-8 py-6">
-          <div className={`grid ${gridCols} gap-6 w-full max-w-5xl mx-auto`}>
+          <div className={`grid ${gridCols} gap-6 w-full max-w-5xl mx-auto`} data-kx-edit="category-cards">
             {groups.map(group => {
               const isSel = selectedCategoryGroup === group.key;
               // The image the owner set on the catalog category (Catalog →
@@ -2268,8 +2316,15 @@ function KioskCheckInScreens() {
     if (current) {
       const svcById = new Map(allServices.map((sv) => [sv.id, sv]));
       const own = current.title[lang]?.trim() || current.title.en?.trim();
-      const tapTile = (tile: { kind: string; serviceId?: number; addonId?: number; menuId?: string }) => {
+      const tapTile = (tile: { kind: string; serviceId?: number; addonId?: number; menuId?: string; next?: KioskNext }) => {
         kick();
+        // A "then" goes ahead once the choice is made (not when this tap takes it back off).
+        if (tile.next && tile.kind === "service" && tile.serviceId != null && !selectedServices.some((x) => x.id === tile.serviceId)) {
+          setPendingNext({ next: tile.next, fromMenuId: current.id, serviceId: tile.serviceId });
+        }
+        if (tile.next && tile.kind === "addon" && tile.addonId != null && !selectedAddons.some((x) => x.id === tile.addonId)) {
+          setPendingNext({ next: tile.next, fromMenuId: current.id, addonId: tile.addonId });
+        }
         if (tile.kind === "addon" && tile.addonId != null) return chooseAddonOnScreen(tile.addonId, showPictureNote);
         if (tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId)) { setMenuStack((st) => [...st, tile.menuId!]); setMenuPage(0); return; }
         const svc = tile.serviceId != null ? svcById.get(tile.serviceId) : undefined;
@@ -2295,9 +2350,13 @@ function KioskCheckInScreens() {
         const tapSpot = (spot: (typeof current.spots)[number]) => {
           kick();
           const a = spot.action;
-          if (a.kind === "service" || a.kind === "menu") return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId } : { kind: "menu", menuId: a.menuId });
-          if (a.kind === "addon") return chooseAddonOnScreen(a.addonId, showPictureNote);
+          if (a.kind === "service" || a.kind === "menu" || a.kind === "addon") {
+            return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId, next: spot.next }
+              : a.kind === "addon" ? { kind: "addon", addonId: a.addonId, next: spot.next } : { kind: "menu", menuId: a.menuId });
+          }
           if (a.fn === "continue") return continueFromScreen(current, showPictureNote);
+          if (a.fn === "staff") return continueFromScreen(current, showPictureNote, "staff");
+          if (a.fn === "review") return continueFromScreen(current, showPictureNote, "review");
           if (a.fn === "back") return back();
           if (a.fn === "startOver") return resetToIdle();
         };
@@ -2405,7 +2464,7 @@ function KioskCheckInScreens() {
               <p className="text-2xl" style={{ color: SUBTLE }}>{t.noServices}</p>
             </div>
           ) : (
-            <div className="grid grid-cols-4 gap-4 h-full content-start">
+            <div className="grid grid-cols-4 gap-4 h-full content-start" data-kx-edit="service-cards">
               {visibleSvcs.map(svc => {
                 const isSel = selectedServices.some(s => s.id === svc.id);
                 const { from, soft, emoji } = getCat(svc.category);
@@ -2921,7 +2980,7 @@ function KioskCheckInScreens() {
               </div>
             ))}
             <div className="flex items-baseline justify-between gap-6" style={{ padding: "10px 0", borderBottom: showPrice ? `1px solid ${BORDER}` : "none" }}>
-              <span className="font-semibold" style={{ color: MUTED, fontSize: 18 }}>{t.yourStylist}</span>
+              <span className="font-semibold" style={{ color: MUTED, fontSize: 18 }} data-kx-edit="text:yourStylist">{t.yourStylist}</span>
               <span className="font-bold" style={{ color: TEXT, fontSize: 20 }}>{tech}</span>
             </div>
             {showPrice && (
@@ -2948,12 +3007,12 @@ function KioskCheckInScreens() {
       <div className="px-8 py-6 text-center shrink-0"
         style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
         <p className="text-sm font-semibold uppercase tracking-widest mb-2" style={{ color: PRIMARY }}>{t.optional}</p>
-        <h2 className="text-5xl font-black" style={{ color: TEXT }}>{t.whoWouldYouLike}</h2>
-        <p className="text-xl mt-2" style={{ color: MUTED }}>{t.pickStylist}</p>
+        <h2 className="text-5xl font-black" style={{ color: TEXT }} data-kx-edit="text:whoWouldYouLike">{t.whoWouldYouLike}</h2>
+        <p className="text-xl mt-2" style={{ color: MUTED }} data-kx-edit="text:pickStylist">{t.pickStylist}</p>
       </div>
 
       <div className="flex-1 flex items-center justify-center px-10" style={{ overflow: "hidden" }}>
-        <div className={`grid gap-5 w-full max-w-5xl ${Math.min(allStaff.length + 1, 4) <= 2 ? "grid-cols-2" : Math.min(allStaff.length + 1, 4) === 3 ? "grid-cols-3" : "grid-cols-4"}`}>
+        <div className={`grid gap-5 w-full max-w-5xl ${Math.min(allStaff.length + 1, 4) <= 2 ? "grid-cols-2" : Math.min(allStaff.length + 1, 4) === 3 ? "grid-cols-3" : "grid-cols-4"}`} data-kx-edit="staff-cards">
           {/* No preference */}
           {(() => {
             const isSelNone = selectedStaff === "none";
@@ -3054,7 +3113,7 @@ function KioskCheckInScreens() {
         </div>
 
         <div className="flex-1 px-8 pt-6 pb-4" style={{ overflowY: "auto" }}>
-          <div className="grid grid-cols-3 gap-5 max-w-5xl mx-auto">
+          <div className="grid grid-cols-3 gap-5 max-w-5xl mx-auto" data-kx-edit="addon-cards">
             {availableAddons.map(addon => {
               const isSel = selectedAddons.some(x => x.id === addon.id);
               return (
@@ -3150,7 +3209,7 @@ function KioskCheckInScreens() {
           style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${ACCENT})`, boxShadow: SHADOW_LG }}>✓</div>
         <div className="text-center">
           <h2 className="text-5xl font-black" style={{ color: TEXT }}>{t.allCheckedIn}</h2>
-          <p className="text-xl mt-2" style={{ color: MUTED }}>{t.showQr}</p>
+          <p className="text-xl mt-2" style={{ color: MUTED }} data-kx-edit="text:showQr">{t.showQr}</p>
         </div>
 
         <div className="w-full max-w-md rounded-2xl overflow-hidden"
@@ -3247,7 +3306,7 @@ function KioskCheckInScreens() {
           )}
         </div>
 
-        <CountdownWidget seconds={countdown} total={layout.timing.ticketResetSeconds} />
+        <div data-kx-edit="ticket-timer"><CountdownWidget seconds={countdown} total={layout.timing.ticketResetSeconds} /></div>
         <GhostBtn onPress={resetToIdle}>{t.newCheckin}</GhostBtn>
       </div>
 

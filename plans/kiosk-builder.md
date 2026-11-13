@@ -132,5 +132,12 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   works" under every section, opens by itself on Start here the first time a browser opens the builder. Content in
   pages/kiosk-builder/help.ts (19 topics: getting started, each section, how-to recipes, glossary, troubleshooting);
   KEEP IT TRUE when the builder changes. Template now shows example buttons at real size + pixel rulers.
+- 2026-11-13: **Screen editor** (owner: "I have no idea how to use this", wanted a POS-style editor): screen tabs
+  across the top (Welcome … Ticket, + Colours & style); the chosen screen big in the middle in edit mode
+  (/kiosk/:slug?preview=draft&edit=1: data-kx-edit parts outline on hover, a click posts kiosk-preview-edit and the
+  builder highlights that setting); only that screen's settings on the right. Categories tab: "Category cards" or
+  "My own screens" (the grid / picture editor in place). Guide no longer opens by itself; a one-line hint instead.
+  **Then…** on buttons/tap spots that choose a service or add-on (stay / continue / go to staff / finish / open a
+  screen) + functions Go to Staff and Finish (layout KioskNext; kiosk runs it a render later via pendingNext).
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

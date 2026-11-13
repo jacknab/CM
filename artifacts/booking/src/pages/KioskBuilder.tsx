@@ -86,15 +86,35 @@ const FRAMES = {
   portrait: { w: 720, h: 1280, name: "15\" kiosk" },
 } as const;
 
-type SectionKey = "look" | "welcome" | "steps" | "screens" | "extras" | "words";
-const SECTIONS: Array<{ key: SectionKey; name: string; about: string; preview?: KioskPreviewTarget }> = [
-  { key: "look", name: "Look", about: "The kiosk's style and colours." },
-  { key: "welcome", name: "Welcome screen", about: "What clients see before they tap.", preview: "welcome" },
-  { key: "steps", name: "Check-in steps", about: "What clients go through, and the rules.", preview: "category" },
-  { key: "screens", name: "Service screens", about: "Your own screens for choosing services." },
-  { key: "extras", name: "Kiosk Extras", about: "Kiosk-only choices, like a nail shape." },
-  { key: "words", name: "Words", about: "What the kiosk says, in every language.", preview: "provider" },
+/** The kiosk's screens, in the order clients see them: the editor's tabs. */
+type ScreenKey = "welcome" | "phone" | "categories" | "services" | "addons" | "staff" | "review" | "ticket";
+const SCREENS: Array<{ key: ScreenKey; name: string; preview: KioskPreviewTarget; about: string }> = [
+  { key: "welcome", name: "Welcome", preview: "welcome", about: "The first thing clients see. A tap anywhere starts the check-in." },
+  { key: "phone", name: "Phone number", preview: "phone", about: "Clients type their mobile number." },
+  { key: "categories", name: "Categories", preview: "category", about: "Clients choose what kind of service they want." },
+  { key: "services", name: "Services", preview: "services", about: "Clients choose their service." },
+  { key: "addons", name: "Add-ons", preview: "addons", about: "Clients can add extras to their service." },
+  { key: "staff", name: "Staff", preview: "provider", about: "Clients choose who does their service." },
+  { key: "review", name: "Review", preview: "review", about: "Clients check their visit, then press Check In." },
+  { key: "ticket", name: "Ticket", preview: "ticket", about: "Clients see they're checked in." },
 ];
+
+/** One setting on the right. Lights up when the owner clicks its part of the screen. */
+function Field({ id, focus, title, about, children }: { id: string; focus: string | null; title: string; about?: string; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const on = focus === id;
+  useEffect(() => { if (on) ref.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [on]);
+  return (
+    <section ref={ref} data-testid={`field-${id}`}
+      className={`bg-white rounded-2xl p-4 space-y-3 border transition-shadow ${on ? "border-blue-600 ring-2 ring-blue-600/30" : "border-slate-200"}`}>
+      <div>
+        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+        {about && <p className="text-xs text-slate-500 mt-0.5">{about}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { credentials: "include", ...init });
@@ -154,20 +174,17 @@ export default function KioskBuilder() {
   const [versions, setVersions] = useState<VersionRow[] | null>(null);
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<void> }>(null);
   const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
-  // The builder's sections (left rail); the middle panel shows the chosen one, the right the 15" kiosk.
-  const [section, setSection] = useState<SectionKey>("look");
+  // The screen being edited (the tabs), the part of it clicked on (data-kx-edit), and the Style panel.
+  const [scr, setScr] = useState<ScreenKey>("welcome");
+  const [focus, setFocus] = useState<string | null>(null);
+  const [styleOpen, setStyleOpen] = useState(false);
+  // Categories: the owner chose to make their own screens (the grid editor) instead of the category cards.
+  const [ownScreens, setOwnScreens] = useState(false);
   const extrasStore = useKioskExtras();
-  // The built-in guide. It opens by itself on Start here the first time this browser opens the builder.
+  // The guide, behind Help (it doesn't open by itself: the one-line hint under the tabs is the start).
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpTopic, setHelpTopic] = useState<HelpTopicId>("start");
   const openHelp = (t: HelpTopicId) => { setHelpTopic(t); setHelpOpen(true); };
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("certxa.kioskBuilder.helpSeen") === "1") return;
-      localStorage.setItem("certxa.kioskBuilder.helpSeen", "1");
-    } catch { return; }
-    openHelp("start");
-  }, []);
   // Screens tab: editing the screen, or the live kiosk preview (the same one the Settings tab shows).
   const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
   // Saved configurations (named designs to load, export, import).
@@ -197,11 +214,11 @@ export default function KioskBuilder() {
     }).catch((e) => setLoadError(e.message));
   }, []);
   useEffect(() => {
-    if (!slug || section !== "screens" || catalog) return;
+    if (!slug || !(scr === "categories" && ownScreens) || catalog) return;
     api<any>(`/api/public/kiosk/${slug}/config?preview=draft`)
       .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }))
       .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
-  }, [slug, section, catalog, toast]);
+  }, [slug, scr, ownScreens, catalog, toast]);
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       const fd = new FormData();
@@ -217,18 +234,25 @@ export default function KioskBuilder() {
   const postToPreview = useCallback((msg: object) => {
     iframeRef.current?.contentWindow?.postMessage(msg, window.location.origin);
   }, []);
-  // The screen the Screens tab wants the preview on; sent again when the preview (re)loads.
+  // The own-screens live preview: the screen it should open on; sent again when the preview (re)loads.
   const pendingScreenRef = useRef<string | null>(null);
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin || e.data?.type !== "kiosk-preview-ready") return;
-      if (section === "screens" && screensView === "preview" && pendingScreenRef.current) {
-        postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId: pendingScreenRef.current });
+      if (e.origin !== window.location.origin) return;
+      // The preview has loaded the design: show the screen being edited.
+      if (e.data?.type === "kiosk-preview-ready") {
+        if (scr === "categories" && ownScreens && screensView === "preview" && pendingScreenRef.current) {
+          postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId: pendingScreenRef.current });
+        } else {
+          postToPreview({ type: "kiosk-preview-goto", target: SCREENS.find((x) => x.key === scr)!.preview });
+        }
       }
+      // A part of the screen was clicked: open its setting.
+      if (e.data?.type === "kiosk-preview-edit") { setFocus(typeof e.data.target === "string" ? e.data.target : null); setStyleOpen(false); }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [section, screensView, postToPreview]);
+  }, [scr, ownScreens, screensView, postToPreview]);
 
   useEffect(() => {
     const box = previewBox;
@@ -422,42 +446,24 @@ export default function KioskBuilder() {
   const fmtMinutes = (m: number) => (m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? "hour" : "hours"}`);
   const previewUrl = slug ? `/kiosk/${slug}?preview=draft` : null;
   const staffTitle = currentStaffTitle(draft.text);
-  const ownWords = Object.keys(draft.text).filter((k) => !(STAFF_TEXT_KEYS as readonly string[]).includes(k)).length;
-  // One line per section in the left rail, so the owner sees where things stand.
-  const summaries: Record<SectionKey, string> = {
-    look: `${draft.theme.look === "boutique" ? "Boutique" : "Classic"}${Object.keys(draft.theme.colors).length ? " · your colours" : ""}`,
-    welcome: `${draft.welcome.imageUrl ? "Your picture" : "Certxa's picture"} · ${draft.welcome.languages.length} ${draft.welcome.languages.length === 1 ? "language" : "languages"}`,
-    steps: `${draft.steps.filter((x) => x.enabled).length} steps · up to ${draft.services.maxServices} ${draft.services.maxServices === 1 ? "service" : "services"}`,
-    screens: draft.menuMode === "screens"
-      ? `${draft.builder === "picture" ? "Picture" : "Easy"} builder · ${draft.menus.length} ${draft.menus.length === 1 ? "screen" : "screens"}`
-      : draft.menus.length ? `Off · ${draft.menus.length} ${draft.menus.length === 1 ? "screen" : "screens"} made` : "Off · category cards",
-    extras: extrasStore.list == null ? "…" : `${extrasStore.list.length} ${extrasStore.list.length === 1 ? "extra" : "extras"}`,
-    words: `${STAFF_TITLES.find((x) => x.key === staffTitle)?.label.replace(" (the kiosk's own words)", "") ?? "Your own staff words"}${ownWords ? ` · ${ownWords} changed` : ""}`,
-  };
   const f = FRAMES[frame];
-  /** The live kiosk preview with its bar (frame, screen jumps): on the Settings tab, and Screens › Live preview. */
-  const renderPreview = (extraButtons?: React.ReactNode) => (
-    <div className="flex-1 min-w-0 min-h-[480px] flex flex-col p-4 gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="px-3 h-8 inline-flex items-center text-sm rounded-md bg-slate-900 text-white">{FRAMES[frame].name}</span>
-        <div className="flex flex-wrap gap-1">
-          {extraButtons}
-        {PREVIEW_SCREENS.map((p) => (
-            <button key={p.target} type="button" onClick={() => postToPreview({ type: "kiosk-preview-goto", target: p.target })}
-              className="px-2.5 h-8 text-xs rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">{p.name}</button>
-          ))}
-        </div>
+  /**
+   * The 15" kiosk. edit: the screen editor (a click picks what to change). Otherwise the live kiosk, to tap through.
+   */
+  const renderPreview = (extraButtons?: React.ReactNode, edit = true) => (
+    <div className="flex-1 min-w-0 min-h-[480px] flex flex-col p-4 gap-2">
+      <div className="flex flex-wrap items-center gap-2 justify-center">
+        {extraButtons}
         {previewUrl && (
-          <a href={previewUrl} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-sm text-slate-600 underline">
-            Open full screen <ExternalLink className="w-3.5 h-3.5" />
+          <a href={previewUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-slate-600 underline">
+            Try it full screen <ExternalLink className="w-3.5 h-3.5" />
           </a>
         )}
       </div>
-      <p className="text-xs text-slate-500">Preview of your draft. Tap through it like a client; nothing here checks anyone in.</p>
       <div ref={setPreviewBox} className="flex-1 min-h-0 flex items-start justify-center overflow-hidden">
         {previewUrl ? (
-          <div style={{ width: f.w * scale, height: f.h * scale }} className="relative rounded-xl overflow-hidden border border-slate-300 bg-white shadow-sm">
-            <iframe ref={iframeRef} key={frame} src={previewUrl} title="Kiosk preview" data-testid="kiosk-builder-preview"
+          <div style={{ width: f.w * scale, height: f.h * scale }} className="relative rounded-[22px] overflow-hidden border-[8px] border-slate-800 bg-white shadow-md">
+            <iframe ref={iframeRef} key={`${frame}-${edit ? "edit" : "live"}`} src={edit ? `${previewUrl}&edit=1` : previewUrl} title="Kiosk preview" data-testid="kiosk-builder-preview"
               style={{ width: f.w, height: f.h, transform: `scale(${scale})`, transformOrigin: "0 0", border: 0, position: "absolute", top: 0, left: 0 }} />
           </div>
         ) : (
@@ -466,6 +472,64 @@ export default function KioskBuilder() {
       </div>
     </div>
   );
+  /** A sentence on the kiosk the business can rewrite, with its other languages. */
+  const textField = (key: string, title: string) => {
+    const k = textKeys.find((x) => x.key === key);
+    if (!k) return null;
+    const own = draft.text[key] ?? {};
+    const open = openLang === key;
+    const translated = KIOSK_LANG_CODES.filter((l) => l !== "en" && own[l]).length;
+    return (
+      <Field key={key} id={`text:${key}`} focus={focus} title={title} about="Leave it empty to keep the kiosk's own words.">
+        <Input value={own.en ?? ""} maxLength={k.max} placeholder={defaultEnglish(k)}
+          onChange={(e) => setText(key, "en", e.target.value)} data-testid={`kiosk-text-${key}`} />
+        {k.placeholders?.length ? <p className="text-xs text-slate-500">{"{name}"} becomes the client's first name.</p> : null}
+        <button type="button" className="text-xs text-slate-500 underline" onClick={() => setOpenLang(open ? null : key)}>
+          {open ? "Hide other languages" : `Other languages${translated ? ` (${translated} written)` : " (they show your English if left empty)"}`}
+        </button>
+        {open && (
+          <div className="space-y-1.5 pl-3 border-l border-slate-200">
+            {KIOSK_LANG_CODES.filter((l) => l !== "en").map((l) => (
+              <div key={l} className="flex items-center gap-2">
+                <span className="w-20 shrink-0 text-xs text-slate-500">{LANG_NAMES[l]}</span>
+                <Input value={own[l] ?? ""} maxLength={k.max} className="h-8 text-sm"
+                  placeholder={own.en ? "Shows your English" : "The kiosk's own words"}
+                  onChange={(e) => setText(key, l, e.target.value)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </Field>
+    );
+  };
+  const showSwitch = (id: KioskStepId, label: string) => {
+    const st = draft.steps.find((x) => x.id === id)!;
+    return (
+      <Row label={label}>
+        <Switch checked={st.enabled} onCheckedChange={(v) => setStep(id, v)} aria-label={label} data-testid={`step-${id}`} />
+      </Row>
+    );
+  };
+  // The order of the screens after Services (questions, add-ons, staff), for the Add-ons and Staff tabs.
+  const orderField = (
+    <Field id="order" focus={focus} title="Order after Services" about="Which of these screens comes first. A screen that's off is skipped.">
+      {middle.map((st, i) => (
+        <div key={st.id} className="flex items-center justify-between text-sm">
+          <span className={st.enabled ? "text-slate-800" : "text-slate-400"}>{i + 1}. {STEP_INFO[st.id].name}{st.enabled ? "" : " (off)"}</span>
+          <span className="flex items-center gap-1">
+            <button type="button" aria-label="Earlier" disabled={i === 0} onClick={() => moveStep(st.id, -1)} className="p-1 text-slate-500 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
+            <button type="button" aria-label="Later" disabled={i === middle.length - 1} onClick={() => moveStep(st.id, 1)} className="p-1 text-slate-500 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
+          </span>
+        </div>
+      ))}
+    </Field>
+  );
+  const goScreen = (k: ScreenKey) => {
+    setScr(k); setFocus(null); setStyleOpen(false); setScreensView("edit");
+    postToPreview({ type: "kiosk-preview-goto", target: SCREENS.find((x) => x.key === k)!.preview });
+  };
+  const screen = SCREENS.find((x) => x.key === scr)!;
+  const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");
 
   return (
     <AppLayout fullHeight>
@@ -498,47 +562,42 @@ export default function KioskBuilder() {
         {saveError && (
           <div className="shrink-0 px-5 py-2 text-sm text-red-700 bg-red-50 border-b border-red-200">{saveError}</div>
         )}
-        {/* ── Sections · settings · the 15" kiosk ── */}
+        {/* ── The screens (tabs) ── */}
+        <div className="shrink-0 border-b border-slate-200 bg-white px-5 pt-2">
+          <div className="flex items-end gap-1 overflow-x-auto" data-testid="screen-tabs">
+            {SCREENS.map((x, i) => (
+              <button key={x.key} type="button" onClick={() => goScreen(x.key)} data-testid={`screen-tab-${x.key}`}
+                className={`shrink-0 px-3.5 py-2 text-sm rounded-t-lg border-b-2 ${scr === x.key && !styleOpen ? "border-slate-900 text-slate-900 font-semibold bg-slate-50" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+                <span className="text-slate-400 mr-1">{i + 1}</span>{x.name}
+              </button>
+            ))}
+            <button type="button" onClick={() => { setStyleOpen(true); setFocus(null); }} data-testid="screen-tab-style"
+              className={`shrink-0 ml-auto px-3.5 py-2 text-sm rounded-t-lg border-b-2 ${styleOpen ? "border-slate-900 text-slate-900 font-semibold bg-slate-50" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+              Colours &amp; style
+            </button>
+          </div>
+        </div>
+        <div className="shrink-0 px-5 py-2 text-sm text-slate-600 bg-slate-50 border-b border-slate-200" data-testid="builder-hint">
+          <span className="font-medium text-slate-800">How it works:</span> pick a screen above, click what you want to change on it, then press Publish when you're happy.{" "}
+          <button type="button" className="underline" onClick={() => openHelp("start")}>More help</button>
+        </div>
+
         {(() => {
-          const sec = SECTIONS.find((x) => x.key === section)!;
-          const layout = (panel: React.ReactNode, right: React.ReactNode) => (
+          const layout = (center: React.ReactNode, panel: React.ReactNode) => (
             <div className="flex-1 min-h-0 flex">
-              <nav className="w-[220px] shrink-0 border-r border-slate-200 bg-white overflow-y-auto py-3" data-testid="builder-sections">
-                {SECTIONS.map((x) => (
-                  <button key={x.key} type="button" data-testid={`builder-section-${x.key}`}
-                    onClick={() => { setSection(x.key); setScreensView("edit"); if (x.preview) postToPreview({ type: "kiosk-preview-goto", target: x.preview }); }}
-                    className={`w-full text-left px-4 py-2.5 border-l-2 ${section === x.key ? "border-slate-900 bg-slate-50" : "border-transparent hover:bg-slate-50"}`}>
-                    <span className={`block text-sm ${section === x.key ? "font-semibold text-slate-900" : "text-slate-700"}`}>{x.name}</span>
-                    <span className="block text-xs text-slate-500 truncate">{summaries[x.key]}</span>
-                  </button>
-                ))}
-              </nav>
-              <div className="w-[420px] shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50">
-                <div className="px-5 pt-5 pb-3">
-                  <h2 className="text-lg font-semibold text-slate-900">{sec.name}</h2>
-                  <p className="text-sm text-slate-500">
-                    {sec.about}{" "}
-                    <button type="button" className="underline text-slate-700" onClick={() => openHelp(SECTION_HELP[sec.key])} data-testid="section-help">How this works</button>
-                  </p>
+              <div className="flex-1 min-w-0 flex">{center}</div>
+              <div className="w-[420px] shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50" data-testid="screen-panel">
+                <div className="px-5 pt-4 pb-2">
+                  <h2 className="text-lg font-semibold text-slate-900">{styleOpen ? "Colours & style" : `${screen.name} screen`}</h2>
+                  <p className="text-sm text-slate-500">{styleOpen ? "The look of every screen." : screen.about}</p>
                 </div>
-                <div className="px-4 pb-6 space-y-4">{panel}</div>
+                <div className="px-4 pb-6 space-y-3">{panel}</div>
               </div>
-              <div className="flex-1 min-w-0 flex p-2">{right}</div>
             </div>
           );
-          if (section === "screens") {
-            if (!catalog) return layout(<div className="flex items-center gap-2 text-slate-500 py-10"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>, renderPreview());
-            return (
-              <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
-                renderPreview={renderPreview} view={screensView} onView={setScreensView} extras={extrasStore} onHelp={openHelp}
-                previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
-                {({ panel, canvas }) => layout(panel, canvas ?? renderPreview())}
-              </ScreensEditor>
-            );
-          }
-          const panels: Record<Exclude<SectionKey, "screens">, React.ReactNode> = {
-            look: (<>
-            <Section title="Look">
+
+          if (styleOpen) return layout(renderPreview(), (
+            <Field id="style" focus={focus} title="Style">
               <div className="grid grid-cols-2 gap-2">
                 {([["classic", "Classic", "Lavender and rose"], ["boutique", "Boutique", "Cream and copper, serif headings"]] as const).map(([key, name, about]) => (
                   <button key={key} type="button" onClick={() => update((d) => ({ ...d, theme: { ...d.theme, look: key } }))}
@@ -567,31 +626,71 @@ export default function KioskBuilder() {
                   );
                 })}
               </div>
-            </Section>
-            </>),
+            </Field>
+          ));
+
+          if (usingOwn) {
+            if (!catalog) return layout(renderPreview(), <>{
+          <Field id="how" focus={focus} title="How clients pick a service">
+            <div className="grid grid-cols-2 gap-2">
+              {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
+                <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
+                  onClick={() => { setOwnScreens(own); if (!own && draft.menuMode === "screens") update((d) => ({ ...d, menuMode: "catalog" })); }}
+                  className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <p className="text-sm font-medium text-slate-800">{name}</p>
+                  <p className="text-xs text-slate-500">{about}</p>
+                </button>
+              ))}
+            </div>
+          </Field>
+          }<div className="flex items-center gap-2 text-slate-500 py-6"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div></>);
+            return (
+              <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
+                renderPreview={(extra) => renderPreview(extra, false)} view={screensView} onView={setScreensView} extras={extrasStore} onHelp={openHelp}
+                previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
+                {({ panel, canvas }) => layout(canvas ?? renderPreview(undefined, false), <>
+          <Field id="how" focus={focus} title="How clients pick a service">
+            <div className="grid grid-cols-2 gap-2">
+              {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
+                <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
+                  onClick={() => { setOwnScreens(own); if (!own && draft.menuMode === "screens") update((d) => ({ ...d, menuMode: "catalog" })); }}
+                  className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <p className="text-sm font-medium text-slate-800">{name}</p>
+                  <p className="text-xs text-slate-500">{about}</p>
+                </button>
+              ))}
+            </div>
+          </Field>
+                  {panel}
+                </>)}
+              </ScreensEditor>
+            );
+          }
+
+          const panels: Record<ScreenKey, React.ReactNode> = {
             welcome: (<>
-            <Section title="Welcome screen" about="The picture fills the whole screen. A tall picture (9:16) suits a standing kiosk.">
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-24 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden shrink-0">
-                  {draft.welcome.imageUrl
-                    ? <img src={draft.welcome.imageUrl} alt="" className="w-full h-full object-cover" />
-                    : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 text-center px-1">Certxa's picture</div>}
+              <Field id="welcome-picture" focus={focus} title="Picture" about="Fills the whole screen. Make it 1080 × 1920 pixels (tall).">
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-24 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden shrink-0">
+                    {draft.welcome.imageUrl
+                      ? <img src={draft.welcome.imageUrl} alt="" className="w-full h-full object-cover" />
+                      : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 text-center px-1">Certxa's picture</div>}
+                  </div>
+                  <div className="flex flex-col gap-2 items-start">
+                    <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-9 cursor-pointer bg-white hover:bg-slate-50">
+                      {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      {draft.welcome.imageUrl ? "Replace picture" : "Upload picture"}
+                      <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading}
+                        onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadWelcome(file); e.target.value = ""; }} />
+                    </label>
+                    {draft.welcome.imageUrl && (
+                      <button type="button" className="text-xs text-slate-500 underline"
+                        onClick={() => update((d) => ({ ...d, welcome: { ...d.welcome, imageUrl: null } }))}>Use Certxa's picture</button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2 items-start">
-                  <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-9 cursor-pointer bg-white hover:bg-slate-50">
-                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                    {draft.welcome.imageUrl ? "Replace picture" : "Upload picture"}
-                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading}
-                      onChange={(e) => { const file = e.target.files?.[0]; if (file) void uploadWelcome(file); e.target.value = ""; }} />
-                  </label>
-                  {draft.welcome.imageUrl && (
-                    <button type="button" className="text-xs text-slate-500 underline"
-                      onClick={() => update((d) => ({ ...d, welcome: { ...d.welcome, imageUrl: null } }))}>Use Certxa's picture</button>
-                  )}
-                </div>
-              </div>
-              <div>
-                <p className="text-sm font-medium text-slate-700 mb-2">Language buttons</p>
+              </Field>
+              <Field id="languages" focus={focus} title="Language buttons" about="The buttons at the bottom. With only English, none show.">
                 <div className="flex flex-wrap gap-x-4 gap-y-2">
                   {KIOSK_LANG_CODES.map((code) => (
                     <label key={code} className="inline-flex items-center gap-1.5 text-sm text-slate-700">
@@ -602,125 +701,109 @@ export default function KioskBuilder() {
                     </label>
                   ))}
                 </div>
-                <p className="text-xs text-slate-500 mt-1.5">English is always there. With only English, no buttons show.</p>
-              </div>
-            </Section>
+              </Field>
             </>),
-            steps: (<>
-            <Section title="Steps" about="What clients go through after typing their phone number, before the review.">
-              <div className="space-y-3">
-                {(["category", "services"] as KioskStepId[]).map((id) => {
-                  const s = draft.steps.find((x) => x.id === id)!;
-                  return (
-                    <Row key={id} label={STEP_INFO[id].name} about={STEP_INFO[id].about}>
-                      {id === "services" ? <span className="text-xs text-slate-500">Always on</span>
-                        : <Switch checked={s.enabled} onCheckedChange={(v) => setStep(id, v)} aria-label={STEP_INFO[id].name} />}
-                    </Row>
-                  );
-                })}
-                <p className="text-xs text-slate-500 pt-1">Then, in this order:</p>
-                {middle.map((s, i) => (
-                  <Row key={s.id} label={STEP_INFO[s.id].name} about={STEP_INFO[s.id].about}>
-                    <div className="flex items-center gap-1">
-                      <button type="button" aria-label="Move up" disabled={i === 0} onClick={() => moveStep(s.id, -1)}
-                        className="p-1 text-slate-500 disabled:opacity-30"><ArrowUp className="w-4 h-4" /></button>
-                      <button type="button" aria-label="Move down" disabled={i === middle.length - 1} onClick={() => moveStep(s.id, 1)}
-                        className="p-1 text-slate-500 disabled:opacity-30"><ArrowDown className="w-4 h-4" /></button>
-                      <Switch checked={s.enabled} onCheckedChange={(v) => setStep(s.id, v)} aria-label={STEP_INFO[s.id].name} />
-                    </div>
-                  </Row>
-                ))}
-                <p className="text-xs text-slate-500">A step with nothing to show for a client (no add-ons for that service, no staff in) is skipped.</p>
-              </div>
-            </Section>
-            <Section title="Rules">
-              <div className="space-y-3">
-                <Row label="Services per check-in">
+            phone: (
+              <Field id="phone" focus={focus} title="Nothing to change here">
+                <p className="text-sm text-slate-600">Clients type their mobile number on this screen. New clients then type their first name. It looks the same for every salon.</p>
+              </Field>
+            ),
+            categories: (<>
+          <Field id="how" focus={focus} title="How clients pick a service">
+            <div className="grid grid-cols-2 gap-2">
+              {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
+                <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
+                  onClick={() => { setOwnScreens(own); if (!own && draft.menuMode === "screens") update((d) => ({ ...d, menuMode: "catalog" })); }}
+                  className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <p className="text-sm font-medium text-slate-800">{name}</p>
+                  <p className="text-xs text-slate-500">{about}</p>
+                </button>
+              ))}
+            </div>
+          </Field>
+              <Field id="category-cards" focus={focus} title="Category cards" about="One card for each category in your catalog. Card pictures come from Catalog › Categories.">
+                {showSwitch("category", "Show this screen")}
+                <p className="text-xs text-slate-500">Off: clients go straight to one list of all your services.</p>
+              </Field>
+              {textField("whatBringsYouIn", "Heading")}
+            </>),
+            services: (<>
+              <Field id="service-cards" focus={focus} title="Service cards">
+                <Row label="Show prices"><Switch checked={draft.services.showPrice} onCheckedChange={(v) => update((d) => ({ ...d, services: { ...d.services, showPrice: v } }))} /></Row>
+                <Row label="Show how long they take"><Switch checked={draft.services.showDuration} onCheckedChange={(v) => update((d) => ({ ...d, services: { ...d.services, showDuration: v } }))} /></Row>
+              </Field>
+              <Field id="limits" focus={focus} title="How many services">
+                <Row label="Services one client can pick">
                   <select className={selectClass} value={draft.services.maxServices}
                     onChange={(e) => update((d) => ({ ...d, services: { ...d.services, maxServices: Number(e.target.value) } }))}>
                     {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
                   </select>
                 </Row>
-                <Row label="Longest visit" about="With more than one service">
+                <Row label="Longest visit" about="Only with more than one service">
                   <select className={selectClass} value={draft.services.maxVisitMinutes}
                     onChange={(e) => update((d) => ({ ...d, services: { ...d.services, maxVisitMinutes: Number(e.target.value) } }))}>
                     {minuteChoices.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
                   </select>
                 </Row>
-                <Row label="Show prices">
-                  <Switch checked={draft.services.showPrice} onCheckedChange={(v) => update((d) => ({ ...d, services: { ...d.services, showPrice: v } }))} />
-                </Row>
-                <Row label="Show how long services take">
-                  <Switch checked={draft.services.showDuration} onCheckedChange={(v) => update((d) => ({ ...d, services: { ...d.services, showDuration: v } }))} />
-                </Row>
-                <Row label="Smart Check-In" about="Suggests a returning client's usual or due service">
-                  <Switch checked={draft.smartCheckin} onCheckedChange={(v) => update((d) => ({ ...d, smartCheckin: v }))} />
-                </Row>
-                <Row label="Ticket screen stays for">
-                  <select className={selectClass} value={draft.timing.ticketResetSeconds}
-                    onChange={(e) => update((d) => ({ ...d, timing: { ticketResetSeconds: Number(e.target.value) } }))}>
-                    {[10, 15, 20, 30, 45, 60, 90, 120].map((n) => <option key={n} value={n}>{n} seconds</option>)}
-                  </select>
-                </Row>
-              </div>
-            </Section>
+              </Field>
+              <Field id="smart" focus={focus} title="Suggestions">
+                <Row label="Suggest a returning client's usual service"><Switch checked={draft.smartCheckin} onCheckedChange={(v) => update((d) => ({ ...d, smartCheckin: v }))} /></Row>
+              </Field>
+              <Field id="questions" focus={focus} title="Nail questions" about="Length, shape and design, for services set up in Catalog › Nail Config.">
+                {showSwitch("questions", "Ask them after the service")}
+              </Field>
             </>),
-            extras: (
-              <section className="bg-white border border-slate-200 rounded-2xl p-5">
+            addons: (<>
+              <Field id="addon-cards" focus={focus} title="Add-ons" about="The add-ons that go with the service they picked.">
+                {showSwitch("addons", "Show this screen")}
+              </Field>
+              {orderField}
+              <Field id="extras" focus={focus} title="Kiosk Extras" about="Kiosk-only choices like a nail shape. You put them on your own screens.">
                 <ExtrasPanel store={extrasStore} draft={draft} update={update} />
-              </section>
-            ),
-            words: (<>
-            <Section title="What clients call your staff" about="Used on the staff, review and ticket screens, in every language.">
-              <select className={`${selectClass} w-full`} value={staffTitle} data-testid="staff-title"
-                onChange={(e) => {
-                  const key = e.target.value;
-                  if (key === "custom") return;
-                  update((d) => {
-                    const text = { ...d.text };
-                    for (const k of STAFF_TEXT_KEYS) delete text[k];
-                    return { ...d, text: { ...text, ...staffTextFor(key) } };
-                  });
-                }}>
-                {STAFF_TITLES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
-                {staffTitle === "custom" && <option value="custom">Your own words (below)</option>}
-              </select>
-            </Section>
-            <Section title="Words" about="Leave a box empty to keep the kiosk's own words. A language you don't fill in shows your English.">
-              <div className="space-y-4">
-                {textKeys.map((k) => {
-                  const own = draft.text[k.key] ?? {};
-                  const open = openLang === k.key;
-                  const translated = KIOSK_LANG_CODES.filter((l) => l !== "en" && own[l]).length;
-                  return (
-                    <div key={k.key} className="space-y-1.5">
-                      <p className="text-sm font-medium text-slate-700">{k.label}</p>
-                      <Input value={own.en ?? ""} maxLength={k.max} placeholder={defaultEnglish(k)}
-                        onChange={(e) => setText(k.key, "en", e.target.value)} data-testid={`kiosk-text-${k.key}`} />
-                      {k.placeholders?.length ? <p className="text-xs text-slate-500">{"{name}"} becomes the client's first name.</p> : null}
-                      <button type="button" className="text-xs text-slate-500 underline" onClick={() => setOpenLang(open ? null : k.key)}>
-                        {open ? "Hide other languages" : `Other languages${translated ? ` (${translated} written)` : ""}`}
-                      </button>
-                      {open && (
-                        <div className="space-y-1.5 pl-3 border-l border-slate-200">
-                          {KIOSK_LANG_CODES.filter((l) => l !== "en").map((l) => (
-                            <div key={l} className="flex items-center gap-2">
-                              <span className="w-20 shrink-0 text-xs text-slate-500">{LANG_NAMES[l]}</span>
-                              <Input value={own[l] ?? ""} maxLength={k.max} className="h-8 text-sm"
-                                placeholder={own.en ? "Shows your English" : "The kiosk's own words"}
-                                onChange={(e) => setText(k.key, l, e.target.value)} />
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </Section>
+              </Field>
+            </>),
+            staff: (<>
+              <Field id="staff-cards" focus={focus} title="Staff cards" about="Only staff who are clocked in and free are shown.">
+                {showSwitch("provider", "Show this screen")}
+              </Field>
+              <Field id="staff-title" focus={focus} title="What clients call your staff" about="Used on this screen, the review and the ticket, in every language.">
+                <select className={`${selectClass} w-full`} value={staffTitle} data-testid="staff-title"
+                  onChange={(e) => {
+                    const key = e.target.value;
+                    if (key === "custom") return;
+                    update((d) => {
+                      const text = { ...d.text };
+                      for (const k of STAFF_TEXT_KEYS) delete text[k];
+                      return { ...d, text: { ...text, ...staffTextFor(key) } };
+                    });
+                  }}>
+                  {STAFF_TITLES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+                  {staffTitle === "custom" && <option value="custom">Your own words (below)</option>}
+                </select>
+              </Field>
+              {textField("whoWouldYouLike", "Heading")}
+              {textField("pickStylist", "Line under the heading")}
+              {textField("nextAvailable", "The \"anyone\" card")}
+              {textField("autoAssign", "Under the \"anyone\" card")}
+              {orderField}
+            </>),
+            review: (<>
+              {textField("yourStylist", "Staff label")}
+            </>),
+            ticket: (<>
+              <Field id="ticket-timer" focus={focus} title="How long this screen stays">
+                <select className={`${selectClass} w-full`} value={draft.timing.ticketResetSeconds}
+                  onChange={(e) => update((d) => ({ ...d, timing: { ticketResetSeconds: Number(e.target.value) } }))}>
+                  {[10, 15, 20, 30, 45, 60, 90, 120].map((n) => <option key={n} value={n}>{n} seconds, then back to Welcome</option>)}
+                </select>
+              </Field>
+              {textField("showQr", "Line under the heading")}
             </>),
           };
-          return layout(panels[section as Exclude<SectionKey, "screens">], renderPreview());
+          return layout(renderPreview(), <>
+            {panels[scr]}
+            {!focus && scr !== "phone" && <p className="text-xs text-slate-500 px-1">Tip: click any part of the screen to jump to its setting.</p>}
+          </>);
         })()}
       </div>
 

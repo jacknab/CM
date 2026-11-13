@@ -23,22 +23,15 @@ export const KIOSK_HELP: HelpTopic[] = [
   {
     id: "start", group: "Getting started", title: "Start here",
     blocks: [
-      { p: "The Kiosk Builder is where you decide what your check-in kiosk looks like and what clients do on it: the welcome picture, the colours, the steps, the screens where they pick services, and the words it shows." },
-      { h: "The three columns" },
-      { list: [
-        "Left: the sections. Pick one to work on it. Under each name is a short summary of how it is set right now.",
-        "Middle: the settings for the section you picked.",
-        "Right: your 15\" kiosk, exactly as clients will see it. It moves to the screen the section is about. You can tap through it like a client; nothing you do there checks anyone in.",
-      ] },
-      { h: "Nothing you change goes live by itself" },
-      { p: "Every change saves on its own to your draft (you'll see \"Draft saved\" at the top). Your kiosk in the salon keeps showing the last design you published until you press Publish." },
+      { p: "This is where you set up your check-in kiosk." },
       { steps: [
-        "Pick a section on the left and change what you like.",
-        "Check it on the kiosk on the right. Use the buttons above it (Welcome, Phone, Categories…) to see any screen.",
-        "When you're happy, press Publish at the top right.",
+        "Pick a screen at the top: Welcome, Categories, Staff and so on. The kiosk in the middle shows that screen.",
+        "Click the part you want to change, like the picture or a heading. Its setting opens on the right.",
+        "Change it. The kiosk shows the change straight away.",
+        "Press Publish (top right) to put it on the kiosk in your salon.",
       ] },
-      { tip: "Not sure? Change one thing at a time and look at the kiosk on the right after each change. If you make a mess, History brings back what you had published." },
-      { see: [{ topic: "publish", label: "Publish and History" }, { topic: "glossary", label: "Words you'll see" }] },
+      { tip: "Nothing changes in your salon until you press Publish. If you don't like a change, History brings back what you had." },
+      { see: [{ topic: "publish", label: "Publish and History" }, { topic: "recipe-shapes", label: "Make a nail-shape screen" }] },
     ],
   },
   {
@@ -60,15 +53,14 @@ export const KIOSK_HELP: HelpTopic[] = [
 
   // ── The sections ─────────────────────────────────────────────────────────────
   {
-    id: "look", group: "The sections", title: "Look",
+    id: "look", group: "The sections", title: "Colours & style",
     blocks: [
-      { p: "The style of the whole kiosk." },
+      { p: "Press \"Colours & style\" at the right end of the screen tabs. It changes every screen." },
       { list: [
         "Classic: lavender and rose, rounded buttons.",
-        "Boutique: cream and copper with elegant serif headings. Nail salons start with this one.",
+        "Boutique: cream and copper with elegant headings. Nail salons start with this one.",
+        "Your own colours: buttons, background, cards and text. Reset puts the style's colour back.",
       ] },
-      { p: "Under the look you can pick your own colours for buttons and highlights, the background, cards and bars, and the text. The little square shows the colour in use. Reset puts back the look's own colour." },
-      { tip: "Pick your brand colour for \"Buttons and highlights\" first; it changes the most. Keep text dark on a light background so it is easy to read." },
     ],
   },
   {
@@ -87,45 +79,40 @@ export const KIOSK_HELP: HelpTopic[] = [
     ],
   },
   {
-    id: "steps", group: "The sections", title: "Check-in steps",
+    id: "steps", group: "The sections", title: "Turning screens on and off",
     blocks: [
-      { p: "After typing their phone number (and their name, the first time), clients go through these steps, then see a review of their visit and press Check In." },
-      { h: "The steps" },
+      { p: "Clients go through the screens in the order of the tabs. Some screens can be switched off on their tab:" },
       { list: [
-        "Categories: big cards for each kind of service (Manicures, Pedicures…). Turn it off to show one list of every service.",
-        "Services: the list of services. Always on.",
-        "Service questions: questions a service asks, like nail length, shape and design. Set them up in Catalog › Nail Config.",
-        "Add-ons: extras for the service they chose.",
-        "Choose staff: clients pick who they'd like, or \"Next available\". Only staff who are clocked in and free are shown.",
+        "Categories › \"Show this screen\": off sends clients straight to one list of all your services.",
+        "Services › \"Nail questions\": asks length, shape and design for services set up in Catalog › Nail Config.",
+        "Add-ons › \"Show this screen\".",
+        "Staff › \"Show this screen\". Only staff who are clocked in and free are shown.",
       ] },
-      { p: "Use the arrows to change the order of the last three. A step with nothing to show (no add-ons for that service, nobody clocked in) is skipped by itself." },
-      { h: "Rules" },
+      { p: "\"Order after Services\" (on the Add-ons and Staff tabs) decides which of those comes first. A screen with nothing to show is skipped by itself." },
+      { h: "Rules (Services tab)" },
       { list: [
-        "Services per check-in: how many services one client can pick at the kiosk (1 to 3).",
-        "Longest visit: with more than one service, the longest the visit can be. Longer visits are booked at the front desk.",
-        "Show prices / Show how long services take: what the service cards show.",
-        "Smart Check-In: suggests a returning client's usual service, or a fill when one is due.",
-        "Ticket screen stays for: how long the \"You're checked in\" screen stays before the kiosk goes back to the welcome screen.",
+        "Services one client can pick: 1 to 3.",
+        "Longest visit: with more than one service. Longer visits are booked at the front desk.",
+        "Show prices / how long they take.",
+        "Suggest a returning client's usual service.",
       ] },
     ],
   },
   {
-    id: "screens", group: "The sections", title: "Service screens",
+    id: "screens", group: "The sections", title: "Your own screens",
     blocks: [
-      { p: "By default clients pick services from category cards and a list made from your catalog. Service screens let you design those screens yourself instead." },
+      { p: "Normally the Categories screen shows a card for each category in your catalog. You can design your own screens instead, like the button grid on a POS." },
       { steps: [
-        "Choose a builder: Easy builder or Picture builder (see \"Which builder should I use?\").",
+        "Click the Categories tab, then \"My own screens\".",
+        "Choose a builder: Easy or Picture (see \"Which builder should I use?\").",
         "Make your screens.",
         "Turn on \"Use my own screens\" and choose the screen clients start on.",
         "Check it with Live preview, then Publish.",
       ] },
-      { p: "While \"Use my own screens\" is off, your screens are kept but the kiosk shows the normal category cards." },
-      { h: "Editing a screen" },
       { list: [
-        "Pick a screen in the Screens list. The kiosk on the right becomes the editing canvas.",
-        "Tap something on the canvas to change it. Its settings open in a box at the top of the middle column.",
-        "Edit screen / Live preview (above the canvas) switches between editing and trying it like a client.",
-        "The bin next to a screen in the list deletes it. Buttons and tap spots that opened it are removed too.",
+        "Tap something on the screen to change it; its settings open on the right.",
+        "The bin next to a screen in the list deletes it.",
+        "\"Category cards\" puts the normal cards back (your screens are kept).",
       ] },
       { see: [{ topic: "builders", label: "Which builder should I use?" }, { topic: "easy", label: "Easy builder" }, { topic: "picture", label: "Picture builder" }] },
     ],
@@ -155,7 +142,7 @@ export const KIOSK_HELP: HelpTopic[] = [
       { h: "Buttons" },
       { list: [
         "Tap an empty slot (\"+ Add\") to add a button: a service, an extra or add-on, or a button that opens another screen (like a folder).",
-        "Tap a button to change its name or picture, open the screen it links to, or remove it.",
+        "Tap a button to change its name or picture, open the screen it links to, or remove it. For a service or extra, \"Then…\" decides where the client goes after tapping it.",
         "Drag a button onto another slot to move it.",
         "\"Fill empty slots with a category's services\" adds a whole category at once.",
         "Add page gives the screen another page.",
@@ -177,8 +164,10 @@ export const KIOSK_HELP: HelpTopic[] = [
       { steps: [
         "Press \"Add tap spot\". A box appears on the picture.",
         "Drag the box over the part to tap; drag its corners until it covers it. Arrow keys move it a little (hold Shift for more, Alt to change its size). Delete removes it.",
-        "Choose what it does: a Service, an Add-on or Kiosk Extra, a Function (Continue, Back, Start over) or a Screen to open.",
+        "Choose what it does: a Service, an Add-on or Kiosk Extra, a Function (Continue, Go to Staff, Finish, Back, Start over) or a Screen to open.",
+        "For a service, add-on or extra, choose \"Then…\": stay on the screen so they can pick more, continue to the next step, go to staff, finish (the review), or open another of your screens.",
       ] },
+      { tip: "Example: a nail-shape spot with \"Then… Go to choosing staff\" takes the client straight on as soon as they tap their shape." },
       { h: "3. The footer (optional)" },
       { p: "Turn on \"Show the kiosk footer\" to put the kiosk's own bar at the bottom: Back, what the client chose, the total and Continue. It covers the bottom strip of your picture (marked on the template), so keep tap spots out of it. With the footer on you don't need your own Back and Continue spots." },
       { h: "Warnings" },
@@ -199,7 +188,7 @@ export const KIOSK_HELP: HelpTopic[] = [
       { p: "Tick \"Clients must choose one\" on a group and Continue waits until the client picks one of them (\"Please choose your nail shape\")." },
       { h: "Where they go" },
       { list: [
-        "Put them on your screens: a tap spot (Add-on tab) or a button (\"An extra\"). You can also make a new extra right there.",
+        "Make them on the Add-ons tab › Kiosk Extras, or right from a tap spot or button on your own screens.",
         "A client chooses a service first; the extra is added to it.",
         "The choice goes on the client's ticket as its own line, so the tech sees it and the front desk charges it at checkout.",
         "Extras don't show on your booking website or in your normal add-ons.",
@@ -208,16 +197,13 @@ export const KIOSK_HELP: HelpTopic[] = [
     ],
   },
   {
-    id: "words", group: "The sections", title: "Words",
+    id: "words", group: "The sections", title: "Changing the words",
     blocks: [
-      { h: "What clients call your staff" },
-      { p: "Choose Stylist, Nail technician, Barber, Therapist, Esthetician, Groomer, Artist or Team member. The kiosk uses it on the staff, review and ticket screens, in every language." },
-      { h: "Your own words" },
+      { p: "Click a heading or a line of text on a screen; its box opens on the right. Leave it empty to keep the kiosk's own words." },
       { list: [
-        "Each box is one sentence on the kiosk. The grey text is what it says now.",
-        "Leave a box empty to keep the kiosk's own words.",
         "{name} becomes the client's first name.",
-        "\"Other languages\" lets you write the sentence in Spanish, Vietnamese, Chinese and Korean. A language you leave empty shows your English.",
+        "\"Other languages\" lets you write it in Spanish, Vietnamese, Chinese and Korean. A language you leave empty shows your English.",
+        "Staff tab › \"What clients call your staff\": Stylist, Nail technician, Barber and others, in every language at once.",
       ] },
     ],
   },
@@ -243,13 +229,13 @@ export const KIOSK_HELP: HelpTopic[] = [
     blocks: [
       { p: "Clients pick their service, then tap the shape they want on your own picture. Most shapes are free, a few cost extra." },
       { steps: [
-        "Service screens › choose Picture builder.",
+        "Categories tab › My own screens › choose Picture builder.",
         "Press \"Start with a picture screen\" (or \"New picture screen\"), then \"Download template\" and design your shapes picture on it. Turn on \"Show the kiosk footer\" if you want the kiosk's Back and Continue bar.",
         "Upload the picture.",
         "Press \"Add tap spot\", drag it over the first shape and size it. Pick the Add-on tab › New extra: name \"Coffin\", price 5, group \"Nail shape\" › Add and use.",
         "Repeat for every shape (use the same group \"Nail shape\"; free shapes have price 0).",
         "If you didn't turn on the footer, add a tap spot for your Continue and Back (Function tab).",
-        "Kiosk Extras › tick \"Clients must choose one\" on Nail shape.",
+        "Add-ons tab › Kiosk Extras › tick \"Clients must choose one\" on Nail shape.",
         "Link to the screen from where clients pick their service: on a picture, a tap spot › Screen; in the Easy builder, a button › Open a screen. Or make it the start screen.",
         "Turn on \"Use my own screens\", try it in Live preview, then Publish.",
       ] },
@@ -260,7 +246,7 @@ export const KIOSK_HELP: HelpTopic[] = [
     id: "recipe-menu", group: "How do I…", title: "Make a simple menu of my services",
     blocks: [
       { steps: [
-        "Service screens › Easy builder › \"Build screens from my catalog\".",
+        "Categories tab › My own screens › Easy builder › \"Build screens from my catalog\".",
         "Pick each screen in the list and choose a layout (for example 2 across, 3 rows).",
         "Turn on \"Use my own screens\" and pick \"Start\" as the screen clients start on.",
         "Try it in Live preview, then Publish.",
@@ -272,7 +258,7 @@ export const KIOSK_HELP: HelpTopic[] = [
     blocks: [
       { steps: [
         "Make a picture 1080 pixels wide and 1920 tall (standing up).",
-        "Welcome screen › Upload picture.",
+        "Welcome tab › Upload picture (or click the picture on the screen).",
         "Look at the kiosk on the right; if the language buttons cover something, move that part of your design up.",
         "Publish.",
       ] },
@@ -298,7 +284,7 @@ export const KIOSK_HELP: HelpTopic[] = [
         "Open that address on the tablet (or scan the QR code), and pair it with your salon's device code when asked.",
         "Leave it on the welcome screen.",
       ] },
-      { p: "Open full screen (above the kiosk on the right) shows your draft full size on this computer; it doesn't check anyone in." },
+      { p: "\"Try it full screen\" (above the kiosk) opens your draft full size to tap through; it doesn't check anyone in." },
     ],
   },
 
@@ -311,8 +297,8 @@ export const KIOSK_HELP: HelpTopic[] = [
         "Publish: puts the draft on your kiosk.",
         "Version: a design you published. History keeps them all.",
         "Configuration: a whole design saved under a name; can be exported to a file.",
-        "Section: one of the parts on the left (Look, Welcome screen…).",
-        "Service screens: your own screens for choosing services.",
+        "Screen tabs: the kiosk's screens across the top, in the order clients see them.",
+        "Own screens: screens you design yourself for choosing services (Categories tab).",
         "Easy builder / Picture builder: the two ways to make service screens. A kiosk uses one.",
         "Button: something to tap on an Easy-builder screen.",
         "Tap spot: an invisible button over part of your picture (Picture builder).",

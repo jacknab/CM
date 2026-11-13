@@ -253,3 +253,24 @@ describe("what clients call the staff", () => {
     expect(currentStaffTitle(KIOSK_PRESETS.barber.layout.text)).toBe("barber");
   });
 });
+
+describe("what happens after a choice", () => {
+  it("keeps a good 'then' on spots and buttons that choose something, drops the rest", () => {
+    const l = normalizeKioskLayout({ builder: "picture", menus: [
+      { id: "a", name: "A", kind: "picture", spots: [
+        { id: "s1", x: 0, y: 0, w: 10, h: 10, action: { kind: "addon", addonId: 3 }, next: { kind: "continue" } },
+        { id: "s2", x: 0, y: 20, w: 10, h: 10, action: { kind: "service", serviceId: 4 }, next: { kind: "menu", menuId: "b" } },
+        { id: "s3", x: 0, y: 40, w: 10, h: 10, action: { kind: "service", serviceId: 5 }, next: { kind: "menu", menuId: "a" } }, // itself
+        { id: "s4", x: 0, y: 60, w: 10, h: 10, action: { kind: "function", fn: "review" }, next: { kind: "staff" } },    // a function has no "then"
+        { id: "s5", x: 0, y: 80, w: 10, h: 10, action: { kind: "function", fn: "staff" } },
+      ] },
+      { id: "b", name: "B", kind: "picture" },
+    ] }, "nail");
+    expect(l.menus[0].spots.map((s) => s.next ?? null)).toEqual([{ kind: "continue" }, { kind: "menu", menuId: "b" }, null, null, null]);
+    expect(l.menus[0].spots[4].action).toEqual({ kind: "function", fn: "staff" });
+    const e = normalizeKioskLayout({ builder: "easy", menus: [{ id: "x", name: "X", style: "grid", cols: 2, rows: 2, tiles: [
+      { id: "t1", kind: "service", serviceId: 1, next: { kind: "review" } }, { id: "t2", kind: "menu", menuId: "x", next: { kind: "staff" } },
+    ] }] }, "nail");
+    expect(e.menus[0].tiles).toEqual([{ id: "t1", kind: "service", serviceId: 1, next: { kind: "review" } }]);
+  });
+});
