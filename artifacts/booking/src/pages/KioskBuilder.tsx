@@ -40,7 +40,7 @@ interface BuilderState {
   textKeys?: KioskTextKey[];
 }
 interface ConfigRow { id: number; name: string; source: "saved" | "imported"; createdAt: string; updatedAt: string }
-interface ImportResult { name: string; unmatched: { services: string[]; addons: string[] } }
+interface ImportResult { name: string; unmatched: { services: string[]; addons: string[] }; createdExtras: string[] }
 interface VersionRow { version: number; status: "published" | "archived"; note: string | null; publishedAt: string }
 
 const LANG_NAMES: Record<KioskLang, string> = { en: "English", es: "Español", vi: "Tiếng Việt", zh: "中文", ko: "한국어" };
@@ -296,10 +296,10 @@ export default function KioskBuilder() {
       if (fileObj.size > 2 * 1024 * 1024) throw new Error("That file is too big for a kiosk configuration (2 MB at most).");
       let file: unknown;
       try { file = JSON.parse(await fileObj.text()); } catch { throw new Error("This isn't a Certxa kiosk configuration file."); }
-      const r = await api<{ config: ConfigRow; unmatched: ImportResult["unmatched"] }>("/api/kiosk-builder/configs/import", {
+      const r = await api<{ config: ConfigRow; unmatched: ImportResult["unmatched"]; createdExtras?: string[] }>("/api/kiosk-builder/configs/import", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }),
       });
-      setImportResult({ name: r.config.name, unmatched: r.unmatched });
+      setImportResult({ name: r.config.name, unmatched: r.unmatched, createdExtras: r.createdExtras ?? [] });
       await loadConfigs();
     } catch (e: any) {
       toast({ title: "Couldn't import the file", description: e.message, variant: "destructive" });
@@ -713,6 +713,9 @@ export default function KioskBuilder() {
             {importResult && (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 space-y-1" data-testid="config-import-result">
                 <p>Imported as "{importResult.name}".</p>
+                {importResult.createdExtras.length > 0 && (
+                  <p className="text-xs text-slate-600">Kiosk Extras added from the file: {importResult.createdExtras.join(", ")}.</p>
+                )}
                 {importResult.unmatched.services.length + importResult.unmatched.addons.length === 0
                   ? <p className="text-xs text-slate-500">Every button and tap spot found its service.</p>
                   : <>

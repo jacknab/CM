@@ -69,7 +69,9 @@ interface NailConfig {
 interface ServiceOptionItem  { id: number; name: string; description?: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number; imageUrl?: string | null; }
 interface ServiceItem        { id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
 
-interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[]; }
+interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[];
+  /** A Kiosk Extra (Kiosk Builder): only on the business's own screens, never in the add-ons step; pick-one within its group. */
+  kioskExtra?: boolean; kioskExtraGroup?: string | null; }
 interface StaffItem          { id: number; name: string; role: string | null; color: string | null; avatarThumbUrl: string | null; }
 interface ClientInfo         { id: number; name: string; loyaltyPoints: number; totalVisits: number; }
 /** Smart Check-In — what this client's history suggests for today (server: lib/smartCheckin.ts). */
@@ -949,7 +951,24 @@ function KioskCheckInScreens() {
   // and design), add-ons, and who does it. A step with nothing to show for this client is passed over.
   const nailCfgRef = useRef<NailConfig | null>(null);
   const addonsFor = (svc: ServiceItem | undefined) =>
-    svc ? allAddons.filter((a) => a.serviceIds.length === 0 || a.serviceIds.includes(svc.id)) : [];
+    svc ? allAddons.filter((a) => !a.kioskExtra && (a.serviceIds.length === 0 || a.serviceIds.includes(svc.id))) : [];
+  /**
+   * An add-on or Kiosk Extra tapped on one of the business's own screens: added to the chosen service, or taken off
+   * if it was on. A Kiosk Extra in a group (say "Nail shape") replaces the one already chosen from that group.
+   */
+  const chooseAddonOnScreen = (addonId: number, note: (text: string) => void) => {
+    const first = selectedServices[0];
+    if (!first) return note(t.chooseServiceFirst);
+    const addon = allAddons.find((x) => x.id === addonId);
+    if (!addon) return;
+    if (addon.serviceIds.length && !addon.serviceIds.includes(first.id)) return note(t.addonNotForService);
+    setSelectedAddons((cur) => {
+      if (cur.some((x) => x.id === addon.id)) return cur.filter((x) => x.id !== addon.id);
+      const group = addon.kioskExtra ? (addon.kioskExtraGroup ?? "").trim().toLowerCase() : "";
+      const kept = group ? cur.filter((x) => !(x.kioskExtra && (x.kioskExtraGroup ?? "").trim().toLowerCase() === group)) : cur;
+      return [...kept, addon];
+    });
+  };
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
     !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
@@ -2224,8 +2243,9 @@ function KioskCheckInScreens() {
     if (current) {
       const svcById = new Map(allServices.map((sv) => [sv.id, sv]));
       const own = current.title[lang]?.trim() || current.title.en?.trim();
-      const tapTile = (tile: { kind: string; serviceId?: number; menuId?: string }) => {
+      const tapTile = (tile: { kind: string; serviceId?: number; addonId?: number; menuId?: string }) => {
         kick();
+        if (tile.kind === "addon" && tile.addonId != null) return chooseAddonOnScreen(tile.addonId, showPictureNote);
         if (tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId)) { setMenuStack((st) => [...st, tile.menuId!]); setMenuPage(0); return; }
         const svc = tile.serviceId != null ? svcById.get(tile.serviceId) : undefined;
         if (!svc) return;
@@ -2248,14 +2268,7 @@ function KioskCheckInScreens() {
           kick();
           const a = spot.action;
           if (a.kind === "service" || a.kind === "menu") return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId } : { kind: "menu", menuId: a.menuId });
-          if (a.kind === "addon") {
-            const first = selectedServices[0];
-            if (!first) return showPictureNote(t.chooseServiceFirst);
-            const addon = allAddons.find((x) => x.id === a.addonId);
-            if (!addon) return;
-            if (addon.serviceIds.length && !addon.serviceIds.includes(first.id)) return showPictureNote(t.addonNotForService);
-            return setSelectedAddons((cur) => (cur.some((x) => x.id === addon.id) ? cur.filter((x) => x.id !== addon.id) : [...cur, addon]));
-          }
+          if (a.kind === "addon") return chooseAddonOnScreen(a.addonId, showPictureNote);
           if (a.fn === "continue") return selectedServices.length ? void afterServiceChosen() : showPictureNote(t.chooseServiceFirst);
           if (a.fn === "back") return back();
           if (a.fn === "startOver") return resetToIdle();
@@ -2275,7 +2288,8 @@ function KioskCheckInScreens() {
         <div className="fixed inset-0 select-none" onContextMenu={e => e.preventDefault()} style={NO_SELECT} data-testid="kiosk-menu-screen">
           <KioskMenuScreen
             menu={current} page={menuPage} onPage={(pg) => { kick(); setMenuPage(pg); }}
-            services={svcById as any} menus={menusById}
+            services={svcById as any} menus={menusById} addons={new Map(allAddons.map((a) => [a.id, a]))}
+            selectedAddonIds={selectedAddons.map((a) => a.id)} note={pictureNote}
             heading={own ? fillKioskText(own, { name: clientFirst }) : t.whatBringsYouIn(clientFirst)}
             eyebrow={storeConfig?.name ? `Check-in — ${storeConfig.name}` : undefined}
             colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, tint: TINT }}

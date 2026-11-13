@@ -33,7 +33,8 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 /** Catalog › Add-on Groups: reusable lists of existing add-ons that services can be given (routes/addonGroups.ts). */
 export function AddonGroupsList() {
   const { data: groups, isLoading } = useAddonGroups();
-  const { data: addons = EMPTY_ARRAY } = useAddons();
+  const { data: allStoreAddons = EMPTY_ARRAY } = useAddons();
+  const addons = useMemo(() => allStoreAddons.filter((a: any) => !a.kioskExtra), [allStoreAddons]);
   const { mutate: deleteGroup } = useDeleteAddonGroup();
   const { pick } = useLanguage();
   const { toast } = useToast();
@@ -134,7 +135,8 @@ export function AddonGroupsList() {
 function AddonGroupForm({ open, onOpenChange, group }: { open: boolean; onOpenChange: (v: boolean) => void; group: AddonGroup | null }) {
   const { pick } = useLanguage();
   const { toast } = useToast();
-  const { data: addons = EMPTY_ARRAY } = useAddons();
+  const { data: allStoreAddons = EMPTY_ARRAY } = useAddons();
+  const addons = useMemo(() => allStoreAddons.filter((a: any) => !a.kioskExtra), [allStoreAddons]);
   const { mutate: createGroup, isPending: creating } = useCreateAddonGroup();
   const { mutate: updateGroup, isPending: updating } = useUpdateAddonGroup();
 

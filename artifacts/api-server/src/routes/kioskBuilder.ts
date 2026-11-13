@@ -15,6 +15,9 @@
  *   DELETE /api/kiosk-builder/configs/:id
  *   GET    /api/kiosk-builder/configs/:id/export        the configuration as a file (shared/kiosk/configFile.ts)
  *   POST   /api/kiosk-builder/configs/import            a file → a new configuration { file } → { config, unmatched }
+ *   Kiosk Extras (kiosk-only add-ons, e.g. nail shapes):
+ *   GET    /api/kiosk-builder/extras        PATCH /api/kiosk-builder/extras/:id { name, price, duration, group }
+ *   POST   /api/kiosk-builder/extras        DELETE /api/kiosk-builder/extras/:id
  *   POST /api/kiosk-builder/image                    upload a picture: welcome screen, a screen button (multipart "image") → { url }
  *
  * Needs the store-settings permission (owners and managers by default). The kiosk itself reads the published
@@ -30,8 +33,9 @@ import { businessTypeOf, BUSINESS_TYPES, isBusinessTypeKey } from "@shared/kiosk
 import { validateKioskLayout } from "@shared/kiosk/layout";
 import { KIOSK_PRESETS, presetLayout } from "@shared/kiosk/presets";
 import { KIOSK_TEXT_KEYS } from "@shared/kiosk/text";
-import { buildKioskConfigFile, cleanConfigName, KIOSK_CONFIG_FILE_MAX_BYTES, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
+import { buildKioskConfigFile, cleanConfigName, KIOSK_CONFIG_FILE_MAX_BYTES, missingKioskExtras, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
 import {
+  cleanKioskExtra, createKioskExtra, listKioskExtras, removeKioskExtra, updateKioskExtra, KIOSK_EXTRAS_MAX,
   createKioskConfig, deleteKioskConfig, kioskCatalogRefs, kioskConfigLayout, listKioskConfigs, renameKioskConfig, KIOSK_CONFIGS_MAX,
   draftKioskLayout, kioskContext, kioskVersionLayout, listKioskVersions, publishedKioskLayout,
   publishKioskDraft, sameKioskLayout, saveKioskDraft, type StoreKioskContext,
@@ -246,13 +250,70 @@ router.post("/api/kiosk-builder/configs/import", ...guard, async (req: Request, 
     if (size > KIOSK_CONFIG_FILE_MAX_BYTES + 64 * 1024) return res.status(413).json({ error: "That file is too big for a kiosk configuration (2 MB at most)." });
     const parsed = parseKioskConfigFile(req.body?.file);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
-    const { layout, unmatched } = remapKioskLayout(parsed.file, await kioskCatalogRefs(ctx.storeId));
+    // The file's Kiosk Extras this business doesn't have yet are made for it first (they belong to the design).
+    let own = await kioskCatalogRefs(ctx.storeId);
+    const missing = missingKioskExtras(parsed.file, own);
+    if (missing.length) {
+      for (const x of missing) await createKioskExtra(ctx.storeId, { name: x.name, price: x.price ?? 0, duration: x.duration ?? 0, group: x.group ?? null });
+      own = await kioskCatalogRefs(ctx.storeId);
+    }
+    const { layout, unmatched } = remapKioskLayout(parsed.file, own);
     const config = await createKioskConfig(ctx, parsed.file.name, layout, "imported", userIdOf(req));
     if (!config) return res.status(409).json({ error: tooMany });
-    res.json({ config, unmatched });
+    res.json({ config, unmatched, createdExtras: missing.map((x) => x.name) });
   } catch (err) {
     console.error("[kiosk-builder] config import", err);
     res.status(500).json({ error: "Couldn't import the file." });
+  }
+});
+
+// ── Kiosk Extras ──
+router.get("/api/kiosk-builder/extras", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    res.json({ extras: await listKioskExtras(ctx.storeId) });
+  } catch (err) {
+    console.error("[kiosk-builder] extras", err);
+    res.status(500).json({ error: "Couldn't load your kiosk extras." });
+  }
+});
+
+router.post("/api/kiosk-builder/extras", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const x = cleanKioskExtra(req.body);
+    if (!x.ok) return res.status(400).json({ error: x.error });
+    const extra = await createKioskExtra(ctx.storeId, x.value);
+    if (!extra) return res.status(409).json({ error: `You can have up to ${KIOSK_EXTRAS_MAX} kiosk extras.` });
+    res.json({ extra });
+  } catch (err) {
+    console.error("[kiosk-builder] extra create", err);
+    res.status(500).json({ error: "Couldn't add the extra." });
+  }
+});
+
+router.patch("/api/kiosk-builder/extras/:id", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const x = cleanKioskExtra(req.body);
+    if (!x.ok) return res.status(400).json({ error: x.error });
+    const extra = await updateKioskExtra(ctx.storeId, configId(req), x.value);
+    if (!extra) return res.status(404).json({ error: "That extra doesn't exist." });
+    res.json({ extra });
+  } catch (err) {
+    console.error("[kiosk-builder] extra update", err);
+    res.status(500).json({ error: "Couldn't save the extra." });
+  }
+});
+
+router.delete("/api/kiosk-builder/extras/:id", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    if (!(await removeKioskExtra(ctx.storeId, configId(req)))) return res.status(404).json({ error: "That extra doesn't exist." });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[kiosk-builder] extra remove", err);
+    res.status(500).json({ error: "Couldn't remove the extra." });
   }
 });
 

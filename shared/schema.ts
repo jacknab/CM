@@ -405,6 +405,9 @@ export const addons = pgTable("addons", {
   maxQuantity: integer("max_quantity").notNull().default(10),
   isActive: boolean("is_active").notNull().default(true),
   hiddenFromPublic: boolean("hidden_from_public").default(false),
+  // Kiosk Extras (migration 0360): made in the Kiosk Builder for the kiosk only; pick-one within a group.
+  kioskExtra: boolean("kiosk_extra").notNull().default(false),
+  kioskExtraGroup: text("kiosk_extra_group"),
 });
 
 export const serviceAddons = pgTable("service_addons", {

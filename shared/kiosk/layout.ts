@@ -50,8 +50,10 @@ export interface KioskThemeColors {
  */
 export interface KioskTile {
   id: string;
-  kind: "service" | "menu";
+  /** "addon": an add-on or a Kiosk Extra, added to the chosen service. */
+  kind: "service" | "menu" | "addon";
   serviceId?: number;
+  addonId?: number;
   menuId?: string;
   label?: string;
   imageUrl?: string | null;
@@ -226,11 +228,15 @@ const cleanLabel = (v: unknown, max: number) => (typeof v === "string" ? v.repla
 
 function normalizeTile(raw: unknown, menuIds: Set<string>): KioskTile | null {
   if (!isObj(raw) || typeof raw.id !== "string" || !MENU_ID.test(raw.id)) return null;
-  const tile: KioskTile = { id: raw.id, kind: raw.kind === "menu" ? "menu" : "service" };
+  const tile: KioskTile = { id: raw.id, kind: raw.kind === "menu" ? "menu" : raw.kind === "addon" ? "addon" : "service" };
   if (tile.kind === "service") {
     const sid = Number(raw.serviceId);
     if (!Number.isInteger(sid) || sid <= 0) return null;
     tile.serviceId = sid;
+  } else if (tile.kind === "addon") {
+    const aid = Number(raw.addonId);
+    if (!Number.isInteger(aid) || aid <= 0) return null;
+    tile.addonId = aid;
   } else {
     if (typeof raw.menuId !== "string" || !menuIds.has(raw.menuId)) return null;
     tile.menuId = raw.menuId;

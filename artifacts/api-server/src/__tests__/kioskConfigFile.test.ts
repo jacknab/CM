@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeKioskLayout } from "@shared/kiosk/layout";
-import { buildKioskConfigFile, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
+import { buildKioskConfigFile, missingKioskExtras, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
 
 const layout = normalizeKioskLayout({
   preset: "nail", menuMode: "screens", startMenuId: "home",
@@ -56,5 +56,46 @@ describe("kiosk configuration files", () => {
     const { layout: l, unmatched } = remapKioskLayout(file, exporter);
     expect(l).toEqual(layout);
     expect(unmatched).toEqual({ services: [], addons: [] });
+  });
+});
+
+describe("kiosk extras in configuration files", () => {
+  const withExtras = normalizeKioskLayout({
+    menuMode: "screens", startMenuId: "shapes",
+    menus: [{ id: "shapes", name: "Shapes", style: "grid", cols: 2, rows: 2, tiles: [
+      { id: "t1", kind: "addon", addonId: 60 }, { id: "t2", kind: "addon", addonId: 61 }, { id: "t3", kind: "addon", addonId: "x" },
+    ] }],
+  }, "nail");
+  const exporter = {
+    services: [],
+    addons: [
+      { id: 60, name: "Coffin", kioskExtra: true, price: 5, duration: 10, group: "Nail shape" },
+      { id: 61, name: "Square", kioskExtra: true, price: 0, duration: 0, group: "Nail shape" },
+    ],
+  };
+  it("keeps add-on buttons and drops broken ones", () => {
+    expect(withExtras.menus[0].tiles).toEqual([{ id: "t1", kind: "addon", addonId: 60 }, { id: "t2", kind: "addon", addonId: 61 }]);
+  });
+  it("writes what another business needs to make the extras", () => {
+    const file = buildKioskConfigFile("Shapes", withExtras, exporter);
+    expect(file.catalog.addons).toEqual([
+      { id: 60, name: "Coffin", kioskExtra: true, price: 5, duration: 10, group: "Nail shape" },
+      { id: 61, name: "Square", kioskExtra: true, price: 0, duration: 0, group: "Nail shape" },
+    ]);
+  });
+  it("lists the extras an importing business is missing, then maps the buttons once they exist", () => {
+    const parsed = parseKioskConfigFile(JSON.parse(JSON.stringify(buildKioskConfigFile("Shapes", withExtras, exporter))));
+    if (!parsed.ok) throw new Error(parsed.error);
+    const own = { services: [], addons: [{ id: 900, name: "square" }] };
+    expect(missingKioskExtras(parsed.file, own).map((a) => a.name)).toEqual(["Coffin"]);
+    const { layout, unmatched } = remapKioskLayout(parsed.file, { services: [], addons: [...own.addons, { id: 901, name: "Coffin" }] });
+    expect(layout.menus[0].tiles).toEqual([{ id: "t1", kind: "addon", addonId: 901 }, { id: "t2", kind: "addon", addonId: 900 }]);
+    expect(unmatched.addons).toEqual([]);
+  });
+  it("keeps prices from a file sensible", () => {
+    const parsed = parseKioskConfigFile({ format: "certxa-kiosk-config", formatVersion: 1, name: "x", layout: {}, catalog: { addons: [
+      { id: 1, name: "Huge", kioskExtra: true, price: 1e9, duration: -5, group: "  " },
+    ] } });
+    expect(parsed.ok && parsed.file.catalog.addons[0]).toMatchObject({ price: 100000, duration: 0, group: null });
   });
 });

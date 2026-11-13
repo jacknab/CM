@@ -131,7 +131,7 @@ export default function PosCheckout() {
   }, [services, categoryById]);
 
   const activeProducts = useMemo(() => ((products ?? []) as Product[]).filter((p) => (p as any).isActive !== false), [products]);
-  const addonItems = useMemo(() => ((storeAddons ?? []) as Addon[]).filter((a) => a.isActive !== false), [storeAddons]);
+  const addonItems = useMemo(() => ((storeAddons ?? []) as Addon[]).filter((a) => a.isActive !== false && !(a as any).kioskExtra), [storeAddons]);
 
   type TabKey = string;
   const [activeCategory, setActiveCategory] = useState<TabKey | null>(null);

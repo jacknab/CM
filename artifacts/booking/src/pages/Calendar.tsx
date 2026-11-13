@@ -6324,7 +6324,8 @@ export function CheckoutPOSPanel({
     return [
       custom,
       ...(storeAddons ?? [])
-        .filter((a: any) => a.isActive !== false)
+        // Kiosk Extras are the kiosk's own (Kiosk Builder); a ticket that has one still shows it.
+        .filter((a: any) => a.isActive !== false && !a.kioskExtra)
         .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
         .map((a: any): PosButton => ({
           id: `dyn.addon.${a.id}`,

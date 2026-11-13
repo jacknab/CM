@@ -660,6 +660,9 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   }, [groups]);
 
   const activeAddons = useMemo(() => ((storeAddons ?? []) as any[]).filter((a) => a.isActive !== false), [storeAddons]);
+  // What staff can add to a ticket: every active add-on but the Kiosk Extras (the kiosk's own, e.g. nail shapes). A
+  // ticket that already has an extra still shows and prices it through activeAddons.
+  const pickAddons = useMemo(() => activeAddons.filter((a: any) => !a.kioskExtra), [activeAddons]);
 
   // The kiosk and the customer screen, with no internet, ask this POS tablet over the salon hub
   // (lib/kiosk-hub.ts). Answered from what this tablet holds, the way it works offline itself; whatever it
@@ -778,18 +781,18 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
   const { data: linkedAddons } = useAddonsForService(service?.id ?? null);
   const suggestedAddons = useMemo(() => {
     const linked = ((linkedAddons ?? []) as any[]).filter((a) => a.isActive !== false);
-    return linked.length > 0 && service ? linked : activeAddons;
-  }, [linkedAddons, activeAddons, service]);
-  const shownAddons = moreAddons ? activeAddons : suggestedAddons.slice(0, 6);
+    return linked.length > 0 && service ? linked : pickAddons;
+  }, [linkedAddons, pickAddons, service]);
+  const shownAddons = moreAddons ? pickAddons : suggestedAddons.slice(0, 6);
   // The POS grid's categories, the same on the ticket screen and at checkout: the catalog's, then Packages, then
   // an Add-ons key (the add-ons suggested for the ticket's service first).
   const posGroups = useMemo<CatalogGroup[]>(() => {
-    if (activeAddons.length === 0 || posGrid?.config?.hideAddonsKey) return gridGroups;
+    if (pickAddons.length === 0 || posGrid?.config?.hideAddonsKey) return gridGroups;
     const first = new Set(((linkedAddons ?? []) as any[]).map((a) => Number(a.id)));
-    const addons = [...activeAddons].sort((a: any, b: any) => Number(first.has(b.id)) - Number(first.has(a.id)))
+    const addons = [...pickAddons].sort((a: any, b: any) => Number(first.has(b.id)) - Number(first.has(a.id)))
       .map((a: any) => ({ id: Number(a.id), name: String(a.name), price: a.price, duration: a.duration ?? null }));
     return [...gridGroups, { key: "addons", name: "Add-ons", services: [], addons }];
-  }, [gridGroups, activeAddons, linkedAddons, posGrid?.config?.hideAddonsKey]);
+  }, [gridGroups, pickAddons, linkedAddons, posGrid?.config?.hideAddonsKey]);
 
   const { data: nailCfg = null, isLoading: nailLoading } = useQuery({
     queryKey: ["/api/services", service?.id, "nail-config"],
@@ -2144,7 +2147,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
             <Suspense fallback={<div className="barber-route-loading" role="status"><Loader2 className="animate-spin" /> Loading checkout…</div>}><CheckoutMode
               key={checkout.id}
               cashAllowed={cashAllowed}
-              storeAddons={activeAddons}
+              storeAddons={pickAddons}
               ticket={liveCheckout ?? checkout}
               closedElsewhere={checkoutClosedElsewhere}
               salesTax={salesTax}
@@ -2229,10 +2232,10 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
                   addons={shownAddons}
                   moreAddons={moreAddons}
                   onToggleMore={() => setMoreAddons((v) => !v)}
-                  hasMoreAddons={moreAddons || activeAddons.length > Math.min(6, suggestedAddons.length)}
+                  hasMoreAddons={moreAddons || pickAddons.length > Math.min(6, suggestedAddons.length)}
                   addonIds={addonIds}
                   onToggleAddon={toggleAddon}
-                  allAddons={activeAddons}
+                  allAddons={pickAddons}
                   onAddonKey={addAddonKey}
                   onFn={(fn) => {
                     if (fn === "reprint") { void reprintLastReceipt().then((err) => say(err ?? "Receipt reprinted")); return; }
@@ -2347,7 +2350,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       )}
       {sheet === "timeclock" && <TimeClockSheet storeId={storeId} onClose={() => { setSheet(null); invalidateBoard(); }} />}
       {gridEditor === "open" && (
-        <GridEditor groups={posGroups} addons={activeAddons} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
+        <GridEditor groups={posGroups} addons={pickAddons} config={posGrid?.config ?? null} saving={saveGrid.isPending} onSave={(config) => saveGrid.mutate(config)} onClose={() => setGridEditor(null)} />
       )}
       {stationDrawerOpen && (
         <StationDrawerSheet storeId={storeId} registerId={registerId} stationName={currentRegisterName ?? "This POS"} onClose={() => setStationDrawerOpen(false)} />

@@ -16,7 +16,16 @@ export const KIOSK_CONFIG_FORMAT_VERSION = 1;
 export const KIOSK_CONFIG_FILE_MAX_BYTES = 2 * 1024 * 1024;
 export const KIOSK_CONFIG_NAME_MAX = 60;
 
-export interface CatalogRef { id: number; name: string; category?: string | null }
+export interface CatalogRef {
+  id: number;
+  name: string;
+  category?: string | null;
+  /** Add-ons: a Kiosk Extra, with what an importing business needs to make it if it has none of that name. */
+  kioskExtra?: boolean;
+  price?: number;
+  duration?: number;
+  group?: string | null;
+}
 
 export interface KioskConfigFile {
   format: typeof KIOSK_CONFIG_FORMAT;
@@ -36,7 +45,10 @@ export const cleanConfigName = (v: unknown) =>
 export function layoutCatalogIds(layout: KioskLayout): { services: Set<number>; addons: Set<number> } {
   const services = new Set<number>(), addons = new Set<number>();
   for (const m of layout.menus) {
-    for (const t of m.tiles) if (t?.kind === "service" && t.serviceId) services.add(t.serviceId);
+    for (const t of m.tiles) {
+      if (t?.kind === "service" && t.serviceId) services.add(t.serviceId);
+      if (t?.kind === "addon" && t.addonId) addons.add(t.addonId);
+    }
     for (const sp of m.spots) {
       if (sp.action.kind === "service") services.add(sp.action.serviceId);
       if (sp.action.kind === "addon") addons.add(sp.action.addonId);
@@ -49,7 +61,10 @@ export function layoutCatalogIds(layout: KioskLayout): { services: Set<number>; 
 export function buildKioskConfigFile(name: string, layout: KioskLayout, catalog: { services: CatalogRef[]; addons: CatalogRef[] }, now = new Date()): KioskConfigFile {
   const used = layoutCatalogIds(layout);
   const pick = (list: CatalogRef[], ids: Set<number>) =>
-    list.filter((x) => ids.has(x.id)).map((x) => ({ id: x.id, name: x.name, ...(x.category ? { category: x.category } : {}) }));
+    list.filter((x) => ids.has(x.id)).map((x) => ({
+      id: x.id, name: x.name, ...(x.category ? { category: x.category } : {}),
+      ...(x.kioskExtra ? { kioskExtra: true, price: Number(x.price) || 0, duration: Number(x.duration) || 0, group: x.group ?? null } : {}),
+    }));
   return {
     format: KIOSK_CONFIG_FORMAT,
     formatVersion: KIOSK_CONFIG_FORMAT_VERSION,
@@ -71,7 +86,15 @@ export function parseKioskConfigFile(raw: unknown): { ok: true; file: KioskConfi
   if (!r.layout || typeof r.layout !== "object") return { ok: false, error: "The file has no kiosk design in it." };
   const refs = (v: unknown): CatalogRef[] => (Array.isArray(v) ? v : [])
     .filter((x: any) => x && Number.isInteger(Number(x.id)) && typeof x.name === "string" && x.name.trim())
-    .map((x: any) => ({ id: Number(x.id), name: String(x.name).trim().slice(0, 200), category: typeof x.category === "string" ? x.category.trim().slice(0, 200) : null }));
+    .map((x: any) => ({
+      id: Number(x.id), name: String(x.name).trim().slice(0, 200), category: typeof x.category === "string" ? x.category.trim().slice(0, 200) : null,
+      ...(x.kioskExtra === true ? {
+        kioskExtra: true,
+        price: Math.min(100000, Math.max(0, Math.round((Number(x.price) || 0) * 100) / 100)),
+        duration: Math.min(480, Math.max(0, Math.round(Number(x.duration) || 0))),
+        group: typeof x.group === "string" && x.group.trim() ? x.group.trim().slice(0, 40) : null,
+      } : {}),
+    }));
   const layout = normalizeKioskLayout(r.layout, "other");
   return {
     ok: true,
@@ -98,6 +121,12 @@ function matchIds(from: CatalogRef[], to: CatalogRef[]): Map<number, number> {
   return out;
 }
 
+/** The file's Kiosk Extras the importing business doesn't have yet (by name): to be made before remapping. */
+export function missingKioskExtras(file: KioskConfigFile, own: { addons: CatalogRef[] }): CatalogRef[] {
+  const have = new Set(own.addons.map((a) => key(a.name)));
+  return file.catalog.addons.filter((a) => a.kioskExtra && !have.has(key(a.name)));
+}
+
 /**
  * A file's layout with its buttons and tap spots pointed at the importing business's catalog. Buttons and spots
  * with no match are left out; `unmatched` names them.
@@ -111,6 +140,11 @@ export function remapKioskLayout(file: KioskConfigFile, own: { services: Catalog
   const layout = structuredClone(file.layout);
   for (const m of layout.menus) {
     m.tiles = m.tiles.map((t) => {
+      if (t?.kind === "addon" && t.addonId != null) {
+        const to = add.get(t.addonId);
+        if (to == null) { missA.add(nameOf(file.catalog.addons, t.addonId)); return null; }
+        return { ...t, addonId: to };
+      }
       if (t?.kind !== "service" || t.serviceId == null) return t;
       const to = svc.get(t.serviceId);
       if (to == null) { missS.add(nameOf(file.catalog.services, t.serviceId)); return null; }

@@ -198,10 +198,73 @@ export async function deleteKioskConfig(storeId: number, id: number): Promise<bo
 export async function kioskCatalogRefs(storeId: number) {
   const [s, a] = await Promise.all([
     pool.query(`SELECT id, name, category FROM services WHERE store_id = $1 AND is_active = true ORDER BY id`, [storeId]),
-    pool.query(`SELECT id, name FROM addons WHERE store_id = $1 AND is_active = true ORDER BY id`, [storeId]),
+    pool.query(`SELECT id, name, price::float AS price, duration, kiosk_extra, kiosk_extra_group FROM addons WHERE store_id = $1 AND is_active = true ORDER BY id`, [storeId]),
   ]);
   return {
     services: s.rows.map((r) => ({ id: Number(r.id), name: String(r.name), category: r.category ?? null })),
-    addons: a.rows.map((r) => ({ id: Number(r.id), name: String(r.name) })),
+    addons: a.rows.map((r) => ({
+      id: Number(r.id), name: String(r.name),
+      ...(r.kiosk_extra ? { kioskExtra: true, price: Number(r.price) || 0, duration: Number(r.duration) || 0, group: r.kiosk_extra_group ?? null } : {}),
+    })),
   };
+}
+
+// ── Kiosk Extras (migration 0360) ─────────────────────────────────────────────
+// Add-ons made in the Kiosk Builder for the kiosk only: hidden from the booking website, kept out of the staff
+// add-on lists by the app, charged at checkout like any add-on. Removing one only switches it off, so tickets
+// that already have it keep it.
+
+export const KIOSK_EXTRAS_MAX = 200;
+
+export interface KioskExtra { id: number; name: string; price: number; duration: number; group: string | null }
+
+const extraRow = (r: any): KioskExtra => ({
+  id: Number(r.id), name: r.name, price: Number(r.price) || 0, duration: Number(r.duration) || 0, group: r.kiosk_extra_group ?? null,
+});
+
+export function cleanKioskExtra(raw: any): { ok: true; value: Omit<KioskExtra, "id"> } | { ok: false; error: string } {
+  const name = typeof raw?.name === "string" ? raw.name.replace(/\s+/g, " ").trim().slice(0, 60) : "";
+  if (!name) return { ok: false, error: "Give the extra a name." };
+  const price = Number(raw?.price ?? 0);
+  if (!Number.isFinite(price) || price < 0 || price > 100000) return { ok: false, error: "The price must be 0 or more." };
+  const duration = Number(raw?.duration ?? 0);
+  if (!Number.isInteger(duration) || duration < 0 || duration > 480) return { ok: false, error: "Extra time must be 0 to 480 minutes." };
+  const group = typeof raw?.group === "string" && raw.group.trim() ? raw.group.replace(/\s+/g, " ").trim().slice(0, 40) : null;
+  return { ok: true, value: { name, price: Math.round(price * 100) / 100, duration, group } };
+}
+
+export async function listKioskExtras(storeId: number): Promise<KioskExtra[]> {
+  const r = await pool.query(
+    `SELECT id, name, price::float AS price, duration, kiosk_extra_group FROM addons
+      WHERE store_id = $1 AND kiosk_extra AND is_active ORDER BY kiosk_extra_group NULLS LAST, id`,
+    [storeId],
+  );
+  return r.rows.map(extraRow);
+}
+
+/** null: the store already has the most extras it may keep. */
+export async function createKioskExtra(storeId: number, x: Omit<KioskExtra, "id">): Promise<KioskExtra | null> {
+  const n = await pool.query(`SELECT count(*)::int AS n FROM addons WHERE store_id = $1 AND kiosk_extra AND is_active`, [storeId]);
+  if (n.rows[0].n >= KIOSK_EXTRAS_MAX) return null;
+  const r = await pool.query(
+    `INSERT INTO addons (store_id, name, price, duration, kiosk_extra, kiosk_extra_group, hidden_from_public, is_active)
+     VALUES ($1, $2, $3, $4, true, $5, true, true)
+     RETURNING id, name, price::float AS price, duration, kiosk_extra_group`,
+    [storeId, x.name, x.price.toFixed(2), x.duration, x.group],
+  );
+  return extraRow(r.rows[0]);
+}
+
+export async function updateKioskExtra(storeId: number, id: number, x: Omit<KioskExtra, "id">): Promise<KioskExtra | null> {
+  const r = await pool.query(
+    `UPDATE addons SET name = $3, price = $4, duration = $5, kiosk_extra_group = $6
+      WHERE id = $1 AND store_id = $2 AND kiosk_extra AND is_active
+      RETURNING id, name, price::float AS price, duration, kiosk_extra_group`,
+    [id, storeId, x.name, x.price.toFixed(2), x.duration, x.group],
+  );
+  return r.rows[0] ? extraRow(r.rows[0]) : null;
+}
+
+export async function removeKioskExtra(storeId: number, id: number): Promise<boolean> {
+  return ((await pool.query(`UPDATE addons SET is_active = false WHERE id = $1 AND store_id = $2 AND kiosk_extra`, [id, storeId])).rowCount ?? 0) > 0;
 }

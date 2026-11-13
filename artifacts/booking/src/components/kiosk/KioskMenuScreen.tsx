@@ -20,6 +20,8 @@ export interface MenuService {
   illustrationImageUrl?: string | null;
 }
 
+export interface MenuAddon { id: number; name: string; price: number; imageUrl?: string | null }
+
 export interface MenuColors { primary: string; bg: string; surface: string; text: string; muted: string; border: string; tint: string }
 
 export interface KioskMenuScreenProps {
@@ -28,6 +30,11 @@ export interface KioskMenuScreenProps {
   onPage: (page: number) => void;
   services: Map<number, MenuService>;
   menus: Map<string, KioskMenu>;
+  /** Add-ons and Kiosk Extras the buttons may choose. */
+  addons?: Map<number, MenuAddon>;
+  selectedAddonIds?: number[];
+  /** A short message over the grid ("Please choose a service first"). */
+  note?: string | null;
   heading: string;
   eyebrow?: string;
   colors: MenuColors;
@@ -61,12 +68,13 @@ export function KioskMenuScreen(p: KioskMenuScreenProps) {
   const tileView = (tile: KioskTile, slot: number) => {
     const svc = tile.kind === "service" ? p.services.get(tile.serviceId!) : undefined;
     const target = tile.kind === "menu" ? p.menus.get(tile.menuId!) : undefined;
-    const missing = tile.kind === "service" ? !svc : !target;
+    const addon = tile.kind === "addon" ? p.addons?.get(tile.addonId!) : undefined;
+    const missing = tile.kind === "service" ? !svc : tile.kind === "addon" ? !addon : !target;
     // The kiosk leaves a gap where a service has left the menu; the builder shows it so it can be fixed.
     if (missing && p.mode === "kiosk") return <div key={slot} />;
-    const label = tile.label || svc?.name || target?.name || "Not on your menu";
-    const picture = tile.imageUrl || servicePicture(svc);
-    const selected = !!svc && !!p.selectedServiceIds?.includes(svc.id);
+    const label = tile.label || svc?.name || addon?.name || target?.name || "Not on your menu";
+    const picture = tile.imageUrl || servicePicture(svc) || addon?.imageUrl || null;
+    const selected = (!!svc && !!p.selectedServiceIds?.includes(svc.id)) || (!!addon && !!p.selectedAddonIds?.includes(addon.id));
     const active = p.activeSlot === slot;
     return (
       <button key={slot} type="button" {...press(() => p.onTile?.(tile, slot))}
@@ -95,11 +103,14 @@ export function KioskMenuScreen(p: KioskMenuScreenProps) {
             )}
           </div>
         )}
-        {(picture || tile.kind === "service") && (
+        {(picture || tile.kind !== "menu") && (
           <div style={{ flexShrink: 0, padding: "4cqmin 5cqmin 5cqmin", borderTop: `1px solid ${c.border}` }}>
             <p style={{ margin: 0, fontWeight: 800, lineHeight: 1.15, fontSize: "clamp(12px, 8cqmin, 40px)", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", fontFamily: headingFont }}>
               {label}{tile.kind === "menu" ? " ›" : ""}
             </p>
+            {addon && p.showPrice && addon.price > 0 && (
+              <p style={{ margin: "1.5cqmin 0 0", color: c.muted, fontSize: "clamp(11px, 6.5cqmin, 30px)", fontWeight: 700 }}>+{money(addon.price)}</p>
+            )}
             {svc && (p.showPrice || p.showDuration) && (
               <p style={{ margin: "1.5cqmin 0 0", color: c.muted, fontSize: "clamp(11px, 6.5cqmin, 30px)", fontWeight: 700 }}>
                 {p.showPrice ? money(svc.price) : ""}{p.showPrice && p.showDuration ? " · " : ""}{p.showDuration ? `${svc.duration} min` : ""}
@@ -157,6 +168,10 @@ export function KioskMenuScreen(p: KioskMenuScreenProps) {
         <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: "3cqmin", paddingBottom: "2cqmin", color: c.muted, fontSize: "2.6cqmin", fontWeight: 700 }}>
           {arrow(-1)}<span>{page + 1} / {pages}</span>{arrow(1)}
         </div>
+      )}
+      {p.note && (
+        <div role="status" style={{ flexShrink: 0, margin: "0 4cqmin 2cqmin", padding: "2cqmin 3cqmin", borderRadius: 14, textAlign: "center",
+          background: "rgba(15,23,42,.88)", color: "#fff", fontWeight: 700, fontSize: "2.6cqmin" }}>{p.note}</div>
       )}
       {p.footer}
     </div>

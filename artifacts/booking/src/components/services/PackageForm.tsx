@@ -34,7 +34,8 @@ export function PackageForm({ open, onOpenChange, packageId }: Props) {
   const { pick } = useLanguage();
   const { toast } = useToast();
   const { data: services = EMPTY_ARRAY } = useServices();
-  const { data: addons = EMPTY_ARRAY } = useAddons();
+  const { data: allStoreAddons = EMPTY_ARRAY } = useAddons();
+  const addons = useMemo(() => allStoreAddons.filter((a: any) => !a.kioskExtra), [allStoreAddons]);
   const { data: pkgs = EMPTY_ARRAY } = usePackages();
   const { mutate: createPackage, isPending: creating } = useCreatePackage();
   const { mutate: updatePackage, isPending: updating } = useUpdatePackage();

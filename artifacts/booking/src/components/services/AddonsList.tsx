@@ -36,7 +36,9 @@ import {
 } from "@/components/ui/table";
 
 export function AddonsList() {
-  const { data: addons, isLoading } = useAddons();
+  const { data: allStoreAddons, isLoading } = useAddons();
+  // Kiosk Extras are kept in the Kiosk Builder, not here.
+  const addons = useMemo(() => allStoreAddons?.filter((a: any) => !a.kioskExtra), [allStoreAddons]);
   const { data: services } = useServices();
   const { data: mappings } = useServiceAddonMappings();
   const qc = useQueryClient();

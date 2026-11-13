@@ -73,7 +73,9 @@ function AddonImageUpload({ imageUrl, onUpload }: { imageUrl: string; onUpload: 
 }
 
 export default function AddonsPage() {
-  const { data: addons, isLoading } = useAddons();
+  const { data: allStoreAddons, isLoading } = useAddons();
+  // Kiosk Extras are kept in the Kiosk Builder, not here.
+  const addons = useMemo(() => allStoreAddons?.filter((a: any) => !a.kioskExtra), [allStoreAddons]);
   const { data: services } = useServices();
   const { data: mappings } = useServiceAddonMappings();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -511,7 +513,8 @@ function ServiceMappingDialog({
 function CreateAddonForm({ services, onSuccess }: { services: Service[]; onSuccess: () => void }) {
   const { mutate: createAddon, isPending } = useCreateAddon();
   const { mutate: setAddonServices } = useSetAddonServices();
-  const { data: allAddons } = useAddons();
+  const { data: allStoreAddons2 } = useAddons();
+  const allAddons = useMemo(() => allStoreAddons2?.filter((a: any) => !a.kioskExtra), [allStoreAddons2]);
   const { toast } = useToast();
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [addonImageUrl, setAddonImageUrl] = useState("");

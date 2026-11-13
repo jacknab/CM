@@ -109,5 +109,12 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   kiosk_configs (migration 0359, applied), max 50 per store; shared/kiosk/configFile.ts (file format v1: layout +
   names of the services/add-ons it uses, nothing private); import matches buttons/spots to the importing store's
   catalog by name (category settles ties) and lists what didn't match. Checked on the isolated server (14/14).
+- 2026-11-13: **Kiosk Extras LIVE** (owner request): kiosk-only items (nail shapes…), free or priced, in groups
+  where a client picks one. They are add-ons underneath (addons.kiosk_extra / kiosk_extra_group, migration 0360,
+  hidden_from_public) so a pick lands on the ticket as an add-on line and checkout charges it; kept out of the
+  kiosk's add-ons step, the staff add-on pickers (/nail, /barber, calendar POS, PosCheckout — pickAddons; totals
+  still use every add-on) and the Catalog lists. Made in Builder › Screens (panel, or "New extra" from a tap spot /
+  button); button tiles can now be add-ons/extras (tile kind "addon"). Config files carry extras and an import
+  makes missing ones. Checked on the isolated server: pick-one replace, review "+ Coffin +$5", appointment_addons row.
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.
