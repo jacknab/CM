@@ -139,5 +139,11 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   "My own screens" (the grid / picture editor in place). Guide no longer opens by itself; a one-line hint instead.
   **Then…** on buttons/tap spots that choose a service or add-on (stay / continue / go to staff / finish / open a
   screen) + functions Go to Staff and Finish (layout KioskNext; kiosk runs it a render later via pendingNext).
+- 11-13 (ec6abb9d) **Configurations first, two separate builders** (owner: the builders were mixed in one editor).
+  /kiosk-builder = the business's configurations; New = name, then Easy or Picture builder (kept for good).
+  /kiosk-builder/:id edits one configuration (autosave, preview ?preview=config-<id>); "Put on my kiosk" publishes
+  it and kiosk_layouts.config_id (0361) marks it "On your kiosk now". Picture builder: "Your screens" tab instead of
+  Categories/Services. Each own screen: clients choose One / More than one, and "must choose". Existing kiosks get
+  "My kiosk" (live) the first time the list opens.
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.
