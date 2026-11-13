@@ -6,13 +6,14 @@
  * the kiosk's own KioskMenuScreen, so it looks exactly like the kiosk: tap an empty slot to fill it, tap a
  * button to change it, drag a button onto another slot to move it.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { KioskMenuScreen, servicePicture, type MenuColors, type MenuService } from "@/components/kiosk/KioskMenuScreen";
 import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
+import { ExtraForm, priceText, type KioskExtrasStore } from "./extras";
 import {
   KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, builderScreenKind, sameGroup, type KioskBuilderKind, menuPageCount, menuSlotsPerPage,
   type KioskLayout, type KioskMenu, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
@@ -21,57 +22,6 @@ import {
 export interface CatalogService extends MenuService { category: string | null; categoryId?: number | null }
 export interface CatalogCategory { id: number; name: string; imageUrl: string | null }
 export interface CatalogAddon { id: number; name: string; price: number; serviceIds: number[]; kioskExtra?: boolean; kioskExtraGroup?: string | null }
-/** A Kiosk Extra as the builder keeps it (GET /api/kiosk-builder/extras). */
-export interface KioskExtra { id: number; name: string; price: number; duration: number; group: string | null }
-
-async function extrasApi<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { credentials: "include", ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || "Something went wrong");
-  return d as T;
-}
-
-/** A form for one extra: name, price, extra minutes, group. */
-function ExtraForm(props: { initial?: Partial<KioskExtra>; groups: string[]; submitLabel: string; onSubmit: (x: Omit<KioskExtra, "id">) => Promise<void>; onCancel?: () => void }) {
-  const [name, setName] = useState(props.initial?.name ?? "");
-  const [price, setPrice] = useState(String(props.initial?.price ?? 0));
-  const [duration, setDuration] = useState(String(props.initial?.duration ?? 0));
-  const [group, setGroup] = useState(props.initial?.group ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const listId = useMemo(() => `extra-groups-${Math.random().toString(36).slice(2, 7)}`, []);
-  const submit = async () => {
-    setBusy(true); setError("");
-    try { await props.onSubmit({ name: name.trim(), price: Number(price) || 0, duration: Math.round(Number(duration) || 0), group: group.trim() || null }); }
-    catch (e: any) { setError(e.message); }
-    finally { setBusy(false); }
-  };
-  return (
-    <div className="space-y-2 rounded-lg border border-slate-200 p-3 bg-slate-50" data-testid="extra-form">
-      <Input placeholder="Name, e.g. Coffin" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} data-testid="extra-name" />
-      <div className="grid grid-cols-2 gap-2">
-        <label className="text-xs text-slate-500">Price ($)
-          <Input className="mt-1" type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} data-testid="extra-price" />
-        </label>
-        <label className="text-xs text-slate-500">Extra minutes
-          <Input className="mt-1" type="number" min={0} max={480} step="5" value={duration} onChange={(e) => setDuration(e.target.value)} />
-        </label>
-      </div>
-      <label className="block text-xs text-slate-500">Group (pick one per group)
-        <Input className="mt-1" list={listId} placeholder="e.g. Nail shape" maxLength={40} value={group} onChange={(e) => setGroup(e.target.value)} data-testid="extra-group" />
-        <datalist id={listId}>{props.groups.map((g) => <option key={g} value={g} />)}</datalist>
-      </label>
-      {error && <p className="text-xs text-red-600">{error}</p>}
-      <div className="flex gap-2">
-        <Button size="sm" disabled={!name.trim() || busy} onClick={() => void submit()} data-testid="extra-submit">{props.submitLabel}</Button>
-        {props.onCancel && <Button size="sm" variant="ghost" onClick={props.onCancel}>Cancel</Button>}
-      </div>
-    </div>
-  );
-}
-
-const priceText = (n: number) => (n > 0 ? `+$${n % 1 === 0 ? n : n.toFixed(2)}` : "Included");
-
 const FUNCTION_NAMES: Record<KioskSpotFunction, { name: string; about: string }> = {
   continue: { name: "Continue", about: "On to the next step with what the client chose" },
   back: { name: "Back", about: "The screen before" },
@@ -193,6 +143,10 @@ export function ScreensEditor(props: {
   onView: (v: "edit" | "preview") => void;
   /** Sends the live preview to one of these screens. */
   previewScreen: (menuId: string) => void;
+  /** The Kiosk Extras (one list for the whole builder). */
+  extras: KioskExtrasStore;
+  /** Where the page puts the two parts: the settings panel, and the canvas (null: show the live preview). */
+  children: (parts: { panel: React.ReactNode; canvas: React.ReactNode | null }) => React.ReactNode;
 }) {
   const { draft, update, services, categories } = props;
   const [menuId, setMenuId] = useState<string | null>(draft.startMenuId ?? draft.menus[0]?.id ?? null);
@@ -201,16 +155,12 @@ export function ScreensEditor(props: {
   const [slot, setSlot] = useState<number | null>(null);
   const [pickTab, setPickTab] = useState<"service" | "extra" | "screen">("service");
   // Kiosk Extras: kiosk-only items (nail shapes…), add-ons underneath so they land on the ticket and are charged.
-  const [extras, setExtras] = useState<KioskExtra[] | null>(null);
-  const [extraForm, setExtraForm] = useState<null | "new" | "spot" | "tile" | number>(null);
-  const loadExtras = useCallback(() => extrasApi<{ extras: KioskExtra[] }>("/api/kiosk-builder/extras").then((d) => setExtras(d.extras)).catch(() => setExtras([])), []);
-  useEffect(() => { void loadExtras(); }, [loadExtras]);
-  const extraGroups = useMemo(() => [...new Set((extras ?? []).map((x) => x.group).filter((g): g is string => !!g))], [extras]);
-  const createExtra = async (x: Omit<KioskExtra, "id">): Promise<KioskExtra> => {
-    const { extra } = await extrasApi<{ extra: KioskExtra }>("/api/kiosk-builder/extras", { method: "POST", body: JSON.stringify(x) });
-    setExtras((cur) => [...(cur ?? []), extra]);
-    return extra;
-  };
+  const extras = props.extras.list;
+  const extraGroups = props.extras.groups;
+  const createExtra = props.extras.create;
+  const [extraForm, setExtraForm] = useState<null | "spot" | "tile">(null);
+  // The chosen button / tap spot's card sits at the top of the panel: bring it into view when one is chosen.
+  const selectionRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [spotId, setSpotId] = useState<string | null>(null);
@@ -238,6 +188,9 @@ export function ScreensEditor(props: {
 
   useEffect(() => { if (!menu && draft.menus[0]) setMenuId(draft.menus[0].id); }, [menu, draft.menus]);
   useEffect(() => { setPage(0); setExtraPages(0); setSlot(null); setSpotId(null); setPictureWarning(null); }, [menuId]);
+  useEffect(() => {
+    if (slot != null || spotId) selectionRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [slot, spotId]);
   useEffect(() => {
     const box = canvasBox.current;
     if (!box) return;
@@ -386,9 +339,8 @@ export function ScreensEditor(props: {
   );
 
   if (!draft.menus.length) {
-    return (
-      <div className="max-w-xl mx-auto p-8 space-y-4">
-        <h2 className="text-lg font-semibold text-slate-900">Your own screens</h2>
+    return <>{props.children({ canvas: null, panel: (
+      <div className="space-y-4">
         {builderChoice}
         {draft.builder === "easy" ? (
           <>
@@ -415,7 +367,7 @@ export function ScreensEditor(props: {
           </>
         )}
       </div>
-    );
+    ) })}</>;
   }
 
   const per = menu ? menuSlotsPerPage(menu) : 1;
@@ -443,11 +395,222 @@ export function ScreensEditor(props: {
     } finally { setUploading(false); }
   };
 
-  return (
-    <div className="h-full min-h-0 flex flex-col lg:flex-row">
-      {/* ── Screens and their settings ── */}
-      <div className="lg:w-[340px] shrink-0 overflow-y-auto p-4 space-y-4 border-r border-slate-200">
-        {builderChoice}
+  const panel = (
+    <div className="space-y-4">
+      {/* The chosen tap spot or button: edited here, at the top of the panel. */}
+      <div ref={selectionRef} className="empty:hidden">
+      {props.view === "edit" && menu && menu.kind === "picture" && spot && (
+        <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-spot-panel">
+          <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
+          <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 p-0.5">
+            {(["service", "addon", "function", "menu"] as const).map((k) => (
+              <button key={k} type="button" onClick={() => setSpotTab(k)}
+                className={`h-8 text-xs rounded ${spotTab === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>
+                {k === "service" ? "Service" : k === "addon" ? "Add-on" : k === "function" ? "Function" : "Screen"}
+              </button>
+            ))}
+          </div>
+          {spotTab === "service" && (
+            <>
+              <Input placeholder="Search services" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <div className="max-h-[45vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
+                {pickable.map((s2) => {
+                  const on = spot.action.kind === "service" && spot.action.serviceId === s2.id;
+                  return (
+                    <button key={s2.id} type="button" className={`w-full text-left px-3 py-2 ${on ? "bg-slate-100" : "hover:bg-slate-50"}`} data-testid="spot-pick-service"
+                      onClick={() => setSpotAction({ kind: "service", serviceId: s2.id })}>
+                      <span className="block text-sm text-slate-800">{s2.name}{on ? " ✓" : ""}</span>
+                      <span className="block text-xs text-slate-500">{s2.category || "No category"} · ${s2.price} · {s2.duration} min</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {spotTab === "addon" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Kiosk Extras</p>
+                {extraForm !== "spot" && <Button size="sm" variant="outline" onClick={() => setExtraForm("spot")} data-testid="spot-new-extra">New extra</Button>}
+              </div>
+              {extraForm === "spot" && (
+                <ExtraForm groups={extraGroups} submitLabel="Add and use" onCancel={() => setExtraForm(null)}
+                  initial={{ group: spot.action.kind === "addon" ? (extras ?? []).find((x) => x.id === (spot.action as { addonId: number }).addonId)?.group ?? "" : extraGroups[0] ?? "" }}
+                  onSubmit={async (x) => { const e = await createExtra(x); setSpotAction({ kind: "addon", addonId: e.id }); setExtraForm(null); }} />
+              )}
+              <div className="max-h-[30vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
+                {(extras ?? []).map((x) => {
+                  const on = spot.action.kind === "addon" && spot.action.addonId === x.id;
+                  return (
+                    <button key={x.id} type="button" className={`w-full text-left px-3 py-2 ${on ? "bg-slate-100" : "hover:bg-slate-50"}`} data-testid="spot-pick-extra"
+                      onClick={() => setSpotAction({ kind: "addon", addonId: x.id })}>
+                      <span className="block text-sm text-slate-800">{x.name}{on ? " ✓" : ""}</span>
+                      <span className="block text-xs text-slate-500">{priceText(x.price)}{x.group ? ` · ${x.group}` : ""}</span>
+                    </button>
+                  );
+                })}
+                {extras && !extras.length && <p className="px-3 py-3 text-sm text-slate-500">No extras yet. Add one, like a nail shape.</p>}
+              </div>
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide pt-1">Add-ons</p>
+            <div className="max-h-[30vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
+              {plainAddons.map((a) => {
+                const on = spot.action.kind === "addon" && spot.action.addonId === a.id;
+                return (
+                  <button key={a.id} type="button" className={`w-full text-left px-3 py-2 ${on ? "bg-slate-100" : "hover:bg-slate-50"}`}
+                    onClick={() => setSpotAction({ kind: "addon", addonId: a.id })}>
+                    <span className="block text-sm text-slate-800">{a.name}{on ? " ✓" : ""}</span>
+                    <span className="block text-xs text-slate-500">${a.price}{a.serviceIds.length ? ` · with ${a.serviceIds.length} ${a.serviceIds.length === 1 ? "service" : "services"}` : " · with any service"}</span>
+                  </button>
+                );
+              })}
+              {!plainAddons.length && <p className="px-3 py-4 text-sm text-slate-500">You have no add-ons yet.</p>}
+            </div>
+              <p className="text-xs text-slate-500">Clients choose a service first; extras and add-ons are added to it. In a group, choosing one replaces the other.</p>
+            </div>
+          )}
+          {spotTab === "function" && (
+            <div className="space-y-1">
+              {(Object.keys(FUNCTION_NAMES) as KioskSpotFunction[]).map((fn) => {
+                const on = spot.action.kind === "function" && spot.action.fn === fn;
+                return (
+                  <button key={fn} type="button" className={`w-full text-left px-3 py-2 rounded-lg border ${on ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:bg-slate-50"}`}
+                    onClick={() => setSpotAction({ kind: "function", fn })} data-testid={`spot-fn-${fn}`}>
+                    <span className="block text-sm text-slate-800">{FUNCTION_NAMES[fn].name}{on ? " ✓" : ""}</span>
+                    <span className="block text-xs text-slate-500">{FUNCTION_NAMES[fn].about}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {spotTab === "menu" && (
+            <div className="space-y-1">
+              {draft.menus.filter((m) => m.id !== menu.id).map((m) => {
+                const on = spot.action.kind === "menu" && spot.action.menuId === m.id;
+                return (
+                  <button key={m.id} type="button" className={`w-full text-left px-3 py-2 rounded-lg text-sm border ${on ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:bg-slate-50"}`}
+                    onClick={() => setSpotAction({ kind: "menu", menuId: m.id })}>
+                    {m.name}{on ? " ✓" : ""}
+                  </button>
+                );
+              })}
+              <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus}
+                onClick={() => { const id = addScreen(); setSpotAction({ kind: "menu", menuId: id }); }}>New screen for this spot</Button>
+            </div>
+          )}
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => {
+              if (menu.spots.length >= KIOSK_MENU_LIMITS.spots) return;
+              const copy: KioskSpot = { ...spot, id: newId("spot"), x: Math.min(100 - spot.w, spot.x + 3), y: Math.min(100 - spot.h, spot.y + 3) };
+              changeSpots((list) => [...list, copy]); setSpotId(copy.id);
+            }}>Duplicate</Button>
+            <Button variant="outline" size="sm" onClick={() => { changeSpots((list) => list.filter((x) => x.id !== spot.id)); setSpotId(null); }} data-testid="spot-delete">Delete</Button>
+            <Button variant="ghost" size="sm" onClick={() => setSpotId(null)}>Done</Button>
+          </div>
+        </div>
+      )}
+      {props.view === "edit" && menu && menu.kind !== "picture" && slot != null && (
+        <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="screens-slot-panel">
+          {tile ? (
+            <>
+              <p className="text-sm font-semibold text-slate-800">
+                {tile.kind === "service" ? (svcById.get(tile.serviceId!)?.name ?? "A service no longer on your menu")
+                  : tile.kind === "addon" ? `+ ${addonMap.get(tile.addonId!)?.name ?? "An extra no longer on your menu"}`
+                  : `Opens "${menusById.get(tile.menuId!)?.name ?? "a deleted screen"}"`}
+              </p>
+              <label className="block text-xs text-slate-500">
+                Button name
+                <Input className="mt-1" value={tile.label ?? ""} maxLength={KIOSK_MENU_LIMITS.label}
+                  placeholder={tile.kind === "service" ? svcById.get(tile.serviceId!)?.name : tile.kind === "addon" ? addonMap.get(tile.addonId!)?.name : menusById.get(tile.menuId!)?.name}
+                  onChange={(e) => setTile(slot, { ...tile, label: e.target.value || undefined })} />
+              </label>
+              <div className="flex items-center gap-3">
+                <div className="w-16 h-16 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden shrink-0">
+                  {(tile.imageUrl || servicePicture(svcById.get(tile.serviceId ?? -1))) &&
+                    <img src={(tile.imageUrl || servicePicture(svcById.get(tile.serviceId ?? -1)))!} alt="" className="w-full h-full object-cover" />}
+                </div>
+                <div className="flex flex-col items-start gap-1.5">
+                  <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-8 cursor-pointer bg-white hover:bg-slate-50">
+                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Picture
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
+                  </label>
+                  {tile.imageUrl && (
+                    <button type="button" className="text-xs text-slate-500 underline" onClick={() => setTile(slot, { ...tile, imageUrl: undefined })}>
+                      {tile.kind === "service" ? "Use the service's picture" : "No picture"}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId) && (
+                <Button variant="outline" size="sm" onClick={() => setMenuId(tile.menuId!)}>Edit that screen</Button>
+              )}
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" size="sm" onClick={() => setTile(slot, null)} data-testid="screens-remove-button">Remove button</Button>
+                <Button variant="ghost" size="sm" onClick={() => setSlot(null)}>Done</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm font-semibold text-slate-800">Add a button</p>
+              <div className="inline-flex rounded-md border border-slate-200 p-0.5">
+                {(["service", "extra", "screen"] as const).map((k) => (
+                  <button key={k} type="button" onClick={() => setPickTab(k)}
+                    className={`px-3 h-8 text-sm rounded ${pickTab === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>
+                    {k === "service" ? "A service" : k === "extra" ? "An extra" : "Open a screen"}
+                  </button>
+                ))}
+              </div>
+              {pickTab === "extra" ? (
+                <div className="space-y-2">
+                  {extraForm === "tile" ? (
+                    <ExtraForm groups={extraGroups} submitLabel="Add and use" onCancel={() => setExtraForm(null)} initial={{ group: extraGroups[0] ?? "" }}
+                      onSubmit={async (x) => { const e = await createExtra(x); setTile(slot, { id: newId("btn"), kind: "addon", addonId: e.id }); setExtraForm(null); setSlot(null); }} />
+                  ) : <Button size="sm" variant="outline" onClick={() => setExtraForm("tile")}>New extra</Button>}
+                  <div className="max-h-[45vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
+                    {[...(extras ?? []).map((x) => ({ id: x.id, name: x.name, sub: `${priceText(x.price)}${x.group ? ` · ${x.group}` : ""}` })),
+                      ...plainAddons.map((a) => ({ id: a.id, name: a.name, sub: `Add-on · $${a.price}` }))].map((a) => (
+                      <button key={a.id} type="button" className="w-full text-left px-3 py-2 hover:bg-slate-50"
+                        onClick={() => { setTile(slot, { id: newId("btn"), kind: "addon", addonId: a.id }); setSlot(null); }}>
+                        <span className="block text-sm text-slate-800">{a.name}</span>
+                        <span className="block text-xs text-slate-500">{a.sub}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : pickTab === "service" ? (
+                <>
+                  <Input placeholder="Search services" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  <div className="max-h-[50vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
+                    {pickable.map((s) => (
+                      <button key={s.id} type="button" className="w-full text-left px-3 py-2 hover:bg-slate-50" data-testid="screens-pick-service"
+                        onClick={() => { setTile(slot, { id: newId("btn"), kind: "service", serviceId: s.id }); setSlot(null); }}>
+                        <span className="block text-sm text-slate-800">{s.name}</span>
+                        <span className="block text-xs text-slate-500">{s.category || "No category"} · ${s.price} · {s.duration} min</span>
+                      </button>
+                    ))}
+                    {!pickable.length && <p className="px-3 py-4 text-sm text-slate-500">No services match.</p>}
+                  </div>
+                </>
+              ) : (
+                <div className="space-y-1">
+                  {draft.menus.filter((m) => m.id !== menu.id).map((m) => (
+                    <button key={m.id} type="button" className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 border border-slate-100"
+                      onClick={() => { setTile(slot, { id: newId("btn"), kind: "menu", menuId: m.id }); setSlot(null); }}>
+                      {m.name}
+                    </button>
+                  ))}
+                  <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus}
+                    onClick={() => { const id = addScreen(); setTile(slot, { id: newId("btn"), kind: "menu", menuId: id }); setSlot(null); }}>
+                    New screen for this button
+                  </Button>
+                </div>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setSlot(null)}>Cancel</Button>
+            </>
+          )}
+        </div>
+      )}
+      </div>
         <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -501,68 +664,6 @@ export function ScreensEditor(props: {
           </div>
         </section>
 
-        <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2" data-testid="extras-panel">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-800">Kiosk Extras</p>
-            {extraForm !== "new" && <Button variant="outline" size="sm" onClick={() => setExtraForm("new")} data-testid="extras-add">Add extra</Button>}
-          </div>
-          <p className="text-xs text-slate-500">
-            Things clients choose only at the kiosk, like a nail shape. Free or with a price; they go on the client's ticket and are charged at checkout.
-            They don't show on your booking site or in your add-ons.
-          </p>
-          {extraForm === "new" && (
-            <ExtraForm groups={extraGroups} submitLabel="Add" onCancel={() => setExtraForm(null)} initial={{ group: extraGroups[0] ?? "" }}
-              onSubmit={async (x) => { await createExtra(x); setExtraForm(null); }} />
-          )}
-          <div className="space-y-1">
-            {[...(extras ?? [])].sort((a, b) => (a.group ?? "\uffff").localeCompare(b.group ?? "\uffff") || a.id - b.id).map((x, i, list) => (
-              <div key={x.id}>
-                {(i === 0 || list[i - 1].group !== x.group) && (
-                  <div className="flex items-center justify-between gap-2 pt-1">
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{x.group || "No group"}</p>
-                    {x.group && (() => {
-                      const g = x.group;
-                      const on = draft.requiredGroups.some((r) => sameGroup(r, g));
-                      return (
-                        <label className="inline-flex items-center gap-1.5 text-xs text-slate-600" data-testid="extra-group-required">
-                          <input type="checkbox" checked={on}
-                            onChange={(e) => update((d) => ({ ...d, requiredGroups: e.target.checked
-                              ? [...d.requiredGroups.filter((r) => !sameGroup(r, g)), g]
-                              : d.requiredGroups.filter((r) => !sameGroup(r, g)) }))} />
-                          Clients must choose one
-                        </label>
-                      );
-                    })()}
-                  </div>
-                )}
-                {extraForm === x.id ? (
-                  <ExtraForm groups={extraGroups} submitLabel="Save" initial={x} onCancel={() => setExtraForm(null)}
-                    onSubmit={async (v) => {
-                      const { extra } = await extrasApi<{ extra: KioskExtra }>(`/api/kiosk-builder/extras/${x.id}`, { method: "PATCH", body: JSON.stringify(v) });
-                      setExtras((cur) => (cur ?? []).map((e) => (e.id === extra.id ? extra : e)));
-                      setExtraForm(null);
-                    }} />
-                ) : (
-                  <div className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-slate-50" data-testid="extra-row">
-                    <span className="text-sm text-slate-700 truncate">{x.name}</span>
-                    <span className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs text-slate-500">{priceText(x.price)}</span>
-                      <button type="button" className="text-xs underline text-slate-500" onClick={() => setExtraForm(x.id)}>Edit</button>
-                      <button type="button" className="text-xs underline text-slate-500" onClick={async () => {
-                        if (!window.confirm(`Remove "${x.name}"? Tickets that already have it keep it. Buttons and tap spots for it stop working.`)) return;
-                        try {
-                          await extrasApi(`/api/kiosk-builder/extras/${x.id}`, { method: "DELETE" });
-                          setExtras((cur) => (cur ?? []).filter((e) => e.id !== x.id));
-                        } catch (e: any) { window.alert(e.message); }
-                      }}>Remove</button>
-                    </span>
-                  </div>
-                )}
-              </div>
-            ))}
-            {extras && !extras.length && extraForm !== "new" && <p className="text-xs text-slate-500">None yet.</p>}
-          </div>
-        </section>
 
         {menu && menu.kind === "picture" && (
           <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3" data-testid="picture-settings">
@@ -676,10 +777,12 @@ export function ScreensEditor(props: {
             </button>
           </section>
         )}
-      </div>
-
-      {/* ── The 15" kiosk canvas, or the live preview ── */}
-      <div className="flex-1 min-w-0 min-h-[560px] flex flex-col items-center p-4 gap-2">
+      {/* Rarely changed once chosen: last. */}
+      {builderChoice}
+    </div>
+  );
+  const canvas = (
+    <div className="flex-1 min-w-0 h-full min-h-0 flex flex-col items-center gap-2 p-2">
         <div className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 self-center" data-testid="screens-view">
           {([["edit", "Edit screen"], ["preview", "Live preview"]] as const).map(([k, name]) => (
             <button key={k} type="button" data-testid={`screens-view-${k}`}
@@ -754,228 +857,7 @@ export function ScreensEditor(props: {
           </>
         )}
         </>)}
-      </div>
-
-      {/* ── The chosen slot ── */}
-      {props.view === "edit" && menu && menu.kind === "picture" && spot && (
-        <div className="lg:w-[320px] shrink-0 overflow-y-auto p-4 border-l border-slate-200 bg-white space-y-3" data-testid="picture-spot-panel">
-          <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
-          <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 p-0.5">
-            {(["service", "addon", "function", "menu"] as const).map((k) => (
-              <button key={k} type="button" onClick={() => setSpotTab(k)}
-                className={`h-8 text-xs rounded ${spotTab === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>
-                {k === "service" ? "Service" : k === "addon" ? "Add-on" : k === "function" ? "Function" : "Screen"}
-              </button>
-            ))}
-          </div>
-          {spotTab === "service" && (
-            <>
-              <Input placeholder="Search services" value={search} onChange={(e) => setSearch(e.target.value)} />
-              <div className="max-h-[45vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-                {pickable.map((s2) => {
-                  const on = spot.action.kind === "service" && spot.action.serviceId === s2.id;
-                  return (
-                    <button key={s2.id} type="button" className={`w-full text-left px-3 py-2 ${on ? "bg-slate-100" : "hover:bg-slate-50"}`} data-testid="spot-pick-service"
-                      onClick={() => setSpotAction({ kind: "service", serviceId: s2.id })}>
-                      <span className="block text-sm text-slate-800">{s2.name}{on ? " ✓" : ""}</span>
-                      <span className="block text-xs text-slate-500">{s2.category || "No category"} · ${s2.price} · {s2.duration} min</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-          {spotTab === "addon" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Kiosk Extras</p>
-                {extraForm !== "spot" && <Button size="sm" variant="outline" onClick={() => setExtraForm("spot")} data-testid="spot-new-extra">New extra</Button>}
-              </div>
-              {extraForm === "spot" && (
-                <ExtraForm groups={extraGroups} submitLabel="Add and use" onCancel={() => setExtraForm(null)}
-                  initial={{ group: spot.action.kind === "addon" ? (extras ?? []).find((x) => x.id === (spot.action as { addonId: number }).addonId)?.group ?? "" : extraGroups[0] ?? "" }}
-                  onSubmit={async (x) => { const e = await createExtra(x); setSpotAction({ kind: "addon", addonId: e.id }); setExtraForm(null); }} />
-              )}
-              <div className="max-h-[30vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-                {(extras ?? []).map((x) => {
-                  const on = spot.action.kind === "addon" && spot.action.addonId === x.id;
-                  return (
-                    <button key={x.id} type="button" className={`w-full text-left px-3 py-2 ${on ? "bg-slate-100" : "hover:bg-slate-50"}`} data-testid="spot-pick-extra"
-                      onClick={() => setSpotAction({ kind: "addon", addonId: x.id })}>
-                      <span className="block text-sm text-slate-800">{x.name}{on ? " ✓" : ""}</span>
-                      <span className="block text-xs text-slate-500">{priceText(x.price)}{x.group ? ` · ${x.group}` : ""}</span>
-                    </button>
-                  );
-                })}
-                {extras && !extras.length && <p className="px-3 py-3 text-sm text-slate-500">No extras yet. Add one, like a nail shape.</p>}
-              </div>
-              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide pt-1">Add-ons</p>
-            <div className="max-h-[30vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-              {plainAddons.map((a) => {
-                const on = spot.action.kind === "addon" && spot.action.addonId === a.id;
-                return (
-                  <button key={a.id} type="button" className={`w-full text-left px-3 py-2 ${on ? "bg-slate-100" : "hover:bg-slate-50"}`}
-                    onClick={() => setSpotAction({ kind: "addon", addonId: a.id })}>
-                    <span className="block text-sm text-slate-800">{a.name}{on ? " ✓" : ""}</span>
-                    <span className="block text-xs text-slate-500">${a.price}{a.serviceIds.length ? ` · with ${a.serviceIds.length} ${a.serviceIds.length === 1 ? "service" : "services"}` : " · with any service"}</span>
-                  </button>
-                );
-              })}
-              {!plainAddons.length && <p className="px-3 py-4 text-sm text-slate-500">You have no add-ons yet.</p>}
-            </div>
-              <p className="text-xs text-slate-500">Clients choose a service first; extras and add-ons are added to it. In a group, choosing one replaces the other.</p>
-            </div>
-          )}
-          {spotTab === "function" && (
-            <div className="space-y-1">
-              {(Object.keys(FUNCTION_NAMES) as KioskSpotFunction[]).map((fn) => {
-                const on = spot.action.kind === "function" && spot.action.fn === fn;
-                return (
-                  <button key={fn} type="button" className={`w-full text-left px-3 py-2 rounded-lg border ${on ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:bg-slate-50"}`}
-                    onClick={() => setSpotAction({ kind: "function", fn })} data-testid={`spot-fn-${fn}`}>
-                    <span className="block text-sm text-slate-800">{FUNCTION_NAMES[fn].name}{on ? " ✓" : ""}</span>
-                    <span className="block text-xs text-slate-500">{FUNCTION_NAMES[fn].about}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {spotTab === "menu" && (
-            <div className="space-y-1">
-              {draft.menus.filter((m) => m.id !== menu.id).map((m) => {
-                const on = spot.action.kind === "menu" && spot.action.menuId === m.id;
-                return (
-                  <button key={m.id} type="button" className={`w-full text-left px-3 py-2 rounded-lg text-sm border ${on ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:bg-slate-50"}`}
-                    onClick={() => setSpotAction({ kind: "menu", menuId: m.id })}>
-                    {m.name}{on ? " ✓" : ""}
-                  </button>
-                );
-              })}
-              <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus}
-                onClick={() => { const id = addScreen(); setSpotAction({ kind: "menu", menuId: id }); }}>New screen for this spot</Button>
-            </div>
-          )}
-          <div className="flex gap-2 pt-1">
-            <Button variant="outline" size="sm" onClick={() => {
-              if (menu.spots.length >= KIOSK_MENU_LIMITS.spots) return;
-              const copy: KioskSpot = { ...spot, id: newId("spot"), x: Math.min(100 - spot.w, spot.x + 3), y: Math.min(100 - spot.h, spot.y + 3) };
-              changeSpots((list) => [...list, copy]); setSpotId(copy.id);
-            }}>Duplicate</Button>
-            <Button variant="outline" size="sm" onClick={() => { changeSpots((list) => list.filter((x) => x.id !== spot.id)); setSpotId(null); }} data-testid="spot-delete">Delete</Button>
-            <Button variant="ghost" size="sm" onClick={() => setSpotId(null)}>Done</Button>
-          </div>
-        </div>
-      )}
-      {/* Always there while a screen is open, so the canvas never changes size when something is chosen. */}
-      {props.view === "edit" && menu && (menu.kind === "picture" ? !spot : slot == null) && (
-        <div className="lg:w-[320px] shrink-0 p-4 border-l border-slate-200 bg-white text-sm text-slate-500">
-          {menu.kind === "picture"
-            ? "Tap a tap spot on the picture to choose what it does, or add one with Add tap spot."
-            : "Tap an empty slot to add a button, or tap a button to change it."}
-        </div>
-      )}
-      {props.view === "edit" && menu && menu.kind !== "picture" && slot != null && (
-        <div className="lg:w-[320px] shrink-0 overflow-y-auto p-4 border-l border-slate-200 bg-white space-y-3" data-testid="screens-slot-panel">
-          {tile ? (
-            <>
-              <p className="text-sm font-semibold text-slate-800">
-                {tile.kind === "service" ? (svcById.get(tile.serviceId!)?.name ?? "A service no longer on your menu")
-                  : tile.kind === "addon" ? `+ ${addonMap.get(tile.addonId!)?.name ?? "An extra no longer on your menu"}`
-                  : `Opens "${menusById.get(tile.menuId!)?.name ?? "a deleted screen"}"`}
-              </p>
-              <label className="block text-xs text-slate-500">
-                Button name
-                <Input className="mt-1" value={tile.label ?? ""} maxLength={KIOSK_MENU_LIMITS.label}
-                  placeholder={tile.kind === "service" ? svcById.get(tile.serviceId!)?.name : tile.kind === "addon" ? addonMap.get(tile.addonId!)?.name : menusById.get(tile.menuId!)?.name}
-                  onChange={(e) => setTile(slot, { ...tile, label: e.target.value || undefined })} />
-              </label>
-              <div className="flex items-center gap-3">
-                <div className="w-16 h-16 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden shrink-0">
-                  {(tile.imageUrl || servicePicture(svcById.get(tile.serviceId ?? -1))) &&
-                    <img src={(tile.imageUrl || servicePicture(svcById.get(tile.serviceId ?? -1)))!} alt="" className="w-full h-full object-cover" />}
-                </div>
-                <div className="flex flex-col items-start gap-1.5">
-                  <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-8 cursor-pointer bg-white hover:bg-slate-50">
-                    {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Picture
-                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading}
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ""; }} />
-                  </label>
-                  {tile.imageUrl && (
-                    <button type="button" className="text-xs text-slate-500 underline" onClick={() => setTile(slot, { ...tile, imageUrl: undefined })}>
-                      {tile.kind === "service" ? "Use the service's picture" : "No picture"}
-                    </button>
-                  )}
-                </div>
-              </div>
-              {tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId) && (
-                <Button variant="outline" size="sm" onClick={() => setMenuId(tile.menuId!)}>Edit that screen</Button>
-              )}
-              <div className="flex gap-2 pt-1">
-                <Button variant="outline" size="sm" onClick={() => setTile(slot, null)} data-testid="screens-remove-button">Remove button</Button>
-                <Button variant="ghost" size="sm" onClick={() => setSlot(null)}>Done</Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-sm font-semibold text-slate-800">Add a button</p>
-              <div className="inline-flex rounded-md border border-slate-200 p-0.5">
-                {(["service", "extra", "screen"] as const).map((k) => (
-                  <button key={k} type="button" onClick={() => setPickTab(k)}
-                    className={`px-3 h-8 text-sm rounded ${pickTab === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>
-                    {k === "service" ? "A service" : k === "extra" ? "An extra" : "Open a screen"}
-                  </button>
-                ))}
-              </div>
-              {pickTab === "extra" ? (
-                <div className="space-y-2">
-                  {extraForm === "tile" ? (
-                    <ExtraForm groups={extraGroups} submitLabel="Add and use" onCancel={() => setExtraForm(null)} initial={{ group: extraGroups[0] ?? "" }}
-                      onSubmit={async (x) => { const e = await createExtra(x); setTile(slot, { id: newId("btn"), kind: "addon", addonId: e.id }); setExtraForm(null); setSlot(null); }} />
-                  ) : <Button size="sm" variant="outline" onClick={() => setExtraForm("tile")}>New extra</Button>}
-                  <div className="max-h-[45vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-                    {[...(extras ?? []).map((x) => ({ id: x.id, name: x.name, sub: `${priceText(x.price)}${x.group ? ` · ${x.group}` : ""}` })),
-                      ...plainAddons.map((a) => ({ id: a.id, name: a.name, sub: `Add-on · $${a.price}` }))].map((a) => (
-                      <button key={a.id} type="button" className="w-full text-left px-3 py-2 hover:bg-slate-50"
-                        onClick={() => { setTile(slot, { id: newId("btn"), kind: "addon", addonId: a.id }); setSlot(null); }}>
-                        <span className="block text-sm text-slate-800">{a.name}</span>
-                        <span className="block text-xs text-slate-500">{a.sub}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : pickTab === "service" ? (
-                <>
-                  <Input placeholder="Search services" value={search} onChange={(e) => setSearch(e.target.value)} />
-                  <div className="max-h-[50vh] overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-lg">
-                    {pickable.map((s) => (
-                      <button key={s.id} type="button" className="w-full text-left px-3 py-2 hover:bg-slate-50" data-testid="screens-pick-service"
-                        onClick={() => { setTile(slot, { id: newId("btn"), kind: "service", serviceId: s.id }); setSlot(null); }}>
-                        <span className="block text-sm text-slate-800">{s.name}</span>
-                        <span className="block text-xs text-slate-500">{s.category || "No category"} · ${s.price} · {s.duration} min</span>
-                      </button>
-                    ))}
-                    {!pickable.length && <p className="px-3 py-4 text-sm text-slate-500">No services match.</p>}
-                  </div>
-                </>
-              ) : (
-                <div className="space-y-1">
-                  {draft.menus.filter((m) => m.id !== menu.id).map((m) => (
-                    <button key={m.id} type="button" className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 border border-slate-100"
-                      onClick={() => { setTile(slot, { id: newId("btn"), kind: "menu", menuId: m.id }); setSlot(null); }}>
-                      {m.name}
-                    </button>
-                  ))}
-                  <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus}
-                    onClick={() => { const id = addScreen(); setTile(slot, { id: newId("btn"), kind: "menu", menuId: id }); setSlot(null); }}>
-                    New screen for this button
-                  </Button>
-                </div>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => setSlot(null)}>Cancel</Button>
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
+  return <>{props.children({ panel, canvas })}</>;
 }

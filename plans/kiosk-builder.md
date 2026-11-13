@@ -122,5 +122,11 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   marked on the template). Kiosk Extras groups can be "Clients must choose one" (layout.requiredGroups): Continue on a
   screen showing that group waits for a pick. Screens tab has Edit / Live preview (same preview, "This screen" jump).
   Preview is the 15" kiosk only (Tablet option removed). Checked on the isolated server (16/16).
+- 2026-11-13: **Builder redesign** (owner): three columns — sections rail (Look, Welcome screen, Check-in steps,
+  Service screens, Kiosk Extras, Words, each with a one-line summary) · the chosen section's settings · the 15"
+  kiosk always visible (jumps to the screen the section is about; Service screens shows the editing canvas with
+  Edit / Live preview). The chosen button / tap spot is edited in a card at the top of the panel. "Starting
+  design" card removed: Words › "What clients call your staff" (shared STAFF_TITLES, all 5 languages) and
+  Configurations › "Start over from a business-type design". Kiosk Extras: pages/kiosk-builder/extras.tsx.
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

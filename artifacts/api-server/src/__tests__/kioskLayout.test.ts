@@ -241,3 +241,15 @@ describe("one builder per kiosk", () => {
     expect(validateKioskLayout({ builder: "picture", menus: [{ ...pic, spots: [] }] })).toEqual([]);
   });
 });
+
+describe("what clients call the staff", () => {
+  it("writes the staff sentences in every language and recognises them again", async () => {
+    const { staffTextFor, currentStaffTitle } = await import("@shared/kiosk/presets");
+    const t = staffTextFor("nailtech");
+    expect(t.yourStylist).toEqual({ en: "Your nail technician", es: "Tu técnico de uñas", vi: "Kỹ thuật viên", zh: "您的美甲师", ko: "담당 네일 아티스트" });
+    expect(currentStaffTitle(t)).toBe("nailtech");
+    expect(currentStaffTitle({})).toBe("stylist");
+    expect(currentStaffTitle({ ...t, showQr: { en: "Show this to us" } })).toBe("custom");
+    expect(currentStaffTitle(KIOSK_PRESETS.barber.layout.text)).toBe("barber");
+  });
+});

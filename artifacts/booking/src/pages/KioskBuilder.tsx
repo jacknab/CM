@@ -27,6 +27,8 @@ import type { BusinessType, BusinessTypeKey } from "@shared/kiosk/businessTypes"
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensEditor, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
+import { currentStaffTitle, STAFF_TEXT_KEYS, STAFF_TITLES, staffTextFor } from "@shared/kiosk/presets";
 
 interface BuilderState {
   businessType: BusinessType;
@@ -81,6 +83,16 @@ const PREVIEW_SCREENS: Array<{ target: KioskPreviewTarget; name: string }> = [
 const FRAMES = {
   portrait: { w: 720, h: 1280, name: "15\" kiosk" },
 } as const;
+
+type SectionKey = "look" | "welcome" | "steps" | "screens" | "extras" | "words";
+const SECTIONS: Array<{ key: SectionKey; name: string; about: string; preview?: KioskPreviewTarget }> = [
+  { key: "look", name: "Look", about: "The kiosk's style and colours." },
+  { key: "welcome", name: "Welcome screen", about: "What clients see before they tap.", preview: "welcome" },
+  { key: "steps", name: "Check-in steps", about: "What clients go through, and the rules.", preview: "category" },
+  { key: "screens", name: "Service screens", about: "Your own screens for choosing services." },
+  { key: "extras", name: "Kiosk Extras", about: "Kiosk-only choices, like a nail shape." },
+  { key: "words", name: "Words", about: "What the kiosk says, in every language.", preview: "provider" },
+];
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { credentials: "include", ...init });
@@ -140,7 +152,9 @@ export default function KioskBuilder() {
   const [versions, setVersions] = useState<VersionRow[] | null>(null);
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<void> }>(null);
   const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
-  const [tab, setTab] = useState<"settings" | "screens">("settings");
+  // The builder's sections (left rail); the middle panel shows the chosen one, the right the 15" kiosk.
+  const [section, setSection] = useState<SectionKey>("look");
+  const extrasStore = useKioskExtras();
   // Screens tab: editing the screen, or the live kiosk preview (the same one the Settings tab shows).
   const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
   // Saved configurations (named designs to load, export, import).
@@ -154,7 +168,8 @@ export default function KioskBuilder() {
   const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; addons: CatalogAddon[]; storeName: string } | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const previewBoxRef = useRef<HTMLDivElement>(null);
+  // A callback ref: the preview box is drawn again when the section changes, and the fit must follow it.
+  const [previewBox, setPreviewBox] = useState<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(0.5);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSeq = useRef(0);
@@ -169,11 +184,11 @@ export default function KioskBuilder() {
     }).catch((e) => setLoadError(e.message));
   }, []);
   useEffect(() => {
-    if (!slug || tab !== "screens" || catalog) return;
+    if (!slug || section !== "screens" || catalog) return;
     api<any>(`/api/public/kiosk/${slug}/config?preview=draft`)
       .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }))
       .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
-  }, [slug, tab, catalog, toast]);
+  }, [slug, section, catalog, toast]);
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       const fd = new FormData();
@@ -194,16 +209,16 @@ export default function KioskBuilder() {
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== window.location.origin || e.data?.type !== "kiosk-preview-ready") return;
-      if (tab === "screens" && screensView === "preview" && pendingScreenRef.current) {
+      if (section === "screens" && screensView === "preview" && pendingScreenRef.current) {
         postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId: pendingScreenRef.current });
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [tab, screensView, postToPreview]);
+  }, [section, screensView, postToPreview]);
 
   useEffect(() => {
-    const box = previewBoxRef.current;
+    const box = previewBox;
     if (!box) return;
     const fit = () => {
       const f = FRAMES[frame];
@@ -213,7 +228,7 @@ export default function KioskBuilder() {
     const ro = new ResizeObserver(fit);
     ro.observe(box);
     return () => ro.disconnect();
-  }, [frame, state, tab, screensView]);
+  }, [frame, previewBox]);
 
   // ── Save (every change, after a short pause) ──
   const applyState = (b: BuilderState) => setState((s) => ({ ...s, ...b }));
@@ -393,6 +408,19 @@ export default function KioskBuilder() {
   for (let m = KIOSK_LIMITS.maxVisitMinutes.min; m <= KIOSK_LIMITS.maxVisitMinutes.max; m += 30) minuteChoices.push(m);
   const fmtMinutes = (m: number) => (m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? "hour" : "hours"}`);
   const previewUrl = slug ? `/kiosk/${slug}?preview=draft` : null;
+  const staffTitle = currentStaffTitle(draft.text);
+  const ownWords = Object.keys(draft.text).filter((k) => !(STAFF_TEXT_KEYS as readonly string[]).includes(k)).length;
+  // One line per section in the left rail, so the owner sees where things stand.
+  const summaries: Record<SectionKey, string> = {
+    look: `${draft.theme.look === "boutique" ? "Boutique" : "Classic"}${Object.keys(draft.theme.colors).length ? " · your colours" : ""}`,
+    welcome: `${draft.welcome.imageUrl ? "Your picture" : "Certxa's picture"} · ${draft.welcome.languages.length} ${draft.welcome.languages.length === 1 ? "language" : "languages"}`,
+    steps: `${draft.steps.filter((x) => x.enabled).length} steps · up to ${draft.services.maxServices} ${draft.services.maxServices === 1 ? "service" : "services"}`,
+    screens: draft.menuMode === "screens"
+      ? `${draft.builder === "picture" ? "Picture" : "Easy"} builder · ${draft.menus.length} ${draft.menus.length === 1 ? "screen" : "screens"}`
+      : draft.menus.length ? `Off · ${draft.menus.length} ${draft.menus.length === 1 ? "screen" : "screens"} made` : "Off · category cards",
+    extras: extrasStore.list == null ? "…" : `${extrasStore.list.length} ${extrasStore.list.length === 1 ? "extra" : "extras"}`,
+    words: `${STAFF_TITLES.find((x) => x.key === staffTitle)?.label.replace(" (the kiosk's own words)", "") ?? "Your own staff words"}${ownWords ? ` · ${ownWords} changed` : ""}`,
+  };
   const f = FRAMES[frame];
   /** The live kiosk preview with its bar (frame, screen jumps): on the Settings tab, and Screens › Live preview. */
   const renderPreview = (extraButtons?: React.ReactNode) => (
@@ -413,7 +441,7 @@ export default function KioskBuilder() {
         )}
       </div>
       <p className="text-xs text-slate-500">Preview of your draft. Tap through it like a client; nothing here checks anyone in.</p>
-      <div ref={previewBoxRef} className="flex-1 min-h-0 flex items-start justify-center overflow-hidden">
+      <div ref={setPreviewBox} className="flex-1 min-h-0 flex items-start justify-center overflow-hidden">
         {previewUrl ? (
           <div style={{ width: f.w * scale, height: f.h * scale }} className="relative rounded-xl overflow-hidden border border-slate-300 bg-white shadow-sm">
             <iframe ref={iframeRef} key={frame} src={previewUrl} title="Kiosk preview" data-testid="kiosk-builder-preview"
@@ -456,48 +484,43 @@ export default function KioskBuilder() {
         {saveError && (
           <div className="shrink-0 px-5 py-2 text-sm text-red-700 bg-red-50 border-b border-red-200">{saveError}</div>
         )}
-        <div className="shrink-0 flex gap-1 px-5 pt-2 border-b border-slate-200 bg-white">
-          {([["settings", "Settings"], ["screens", "Screens"]] as const).map(([k, name]) => (
-            <button key={k} type="button" onClick={() => setTab(k)} data-testid={`kiosk-builder-tab-${k}`}
-              className={`px-3 pb-2 text-sm border-b-2 -mb-px ${tab === k ? "border-slate-900 text-slate-900 font-medium" : "border-transparent text-slate-500"}`}>
-              {name}
-            </button>
-          ))}
-        </div>
-
-        {tab === "screens" ? (
-          <div className="flex-1 min-h-0">
-            {catalog
-              ? <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
-                  renderPreview={renderPreview} view={screensView} onView={setScreensView}
-                  previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }} />
-              : <div className="flex items-center justify-center gap-2 text-slate-500 py-24"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>}
-          </div>
-        ) : (
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-          {/* ── Settings ── */}
-          <div className="lg:w-[440px] shrink-0 overflow-y-auto p-4 space-y-4 border-r border-slate-200">
-            <Section title="Starting design" about={`Your kiosk is based on the ${presetName(draft.preset)} design. Starting over replaces your draft.`}>
-              <div className="flex gap-2">
-                <select className={`${selectClass} flex-1 min-w-0 w-0`} value={presetPick} onChange={(e) => setPresetPick(e.target.value as BusinessTypeKey)}
-                  data-testid="kiosk-builder-preset">
-                  <option value="">Choose a design…</option>
-                  {state.presets?.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
-                </select>
-                <Button variant="outline" size="sm" className="h-9" disabled={!presetPick} onClick={() => presetPick && setConfirm({
-                  title: `Start over from ${presetName(presetPick)}?`,
-                  body: "Your draft is replaced by this design. The kiosk in your salon doesn't change until you publish.",
-                  run: async () => {
-                    takeServerDraft(await api<BuilderState>("/api/kiosk-builder/reset", {
-                      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preset: presetPick }),
-                    }));
-                    setPresetPick("");
-                  },
-                })}>Use</Button>
+        {/* ── Sections · settings · the 15" kiosk ── */}
+        {(() => {
+          const sec = SECTIONS.find((x) => x.key === section)!;
+          const layout = (panel: React.ReactNode, right: React.ReactNode) => (
+            <div className="flex-1 min-h-0 flex">
+              <nav className="w-[220px] shrink-0 border-r border-slate-200 bg-white overflow-y-auto py-3" data-testid="builder-sections">
+                {SECTIONS.map((x) => (
+                  <button key={x.key} type="button" data-testid={`builder-section-${x.key}`}
+                    onClick={() => { setSection(x.key); setScreensView("edit"); if (x.preview) postToPreview({ type: "kiosk-preview-goto", target: x.preview }); }}
+                    className={`w-full text-left px-4 py-2.5 border-l-2 ${section === x.key ? "border-slate-900 bg-slate-50" : "border-transparent hover:bg-slate-50"}`}>
+                    <span className={`block text-sm ${section === x.key ? "font-semibold text-slate-900" : "text-slate-700"}`}>{x.name}</span>
+                    <span className="block text-xs text-slate-500 truncate">{summaries[x.key]}</span>
+                  </button>
+                ))}
+              </nav>
+              <div className="w-[420px] shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50">
+                <div className="px-5 pt-5 pb-3">
+                  <h2 className="text-lg font-semibold text-slate-900">{sec.name}</h2>
+                  <p className="text-sm text-slate-500">{sec.about}</p>
+                </div>
+                <div className="px-4 pb-6 space-y-4">{panel}</div>
               </div>
-              {presetPick && <p className="text-xs text-slate-500">{state.presets?.find((p) => p.key === presetPick)?.description}</p>}
-            </Section>
-
+              <div className="flex-1 min-w-0 flex p-2">{right}</div>
+            </div>
+          );
+          if (section === "screens") {
+            if (!catalog) return layout(<div className="flex items-center gap-2 text-slate-500 py-10"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div>, renderPreview());
+            return (
+              <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
+                renderPreview={renderPreview} view={screensView} onView={setScreensView} extras={extrasStore}
+                previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
+                {({ panel, canvas }) => layout(panel, canvas ?? renderPreview())}
+              </ScreensEditor>
+            );
+          }
+          const panels: Record<Exclude<SectionKey, "screens">, React.ReactNode> = {
+            look: (<>
             <Section title="Look">
               <div className="grid grid-cols-2 gap-2">
                 {([["classic", "Classic", "Lavender and rose"], ["boutique", "Boutique", "Cream and copper, serif headings"]] as const).map(([key, name, about]) => (
@@ -528,7 +551,8 @@ export default function KioskBuilder() {
                 })}
               </div>
             </Section>
-
+            </>),
+            welcome: (<>
             <Section title="Welcome screen" about="The picture fills the whole screen. A tall picture (9:16) suits a standing kiosk.">
               <div className="flex items-center gap-3">
                 <div className="w-16 h-24 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden shrink-0">
@@ -564,7 +588,8 @@ export default function KioskBuilder() {
                 <p className="text-xs text-slate-500 mt-1.5">English is always there. With only English, no buttons show.</p>
               </div>
             </Section>
-
+            </>),
+            steps: (<>
             <Section title="Steps" about="What clients go through after typing their phone number, before the review.">
               <div className="space-y-3">
                 {(["category", "services"] as KioskStepId[]).map((id) => {
@@ -591,7 +616,6 @@ export default function KioskBuilder() {
                 <p className="text-xs text-slate-500">A step with nothing to show for a client (no add-ons for that service, no staff in) is skipped.</p>
               </div>
             </Section>
-
             <Section title="Rules">
               <div className="space-y-3">
                 <Row label="Services per check-in">
@@ -623,7 +647,28 @@ export default function KioskBuilder() {
                 </Row>
               </div>
             </Section>
-
+            </>),
+            extras: (
+              <section className="bg-white border border-slate-200 rounded-2xl p-5">
+                <ExtrasPanel store={extrasStore} draft={draft} update={update} />
+              </section>
+            ),
+            words: (<>
+            <Section title="What clients call your staff" about="Used on the staff, review and ticket screens, in every language.">
+              <select className={`${selectClass} w-full`} value={staffTitle} data-testid="staff-title"
+                onChange={(e) => {
+                  const key = e.target.value;
+                  if (key === "custom") return;
+                  update((d) => {
+                    const text = { ...d.text };
+                    for (const k of STAFF_TEXT_KEYS) delete text[k];
+                    return { ...d, text: { ...text, ...staffTextFor(key) } };
+                  });
+                }}>
+                {STAFF_TITLES.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+                {staffTitle === "custom" && <option value="custom">Your own words (below)</option>}
+              </select>
+            </Section>
             <Section title="Words" about="Leave a box empty to keep the kiosk's own words. A language you don't fill in shows your English.">
               <div className="space-y-4">
                 {textKeys.map((k) => {
@@ -656,12 +701,10 @@ export default function KioskBuilder() {
                 })}
               </div>
             </Section>
-          </div>
-
-          {/* ── Preview ── */}
-          {renderPreview()}
-        </div>
-        )}
+            </>),
+          };
+          return layout(panels[section as Exclude<SectionKey, "screens">], renderPreview());
+        })()}
       </div>
 
       {/* ── Publish ── */}
@@ -780,6 +823,31 @@ export default function KioskBuilder() {
                   </div>
                 </div>
               ))}
+          </div>
+          <div className="mt-8 pt-5 border-t border-slate-200 space-y-2">
+            <p className="text-sm font-medium text-slate-800">Start over from a business-type design</p>
+            <p className="text-xs text-slate-500">
+              Replaces your whole draft (look, pictures, words, steps and screens) with Certxa's design for that kind of business.
+              Save this design above first if you want to keep it. Your kiosk doesn't change until you publish.
+            </p>
+              <div className="flex gap-2">
+                <select className={`${selectClass} flex-1 min-w-0 w-0`} value={presetPick} onChange={(e) => setPresetPick(e.target.value as BusinessTypeKey)}
+                  data-testid="kiosk-builder-preset">
+                  <option value="">Choose a design…</option>
+                  {state.presets?.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
+                </select>
+                <Button variant="outline" size="sm" className="h-9" disabled={!presetPick} onClick={() => presetPick && setConfirm({
+                  title: `Start over from ${presetName(presetPick)}?`,
+                  body: "Your draft is replaced by this design. The kiosk in your salon doesn't change until you publish.",
+                  run: async () => {
+                    takeServerDraft(await api<BuilderState>("/api/kiosk-builder/reset", {
+                      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preset: presetPick }),
+                    }));
+                    setPresetPick("");
+                  },
+                })}>Use</Button>
+              </div>
+              {presetPick && <p className="text-xs text-slate-500">{state.presets?.find((p) => p.key === presetPick)?.description}</p>}
           </div>
         </SheetContent>
       </Sheet>

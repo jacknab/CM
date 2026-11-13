@@ -65,6 +65,38 @@ const NOUNS: Partial<Record<BusinessTypeKey, Noun>> = {
   other: { en: "team member", es: "profesional", vi: "nhân viên", zh: "服务人员", ko: "직원" },
 };
 
+/** The kiosk sentences that name the staff (Kiosk Builder › Words › "What clients call your staff"). */
+export const STAFF_TEXT_KEYS = ["whoWouldYouLike", "pickStylist", "showQr", "yourStylist"] as const;
+
+/** The choices for what clients call the staff. "stylist" is the kiosk's own wording (no text of the business's). */
+export const STAFF_TITLES: Array<{ key: string; label: string; noun: Noun | null }> = [
+  { key: "stylist", label: "Stylist (the kiosk's own words)", noun: null },
+  { key: "nailtech", label: "Nail technician", noun: { en: "nail technician", es: "técnico de uñas", vi: "kỹ thuật viên", zh: "美甲师", ko: "네일 아티스트" } },
+  { key: "barber", label: "Barber", noun: NOUNS.barber! },
+  { key: "therapist", label: "Therapist", noun: NOUNS.spa! },
+  { key: "esthetician", label: "Esthetician", noun: NOUNS.esthetics! },
+  { key: "groomer", label: "Groomer", noun: NOUNS.pet! },
+  { key: "artist", label: "Artist", noun: NOUNS.tattoo! },
+  { key: "team", label: "Team member", noun: NOUNS.other! },
+];
+
+/** The staff sentences for a choice in every language ({} for the kiosk's own words). */
+export function staffTextFor(key: string): Record<string, KioskText> {
+  const t = STAFF_TITLES.find((x) => x.key === key);
+  return t?.noun ? staffWords(t.noun) : {};
+}
+
+/** Which choice a layout's words match: a STAFF_TITLES key, or "custom" when the business wrote its own. */
+export function currentStaffTitle(text: Record<string, KioskText>): string {
+  if (STAFF_TEXT_KEYS.every((k) => !text[k])) return "stylist";
+  for (const t of STAFF_TITLES) {
+    if (!t.noun) continue;
+    const want = staffWords(t.noun);
+    if (STAFF_TEXT_KEYS.every((k) => JSON.stringify(text[k] ?? null) === JSON.stringify(want[k]))) return t.key;
+  }
+  return "custom";
+}
+
 export interface KioskPreset {
   key: BusinessTypeKey;
   /** For the builder's preset list. */

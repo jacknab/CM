@@ -292,7 +292,7 @@ function NavItem({
 }) {
   const { collapsed } = useContext(CollapsedContext);
   const cls = cn(
-    "flex items-center gap-3 w-full py-2.5 rounded-lg text-[15px] font-semibold transition-colors duration-100",
+    "flex items-center gap-3 w-full py-2.5 rounded-lg text-[15px] font-semibold text-left transition-colors duration-100",
     collapsed ? "justify-center px-0" : "px-3",
     isActive
       ? "bg-gray-100 text-gray-900"
