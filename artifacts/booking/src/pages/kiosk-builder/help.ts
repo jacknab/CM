@@ -102,7 +102,7 @@ export const KIOSK_HELP: HelpTopic[] = [
         "Click a button or tap spot to change it; its settings open on the right.",
         "\"On this screen, clients can choose\": One (a new pick replaces the old one) or More than one. Tick \"They must choose something here\" so clients can't move on without a pick.",
         "\"Clients start on\" sets the first screen.",
-        "The bin next to a screen in the list deletes it.",
+        "The Screens panel on the left lists your screens: click one to open it, \"New screen\" makes one and asks for its name, \"Delete screen\" removes the open one.",
         "Live preview lets you tap through it like a client.",
       ] },
       { see: [{ topic: "easy", label: "Easy builder" }, { topic: "picture", label: "Picture builder" }] },
