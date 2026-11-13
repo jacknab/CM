@@ -6,7 +6,13 @@ import { printNativeCheckinTicket, slipServiceNames } from "../lib/native-checki
 import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
 import { QRCodeCanvas } from "qrcode.react";
-import { KIOSK_LANGS, LangCode, translations } from "../lib/kioskTranslations";
+import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
+import {
+  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep,
+  type KioskLayout, type KioskLook, type KioskStepId, type KioskThemeColors,
+} from "@shared/kiosk/layout";
+import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
+import { fillKioskText, resolveKioskText, type KioskText } from "@shared/kiosk/text";
 import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
 import { kioskFetch, isKioskDeviceAuthorized } from "../lib/kioskDevice";
@@ -60,8 +66,6 @@ interface NailConfig {
 
 interface ServiceOptionItem  { id: number; name: string; description?: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number; imageUrl?: string | null; }
 interface ServiceItem        { id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
-/** The longest visit a client can check in for by themselves: two services, two and a half hours. */
-const MAX_VISIT_MINUTES = 150;
 
 interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[]; }
 interface StaffItem          { id: number; name: string; role: string | null; color: string | null; avatarThumbUrl: string | null; }
@@ -123,9 +127,26 @@ const NAIL_PALETTE = {
   OK_BG: "#f3ece2", OK_BORDER: "#cbb79d", OK_SOLID: "#8c7a5b", OK_TEXT: "#6d5d43", OK_SOFT: "#f6efe7",
 };
 
-/** Switch the kiosk to the nail-salon look (or back). The caller re-renders afterwards. */
-function applyKioskPalette(nail: boolean): void {
-  if (nail === NAIL_LOOK) return;
+/** The theme drawn now (look + the business's colours), so applying the same one again does nothing. */
+let THEME_KEY = JSON.stringify(["classic", {}]);
+
+/** `hex` moved `amount` (0–1) of the way to white or black: pressed buttons and soft tints of an owner's colour. */
+function mixHex(hex: string, toward: "#ffffff" | "#000000", amount: number): string {
+  const a = parseInt(hex.slice(1), 16), b = parseInt(toward.slice(1), 16);
+  const ch = (v: number, shift: number) => (v >> shift) & 255;
+  const m = (shift: number) => Math.round(ch(a, shift) + (ch(b, shift) - ch(a, shift)) * amount);
+  return `#${((1 << 24) | (m(16) << 16) | (m(8) << 8) | m(0)).toString(16).slice(1)}`;
+}
+
+/**
+ * Switch the kiosk to a look from its layout (Kiosk Builder): "boutique" is the nail-salon look, "classic" the
+ * default; then the business's own colours on top. True when anything changed (the caller re-renders).
+ */
+function applyKioskTheme(theme: { look: KioskLook; colors: KioskThemeColors }): boolean {
+  const key = JSON.stringify([theme.look, theme.colors]);
+  if (key === THEME_KEY) return false;
+  THEME_KEY = key;
+  const nail = theme.look === "boutique";
   NAIL_LOOK = nail;
   const p = nail ? NAIL_PALETTE : {
     BG: "#f5f3ff", SURFACE: "#ffffff", PRIMARY: "#e84891", PRIMARY_D: "#cf3a7e", PRIMARY_S: "#fdf2f8", BORDER: "#e9e3f5",
@@ -139,6 +160,12 @@ function applyKioskPalette(nail: boolean): void {
   ACCENT = p.ACCENT; TINT = p.TINT; PANEL_END = p.PANEL_END;
   PILL_BG = p.PILL_BG; PILL_BORDER = p.PILL_BORDER; PILL_TEXT = p.PILL_TEXT;
   OK_BG = p.OK_BG; OK_BORDER = p.OK_BORDER; OK_SOLID = p.OK_SOLID; OK_TEXT = p.OK_TEXT; OK_SOFT = p.OK_SOFT;
+  const c = theme.colors;
+  if (c.primary) { PRIMARY = c.primary; PRIMARY_D = mixHex(c.primary, "#000000", 0.12); PRIMARY_S = mixHex(c.primary, "#ffffff", 0.92); }
+  if (c.background) BG = c.background;
+  if (c.surface) SURFACE = c.surface;
+  if (c.text) TEXT = c.text;
+  return true;
 }
 
 /**
@@ -150,8 +177,34 @@ function G(emoji: string): React.ReactNode {
   return NAIL_LOOK ? <i className="kx-g" aria-hidden /> : emoji;
 }
 
-/** Remembered per kiosk address, so a nail salon's kiosk opens in its own look instead of flashing the default. */
-const nailLookKey = () => `certxa.kiosk.nailLook.${typeof window !== "undefined" ? window.location.pathname : ""}`;
+/** Remembered per kiosk address, so a kiosk opens in its own look instead of flashing the default. */
+const kioskPathKey = (name: string) => `certxa.kiosk.${name}.${typeof window !== "undefined" ? window.location.pathname : ""}`;
+/** The look last drawn here; before the Kiosk Builder only "nail look on" was kept (nailLook = "1"). */
+function rememberedTheme(): { look: KioskLook; colors: KioskThemeColors } | null {
+  try {
+    const kept = JSON.parse(localStorage.getItem(kioskPathKey("theme")) ?? "null");
+    if (kept && typeof kept === "object") return normalizeKioskLayout({ theme: kept }, "other").theme;
+    if (localStorage.getItem(kioskPathKey("nailLook")) === "1") return { look: "boutique", colors: {} };
+  } catch { /* private mode */ }
+  return null;
+}
+
+/** The kiosk's built-in words in `lang`, with the business's own words (layout.text) in their place. */
+function kioskStrings(lang: LangCode, text: Record<string, KioskText>): KioskStrings {
+  const base = translations[lang];
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, val] of Object.entries(text)) {
+    if (!(key in base)) continue;
+    // English stands in for a language the business didn't write.
+    const v = (val[lang] ?? "").trim() || (val.en ?? "").trim();
+    if (!v) continue;
+    out[key] = typeof (base as any)[key] === "function" ? (name: string) => fillKioskText(v, { name }) : v;
+  }
+  return out as unknown as KioskStrings;
+}
+
+/** Before the first config arrives (and for a config kept from before the Kiosk Builder): today's kiosk. */
+const STARTING_LAYOUT: KioskLayout = normalizeKioskLayout(null, "other");
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
 
 // ─── Category colours (lighter versions for light theme) ─────────────────────
@@ -230,8 +283,7 @@ function GhostBtn({ children, onPress, size = "md" }: {
 }
 
 // ── Animated countdown ring with poking finger ────────────────────────────────
-function CountdownWidget({ seconds }: { seconds: number }) {
-  const total = 30;
+function CountdownWidget({ seconds, total = 30 }: { seconds: number; total?: number }) {
   const r     = 52;
   const circ  = 2 * Math.PI * r;
   const dash  = circ * Math.max(0, seconds / total);
@@ -364,9 +416,14 @@ function KioskCheckInScreens() {
   const [kioskConfig, setKioskConfig]     = useState<KioskConfig | null>(null);
   // The look (palette, serif headings) is module state read on every draw; this re-draws when it changes.
   const [lookTick, setLookTick] = useState(() => {
-    try { if (localStorage.getItem(nailLookKey()) === "1") applyKioskPalette(true); } catch { /* private mode */ }
+    const kept = rememberedTheme();
+    if (kept) applyKioskTheme(kept);
     return 0;
   });
+  // The business's kiosk layout (Kiosk Builder): steps, look, limits, words. layoutRef for callbacks.
+  const [layout, setLayout] = useState<KioskLayout>(STARTING_LAYOUT);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   useEffect(() => {
     document.documentElement.classList.toggle("kx-nail", NAIL_LOOK);
     return () => { document.documentElement.classList.remove("kx-nail"); };
@@ -452,10 +509,15 @@ function KioskCheckInScreens() {
     // Whether a check-in slip prints (front desk setup → Printing).
     if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
     setServiceOptionsMap(d.serviceOptionsMap ?? {});
-    // Nail salons get the nail-salon look. Remembered for this kiosk address so the next start opens in it.
-    const nailLook = d.serviceCheckin === true;
-    try { localStorage.setItem(nailLookKey(), nailLook ? "1" : "0"); } catch { /* private mode */ }
-    if (nailLook !== NAIL_LOOK) { applyKioskPalette(nailLook); setLookTick((n) => n + 1); }
+    // The kiosk layout. A config kept from before the Kiosk Builder has none: nail salons had the nail look.
+    const next = d.layout
+      ? normalizeKioskLayout(d.layout, isBusinessTypeKey(d.businessType) ? d.businessType : "other")
+      : normalizeKioskLayout({ theme: { look: d.serviceCheckin === true ? "boutique" : "classic" } }, "other");
+    setLayout(next);
+    setLang((l) => (next.welcome.languages.includes(l) ? l : "en"));
+    // Remembered for this kiosk address so the next start opens in it.
+    try { localStorage.setItem(kioskPathKey("theme"), JSON.stringify(next.theme)); } catch { /* private mode */ }
+    if (applyKioskTheme(next.theme)) setLookTick((n) => n + 1);
     if (isInitialLoad) {
       // The kiosk stands inside the salon: never a "closed" screen.
       setScreen("idle");
@@ -616,7 +678,7 @@ function KioskCheckInScreens() {
 
   useEffect(() => {
     if (screen === "ticket" || screen === "appointment_confirmed" || screen === "no_thanks" || screen === "waitlist_added") {
-      setCountdown(30);
+      setCountdown(layoutRef.current.timing.ticketResetSeconds);
       cdownRef.current = setInterval(() => {
         setCountdown(p => { if (p <= 1) { resetToIdle(); return 0; } return p - 1; });
       }, 1000);
@@ -634,12 +696,16 @@ function KioskCheckInScreens() {
   // Check real-time availability and route accordingly
   // `then`: where to go when someone is free — the category cards, or (a category picked on the welcome screen)
   // that category's services.
+  // The category cards, unless the layout switched them off (then every service on one list).
+  const firstStepScreen = (then: "service_type" | "services"): Screen =>
+    then === "service_type" && !kioskFlow(layoutRef.current).includes("category") ? "services" : then;
+
   const checkAvailabilityAndRoute = useCallback(async (then: "service_type" | "services" = "service_type") => {
     try {
       const r = await fetch(`/api/public/kiosk/${slug}/availability`);
       const d = await r.json();
       if (d.hasAvailableStaff || d.error) {
-        setScreen(then);
+        setScreen(firstStepScreen(then));
       } else {
         const mins: number = d.estimatedWaitMinutes ?? 30;
         setWaitInfo({ estimatedMinutes: mins });
@@ -649,7 +715,7 @@ function KioskCheckInScreens() {
     } catch {
       // No internet: the POS tablet works out the wait from its own board. No answer: fail open, as before.
       const d = await hubKioskWait();
-      if (!d || d.hasAvailableStaff) { setScreen(then); return; }
+      if (!d || d.hasAvailableStaff) { setScreen(firstStepScreen(then)); return; }
       const mins = d.estimatedWaitMinutes ?? 30;
       setWaitInfo({ estimatedMinutes: mins });
       setScreen(mins > 60 ? "fully_booked" : "wait_confirm");
@@ -847,25 +913,65 @@ function KioskCheckInScreens() {
     }
   };
 
-  const goToStylist = () => {
-    // If the selected service has addons, go to the addon step first
-    const selSvc = selectedServices[0];
-    if (selSvc) {
-      const addonsForService = allAddons.filter(
-        a => a.serviceIds.length === 0 || a.serviceIds.includes(selSvc.id)
-      );
-      // An add-on this client has had before goes first and is marked — never pre-selected.
-      const hadBefore = (smart?.addonIds ?? []).find((id) => addonsForService.some((a) => a.id === id)) ?? null;
-      offeredRef.current = { ...offeredRef.current, addonId: hadBefore };
-      setAvailableAddons(hadBefore == null ? addonsForService : [...addonsForService].sort((a, b) => Number(b.id === hadBefore) - Number(a.id === hadBefore)));
-      if (addonsForService.length > 0) {
-        setScreen("addons");
-        return;
-      }
+  // ── Flow (Kiosk Builder) ──────────────────────────────────────────────────────
+  // After the services come the layout's own steps, in its order: questions (a nail service's length, shape
+  // and design), add-ons, and who does it. A step with nothing to show for this client is passed over.
+  const nailCfgRef = useRef<NailConfig | null>(null);
+  const addonsFor = (svc: ServiceItem | undefined) =>
+    svc ? allAddons.filter((a) => a.serviceIds.length === 0 || a.serviceIds.includes(svc.id)) : [];
+  const nailCfgHasOptions = (cfg: NailConfig | null) =>
+    !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
+  const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
+    if (id === "questions") return nailCfgHasOptions(cfg);
+    if (id === "addons") return addonsFor(svc).length > 0;
+    if (id === "provider") return allStaff.length > 0;
+    return true;
+  };
+
+  /** Shows a step. `backwards`: arriving from the step after it (questions open on their last screen). */
+  const enterStep = (id: KioskStepId | "review" | null, svc: ServiceItem | undefined, cfg: NailConfig | null, backwards = false) => {
+    if (id === "questions" && cfg) {
+      kick();
+      if (backwards) return setScreen(cfg.effects?.length ? "nail_effects" : cfg.shapes?.length ? "nail_shape" : "nail_size");
+      return setScreen(cfg.sizes?.length ? "nail_size" : cfg.shapes?.length ? "nail_shape" : "nail_effects");
     }
-    // No addons — go straight to stylist, or to the summary
-    if (allStaff.length > 0) setScreen("stylist");
-    else setScreen("review");
+    if (id === "addons") {
+      const list = addonsFor(svc);
+      // An add-on this client has had before goes first and is marked — never pre-selected.
+      const hadBefore = (smart?.addonIds ?? []).find((aid) => list.some((a) => a.id === aid)) ?? null;
+      if (!backwards) offeredRef.current = { ...offeredRef.current, addonId: hadBefore };
+      setAvailableAddons(hadBefore == null ? list : [...list].sort((a, b) => Number(b.id === hadBefore) - Number(a.id === hadBefore)));
+      return setScreen("addons");
+    }
+    if (id === "provider") return setScreen("stylist");
+    if (id === "review") return setScreen("review");
+    if (id === "category") return setScreen("service_type");
+    if (id === "services") return setScreen("services");
+    backToStart();
+  };
+
+  /** On to the step after `from`. */
+  const advance = (from: KioskStepId, svc: ServiceItem | undefined = selectedServices[0], cfg: NailConfig | null = nailCfgRef.current) => {
+    kick();
+    enterStep(nextKioskStep(kioskFlow(layout), from, (id) => stepApplies(id, svc, cfg)), svc, cfg);
+  };
+
+  /** Back to the step before `from`. */
+  const goBack = (from: KioskStepId | "review") => {
+    kick();
+    const svc = selectedServices[0], cfg = nailCfgRef.current;
+    enterStep(previousKioskStep(kioskFlow(layout), from, (id) => stepApplies(id, svc, cfg)), svc, cfg, true);
+  };
+
+  /** Before the first step: a returning client's welcome (which checks the wait again), a new client's name. */
+  const backToStart = () => {
+    if (clientInfo) {
+      // Return to welcome then re-check availability so the welcome screen doesn't dead-end.
+      setScreen("welcome");
+      setTimeout(() => checkAvailabilityAndRoute(), 100);
+    } else {
+      setScreen("name_entry");
+    }
   };
 
   // Smart Check-In: the client took the suggested service (or one of the two offered).
@@ -890,15 +996,16 @@ function KioskCheckInScreens() {
     afterServiceChosen(svc);
   };
 
-  // Called once a service is confirmed. Fake-nail services detour through
-  // length → shape → effect before add-ons; everything else goes straight on.
+  // Called once a service is confirmed. With the questions step on, a service that has questions (a fake-nail
+  // service's length → shape → design) asks them; then the layout's next steps.
   const afterServiceChosen = async (chosen?: ServiceItem) => {
     const selSvc = chosen ?? selectedServices[0];
     setNailCfg(null); setNailSize(null); setNailShape(null); setNailEffect(null);
-    if (selSvc) {
+    nailCfgRef.current = null;
+    let cfg: NailConfig | null = null;
+    if (selSvc && kioskFlow(layout).includes("questions")) {
       setScreen("loading");
       try {
-        let cfg: NailConfig;
         try {
           const r = await fetch(`/api/public/kiosk/${slug}/nail-config/${selSvc.id}`);
           cfg = await r.json();
@@ -909,28 +1016,24 @@ function KioskCheckInScreens() {
           if (!kept) throw err;
           cfg = kept;
         }
-        if (cfg?.enabled && (cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length)) {
-          setNailCfg(cfg);
-          setScreen(cfg.sizes?.length ? "nail_size" : cfg.shapes?.length ? "nail_shape" : "nail_effects");
-          kick();
-          return;
-        }
-      } catch { /* fail open — skip the nail steps on any network/parse error */ }
+      } catch { cfg = null; /* fail open — skip the questions on any network/parse error */ }
+      if (nailCfgHasOptions(cfg)) { setNailCfg(cfg); nailCfgRef.current = cfg; }
+      else cfg = null;
     }
-    goToStylist();
+    advance("services", selSvc, cfg);
   };
 
-  // Advance through the nail steps, skipping any dimension with no options.
+  // Through the nail questions, skipping any with no options; after the last, the layout's next step.
   const nailStepNext = (from: "size" | "shape") => {
     kick();
     if (from === "size") {
       if (nailCfg?.shapes?.length)  return setScreen("nail_shape");
       if (nailCfg?.effects?.length) return setScreen("nail_effects");
-      return goToStylist();
+      return advance("questions");
     }
     // from === "shape"
     if (nailCfg?.effects?.length) return setScreen("nail_effects");
-    return goToStylist();
+    return advance("questions");
   };
 
   const doCheckIn = async () => {
@@ -993,16 +1096,21 @@ function KioskCheckInScreens() {
     }
   };
 
-  // Up to two services on one visit, two and a half hours in all (the server holds the same limit).
-  // Tapping a chosen service takes it off. With two chosen, tapping another swaps the second one.
-  // Add-ons and nail choices belong to the first service, so they start again only when that one changes.
+  // The layout's limits: how many services one visit may have, and how long a visit of more than one may be (by
+  // default two, two and a half hours; the server holds the same limits). Tapping a chosen service takes it off.
+  // With all chosen, tapping another swaps the last one. Add-ons and nail choices belong to the first service,
+  // so they start again only when that one changes.
   const toggleSvc = (s: ServiceItem) => {
     const current = selectedServices;
+    const { maxServices, maxVisitMinutes } = layout.services;
     let next: ServiceItem[];
     if (current.find(x => x.id === s.id)) next = current.filter(x => x.id !== s.id);
-    else if (current.length === 0) next = [s];
-    else if (current[0].duration + s.duration <= MAX_VISIT_MINUTES) next = [current[0], s];
-    else { setSvcLimitNote(true); kick(); return; }
+    else if (current.length === 0 || maxServices === 1) next = [s];
+    else {
+      const keep = current.length < maxServices ? current : current.slice(0, -1);
+      if (keep.reduce((sum, x) => sum + x.duration, 0) + s.duration > maxVisitMinutes) { setSvcLimitNote(true); kick(); return; }
+      next = [...keep, s];
+    }
     setSvcLimitNote(false);
     setSel(next);
     if (next[0]?.id !== current[0]?.id) setSelectedAddons([]);
@@ -1015,7 +1123,9 @@ function KioskCheckInScreens() {
   const selDur      = selectedServices.reduce((s, x) => s + x.duration, 0);
   const showPrice   = kioskConfig?.showServicePrice !== false;
   const showDuration = kioskConfig?.showServiceDuration !== false;
-  const t = translations[lang];
+  const t = kioskStrings(lang, layout.text);
+  /** A kiosk-builder sentence (shared/kiosk/text.ts): the business's words, else English. */
+  const tx = (key: string) => resolveKioskText(key, lang, [layout.text]);
   stillThere.strings = t;
 
   // ── SUSPENDED ───────────────────────────────────────────────────────────────
@@ -1210,8 +1320,8 @@ function KioskCheckInScreens() {
   if (kioskConfig && !kioskConfig.kioskEnabled && !["suspended", "pair", "loading", "error"].includes(screen)) return (
     <div className="fixed inset-0 flex flex-col items-center justify-center text-center px-10 select-none" style={{ ...NO_SELECT, background: BG }} data-testid="kiosk-front-desk">
       {storeConfig?.name && <p style={{ fontSize: 26, fontWeight: 600, color: "#6b7280", margin: "0 0 18px" }}>{storeConfig.name}</p>}
-      <p style={{ fontSize: "clamp(38px, 6vw, 64px)", fontWeight: 800, color: PRIMARY, margin: 0, lineHeight: 1.15 }}>Please check in at the front desk</p>
-      <p style={{ fontSize: 24, color: "#4b5563", margin: "22px 0 0" }}>We'll be right with you.</p>
+      <p style={{ fontSize: "clamp(38px, 6vw, 64px)", fontWeight: 800, color: PRIMARY, margin: 0, lineHeight: 1.15 }}>{tx("frontDeskTitle")}</p>
+      <p style={{ fontSize: 24, color: "#4b5563", margin: "22px 0 0" }}>{tx("frontDeskSub")}</p>
     </div>
   );
 
@@ -1219,6 +1329,10 @@ function KioskCheckInScreens() {
   // Welcome screen (owner, 2026-10-31): the WELCOME / Please Check-In Here picture fills the whole screen, with the
   // language choice over its bottom edge (the only place clients pick a language). Tapping anywhere except a
   // language button starts the check-in.
+  // The layout's language buttons, in its order (one language: no buttons).
+  const welcomeLangs = layout.welcome.languages
+    .map((code) => KIOSK_LANGS.find((l) => l.code === code))
+    .filter((l): l is (typeof KIOSK_LANGS)[number] => !!l);
   if (screen === "idle") return (
     <div className="fixed inset-0 cursor-pointer select-none overflow-hidden" data-testid="checkin-idle"
       onPointerDown={() => setScreen("phone")} onContextMenu={e => e.preventDefault()}
@@ -1226,11 +1340,11 @@ function KioskCheckInScreens() {
       {/* The picture always fills the whole screen (owner, 2026-11-01: even if a little is cut off). It is a 9:16
           version of the owner's 2:3 artwork, its purple background extended top and bottom, so on a standing 9:16
           kiosk it fits exactly and nothing is cut; other screen shapes lose a little at the edges. */}
-      <img src={kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image"
+      <img src={layout.welcome.imageUrl ?? kioskWelcomeBanner} alt="Welcome. Please check in here" draggable={false} data-testid="kiosk-welcome-image"
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }} />
       <div className="absolute left-0 right-0 flex items-center justify-center gap-3 flex-wrap px-8"
         style={{ bottom: "clamp(18px, 3vh, 30px)" }} onPointerDown={e => e.stopPropagation()}>
-        {KIOSK_LANGS.map(({ code, label }) => (
+        {welcomeLangs.length > 1 && welcomeLangs.map(({ code, label }) => (
           <button
             key={code}
             onPointerDown={e => { e.stopPropagation(); setLang(code); }}
@@ -1731,7 +1845,7 @@ function KioskCheckInScreens() {
                   e.preventDefault(); kick();
                   const waitingFor = waitingServiceRef.current;
                   waitingServiceRef.current = null;
-                  if (waitingFor) afterServiceChosen(waitingFor); else setScreen("service_type");
+                  if (waitingFor) afterServiceChosen(waitingFor); else setScreen(firstStepScreen("service_type"));
                 }}
                 className="rounded-3xl flex flex-col items-center justify-center gap-4 py-10 transition-all active:scale-95"
                 style={{
@@ -1831,7 +1945,7 @@ function KioskCheckInScreens() {
               </div>
             )}
           </div>
-          <CountdownWidget seconds={countdown} />
+          <CountdownWidget seconds={countdown} total={layout.timing.ticketResetSeconds} />
         </div>
       </div>
     );
@@ -1890,7 +2004,7 @@ function KioskCheckInScreens() {
             </div>
           </div>
 
-          <CountdownWidget seconds={countdown} />
+          <CountdownWidget seconds={countdown} total={layout.timing.ticketResetSeconds} />
           <GhostBtn onPress={resetToIdle}>{t.newCheckin}</GhostBtn>
         </div>
       </div>
@@ -1972,7 +2086,7 @@ function KioskCheckInScreens() {
                           onError={(e) => {
                             (e.currentTarget as HTMLImageElement).style.display = "none";
                             (e.currentTarget.parentElement as HTMLElement).innerHTML =
-                              `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${isSel ? `${PRIMARY}12` : TINT}"><span style="font-size:80px;line-height:1;user-select:none">${G(group.fallbackEmoji)}</span></div>`;
+                              `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${isSel ? `${PRIMARY}12` : TINT}"><span style="font-size:80px;line-height:1;user-select:none">${NAIL_LOOK ? "" : group.fallbackEmoji}</span></div>`;
                           }}
                         />
                       ) : (
@@ -2009,16 +2123,7 @@ function KioskCheckInScreens() {
         {/* ── Footer ── */}
         <div className="shrink-0 px-8 py-5 flex items-center justify-between"
           style={{ borderTop: `1.5px solid ${BORDER}`, background: SURFACE }}>
-          <GhostBtn onPress={() => {
-            if (clientInfo) {
-              // Existing client: return to welcome then re-check availability so the
-              // welcome screen doesn't dead-end (original setTimeout has already fired).
-              setScreen("welcome");
-              setTimeout(() => checkAvailabilityAndRoute(), 100);
-            } else {
-              setScreen("name_entry");
-            }
-          }}>{t.backBtn}</GhostBtn>
+          <GhostBtn onPress={backToStart}>{t.backBtn}</GhostBtn>
           <PrimaryBtn onPress={handleContinue} disabled={!selectedCategoryGroup} size="md">
             {t.continueBtn}
           </PrimaryBtn>
@@ -2229,12 +2334,16 @@ function KioskCheckInScreens() {
           style={{ background: SURFACE, borderTop: `2px solid ${BORDER}`, boxShadow: "0 -4px 20px rgba(80,0,120,0.06)" }}>
 
           {/* Back */}
-          <GhostBtn onPress={() => setScreen("service_type")} size="sm">{t.backBtn}</GhostBtn>
+          <GhostBtn onPress={() => goBack("services")} size="sm">{t.backBtn}</GhostBtn>
 
           {/* Selected chips */}
           <div className="flex-1 flex items-center gap-2 overflow-hidden">
             {svcLimitNote ? (
-              <p className="text-base" style={{ color: SUBTLE }} data-testid="kiosk-two-services-note">{t.twoServicesMax}</p>
+              <p className="text-base" style={{ color: SUBTLE }} data-testid="kiosk-two-services-note">
+                {layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150
+                  ? t.twoServicesMax
+                  : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10))}
+              </p>
             ) : selectedServices.length === 0 ? (
               <p className="text-base" style={{ color: SUBTLE }}>{t.noServiceSelected}</p>
             ) : (
@@ -2463,7 +2572,7 @@ function KioskCheckInScreens() {
     if (NAIL_LOOK) {
       return (
         <NailChoiceStep kind={opts.kind} title={opts.title} serviceName={selectedServices[0]?.name} options={opts.options}
-          selectedId={opts.selectedId} plainLabel={opts.plainOption ? "Plain, no design" : undefined}
+          selectedId={opts.selectedId} plainLabel={opts.plainOption ? tx("questionPlain") : undefined}
           onPick={opts.onPick} onBack={opts.onBack} backLabel={t.backBtn} fmtPrice={fmtPrice}
           onActivity={kick} art={nailCfg?.art}
           guide={opts.guide && nailCfg?.sizes?.length && nailCfg?.shapes?.length ? {
@@ -2512,7 +2621,7 @@ function KioskCheckInScreens() {
                   </div>
                   <div className="px-4 pt-3 pb-4 shrink-0" style={{ borderTop: `1.5px solid ${isSel ? PRIMARY + "40" : BORDER}` }}>
                     <p className="text-lg font-black leading-tight" style={{ color: TEXT }}>
-                      {o == null ? "Plain — no design" : o.name}
+                      {o == null ? tx("questionPlain") : o.name}
                     </p>
                     {o?.description && (
                       <p className="text-sm mt-1 leading-snug" style={{ color: MUTED }}>{o.description}</p>
@@ -2537,33 +2646,33 @@ function KioskCheckInScreens() {
 
   if (screen === "nail_size") return renderNailPicker({
     kind: "length",
-    title: "Choose your nail length",
+    title: tx("questionLength"),
     options: nailCfg?.sizes ?? [],
     selectedId: nailSize?.nailVocabId,
     onPick: (o) => { setNailSize(o); nailStepNext("size"); },
     guide: true,
-    onBack: () => setScreen("services"),
+    onBack: () => goBack("questions"),
   });
 
   if (screen === "nail_shape") return renderNailPicker({
     kind: "shape",
-    title: "Choose your nail shape",
+    title: tx("questionShape"),
     options: nailCfg?.shapes ?? [],
     selectedId: nailShape?.nailVocabId,
     onPick: (o) => { setNailShape(o); nailStepNext("shape"); },
     guide: true,
-    onBack: () => setScreen(nailCfg?.sizes?.length ? "nail_size" : "services"),
+    onBack: () => (nailCfg?.sizes?.length ? setScreen("nail_size") : goBack("questions")),
   });
 
   if (screen === "nail_effects") return renderNailPicker({
     kind: "design",
-    title: "Choose your nail design",
+    title: tx("questionDesign"),
     options: nailCfg?.effects ?? [],
     selectedId: nailEffect ? nailEffect.nailVocabId : null,
     // Only offer "no design" when the service's config doesn't require an art pick.
     plainOption: !nailCfg?.artRequired,
-    onPick: (o) => { setNailEffect(o); kick(); goToStylist(); },
-    onBack: () => setScreen(nailCfg?.shapes?.length ? "nail_shape" : nailCfg?.sizes?.length ? "nail_size" : "services"),
+    onPick: (o) => { setNailEffect(o); advance("questions"); },
+    onBack: () => (nailCfg?.shapes?.length ? setScreen("nail_shape") : nailCfg?.sizes?.length ? setScreen("nail_size") : goBack("questions")),
   });
 
   // ── SUMMARY — what the ticket will say, before it is made ───────────────────
@@ -2577,7 +2686,7 @@ function KioskCheckInScreens() {
     ];
     const total = lines.reduce((sum, l) => sum + l.price, 0);
     const tech = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).name : t.nextAvailable;
-    const back = () => { kick(); setScreen(allStaff.length > 0 ? "stylist" : availableAddons.length > 0 ? "addons" : "services"); };
+    const back = () => goBack("review");
     return (
       <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: BG }} data-testid="kiosk-review">
         <div className="px-8 py-6 text-center shrink-0" style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
@@ -2693,8 +2802,8 @@ function KioskCheckInScreens() {
 
       <div className="px-8 py-5 flex items-center justify-between shrink-0"
         style={{ borderTop: `1.5px solid ${BORDER}`, background: SURFACE }}>
-        <GhostBtn onPress={() => availableAddons.length > 0 ? setScreen("addons") : setScreen("services")}>{t.backBtn}</GhostBtn>
-        <PrimaryBtn onPress={() => { if (!selectedStaff) setSelStaff("none"); kick(); setScreen("review"); }} size="md">
+        <GhostBtn onPress={() => goBack("provider")}>{t.backBtn}</GhostBtn>
+        <PrimaryBtn onPress={() => { if (!selectedStaff) setSelStaff("none"); advance("provider"); }} size="md">
           {selectedStaff ? t.continueBtn : t.skipBtn}
         </PrimaryBtn>
       </div>
@@ -2708,10 +2817,7 @@ function KioskCheckInScreens() {
       setSelectedAddons(p => p.find(x => x.id === a.id) ? p.filter(x => x.id !== a.id) : [...p, a]);
       kick();
     };
-    const proceedFromAddons = () => {
-      if (allStaff.length > 0) setScreen("stylist");
-      else setScreen("review");
-    };
+    const proceedFromAddons = () => advance("addons");
     return (
       <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()}
         style={{ ...NO_SELECT, background: BG }}>
@@ -2792,7 +2898,7 @@ function KioskCheckInScreens() {
 
         <div className="shrink-0 px-6 py-4 flex items-center justify-between"
           style={{ background: SURFACE, borderTop: `2px solid ${BORDER}` }}>
-          <GhostBtn onPress={() => setScreen("services")} size="sm">{t.backBtn}</GhostBtn>
+          <GhostBtn onPress={() => goBack("addons")} size="sm">{t.backBtn}</GhostBtn>
           <div className="flex items-center gap-4">
             {selectedAddons.length > 0 && (
               <div className="text-right">
@@ -2922,7 +3028,7 @@ function KioskCheckInScreens() {
           )}
         </div>
 
-        <CountdownWidget seconds={countdown} />
+        <CountdownWidget seconds={countdown} total={layout.timing.ticketResetSeconds} />
         <GhostBtn onPress={resetToIdle}>{t.newCheckin}</GhostBtn>
       </div>
 
@@ -3050,7 +3156,7 @@ function KioskCheckInScreens() {
           )}
 
           {/* Auto-reset */}
-          <CountdownWidget seconds={countdown} />
+          <CountdownWidget seconds={countdown} total={layout.timing.ticketResetSeconds} />
           <GhostBtn onPress={resetToIdle}>{t.doneBtn}</GhostBtn>
         </div>
       </div>

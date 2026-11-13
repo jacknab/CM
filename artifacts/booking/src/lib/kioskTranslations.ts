@@ -133,6 +133,8 @@ export interface KioskStrings {
   noServices: string;
   noServiceSelected: string;
   twoServicesMax: string;
+  /** The same note for a kiosk layout's own limit (Kiosk Builder): n services, h hours. */
+  servicesMax: (n: number, hours: string) => string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -275,6 +277,7 @@ const en: KioskStrings = {
   noServices: "No services configured yet.",
   noServiceSelected: "No service selected yet — tap a card above",
   twoServicesMax: "Up to 2 services (2½ hours) here. Please ask the front desk to add more.",
+  servicesMax: (n, h) => n === 1 ? "One service per check-in here. Please ask the front desk to add more." : `Up to ${n} services (${h} hours) here. Please ask the front desk to add more.`,
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -409,6 +412,7 @@ const es: KioskStrings = {
   noServices: "Sin servicios configurados aún.",
   noServiceSelected: "Ningún servicio seleccionado — toca una tarjeta arriba",
   twoServicesMax: "Hasta 2 servicios (2½ horas) aquí. Pide en recepción que agreguen más.",
+  servicesMax: (n, h) => n === 1 ? "Un servicio por registro aquí. Pide en recepción que agreguen más." : `Hasta ${n} servicios (${h} horas) aquí. Pide en recepción que agreguen más.`,
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -543,6 +547,7 @@ const vi: KioskStrings = {
   noServices: "Chưa có dịch vụ nào được cấu hình.",
   noServiceSelected: "Chưa chọn dịch vụ — nhấn vào thẻ ở trên",
   twoServicesMax: "Tối đa 2 dịch vụ (2½ giờ) tại đây. Vui lòng nhờ quầy lễ tân thêm dịch vụ khác.",
+  servicesMax: (n, h) => n === 1 ? "Mỗi lần check-in chỉ một dịch vụ tại đây. Vui lòng nhờ quầy lễ tân thêm dịch vụ khác." : `Tối đa ${n} dịch vụ (${h} giờ) tại đây. Vui lòng nhờ quầy lễ tân thêm dịch vụ khác.`,
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -677,6 +682,7 @@ const zh: KioskStrings = {
   noServices: "暂无可用服务。",
   noServiceSelected: "尚未选择服务 — 请点击上方卡片",
   twoServicesMax: "此处最多可选 2 项服务（2.5 小时）。如需更多，请联系前台。",
+  servicesMax: (n, h) => n === 1 ? "此处每次签到只能选 1 项服务。如需更多，请联系前台。" : `此处最多可选 ${n} 项服务（${h} 小时）。如需更多，请联系前台。`,
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -811,6 +817,7 @@ const ko: KioskStrings = {
   noServices: "아직 서비스가 없습니다.",
   noServiceSelected: "서비스를 선택하지 않았습니다 — 위의 카드를 탭하세요",
   twoServicesMax: "여기서는 최대 2개 서비스(2시간 30분)까지 선택할 수 있습니다. 추가는 프런트에 문의하세요.",
+  servicesMax: (n, h) => n === 1 ? "여기서는 체크인당 1개 서비스만 선택할 수 있습니다. 추가는 프런트에 문의하세요." : `여기서는 최대 ${n}개 서비스(${h}시간)까지 선택할 수 있습니다. 추가는 프런트에 문의하세요.`,
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",
