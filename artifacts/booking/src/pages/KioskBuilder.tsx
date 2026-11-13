@@ -26,7 +26,8 @@ import {
 import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
-import { ScreensEditor, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
+import { ScreensEditor, withNewScreen, withoutScreen, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
 import type { HelpTopicId } from "@/pages/kiosk-builder/help";
@@ -175,6 +176,10 @@ export default function KioskBuilder() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpTopic, setHelpTopic] = useState<HelpTopicId>("start");
   const openHelp = (t: HelpTopicId) => { setHelpTopic(t); setHelpOpen(true); };
+  // The own screen open in the editor (the left Screens panel and the screen editor share it), and a nudge that
+  // puts the cursor in the panel's name box after "New screen".
+  const [screenId, setScreenId] = useState<string | null>(null);
+  const [focusName, setFocusName] = useState(0);
   // Own screens: editing the screen, or the live kiosk preview.
   const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
   // The salon's catalog as its kiosk sees it, for the screen editor.
@@ -199,6 +204,7 @@ export default function KioskBuilder() {
       api<{ bookingSlug: string | null }>("/api/kiosk-settings"),
     ]).then(([c, k]) => {
       setState(c); setDraft(c.layout); setSlug(k.bookingSlug);
+      setScreenId(c.layout.startMenuId ?? c.layout.menus[0]?.id ?? null);
     }).catch((e) => setLoadError(e.message));
   }, [id]);
   useEffect(() => {
@@ -449,6 +455,27 @@ export default function KioskBuilder() {
     postToPreview({ type: "kiosk-preview-goto", target: SCREENS.find((x) => x.key === k)!.preview });
   };
   const screen = SCREENS.find((x) => x.key === scr) ?? SCREENS[0];
+  // The left Screens panel: opening or making a screen goes to the builder's own-screens editor.
+  const openOwnScreens = () => {
+    setStyleOpen(false); setFocus(null); setScreensView("edit");
+    if (builder === "picture") setScr("screens"); else { setScr("categories"); setOwnScreens(true); }
+  };
+  const openScreen = (sid: string) => {
+    setScreenId(sid);
+    if (builder === "easy" && draft.menuMode !== "screens") update((d) => ({ ...d, menuMode: "screens" }));
+    openOwnScreens();
+  };
+  const newScreen = () => {
+    let sid = "";
+    update((d) => { const r = withNewScreen(d, ""); sid = r.id; return r.layout; });
+    setScreenId(sid); openOwnScreens(); setFocusName((n) => n + 1);
+  };
+  const screensPanel = (
+    <ScreensPanel draft={draft} activeId={editingOwn ? screenId : null} focusName={focusName}
+      onOpen={openScreen} onNew={newScreen}
+      onRename={(sid, name) => update((d) => ({ ...d, menus: d.menus.map((m) => (m.id === sid ? { ...m, name } : m)) }))}
+      onDelete={(sid) => { update((d) => withoutScreen(d, sid)); setScreenId(null); }} />
+  );
   const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");
   // Easy builder › Categories: the category cards, or the owner's own button screens (the kiosk uses what's chosen).
   const howField = (
@@ -531,6 +558,7 @@ export default function KioskBuilder() {
         {(() => {
           const layout = (center: React.ReactNode, panel: React.ReactNode) => (
             <div className="flex-1 min-h-0 flex">
+              {screensPanel}
               <div className="flex-1 min-w-0 flex">{center}</div>
               <div className="w-[420px] shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50" data-testid="screen-panel">
                 <div className="px-5 pt-4 pb-2">
@@ -582,6 +610,7 @@ export default function KioskBuilder() {
             return (
               <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
                 renderPreview={(extra) => renderPreview(extra, false)} view={screensView} onView={setScreensView} extras={extrasStore} onHelp={openHelp}
+                menuId={screenId} onMenuId={setScreenId}
                 previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
                 {({ panel, canvas }) => layout(canvas ?? renderPreview(undefined, false), <>{top}{panel}</>)}
               </ScreensEditor>

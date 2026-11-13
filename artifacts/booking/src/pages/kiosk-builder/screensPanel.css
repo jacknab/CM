@@ -1,0 +1,16 @@
+/* Kiosk Builder › left Screens panel: the same look as the /nail front-desk grid editor's Grids panel (nail.css .ge-*). */
+.kx-screens { width: 210px; flex-shrink: 0; margin: 10px 0 10px 10px; padding: 12px; background: #2a2e36; color: #eef3fb;
+  font-family: 'DM Sans', sans-serif; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; }
+.kx-screens-wrap { display: flex; background: #20242c; flex-shrink: 0; }
+.kx-screens .kx-label { margin: 0 0 4px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #8b94a0; }
+.kx-screens > button { min-height: 46px; padding: 0 12px; text-align: left; border: 1px solid #454c56; border-radius: 2px; background: #343943; color: #eef3fb;
+  font-family: inherit; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.kx-screens > button.active { border-color: #0d9bd1; background: #1d3a48; }
+.kx-screens > .kx-add { display: flex; align-items: center; gap: 6px; background: transparent; border-style: dashed; color: #c8cdd3; }
+.kx-screens > button:disabled { opacity: .5; cursor: not-allowed; }
+.kx-screens .kx-meta { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+.kx-screens input { width: 100%; height: 44px; padding: 0 10px; border: 1px solid #454c56; border-radius: 2px; background: #232830; color: #eef3fb;
+  font-size: 15px; font-family: inherit; outline: none; }
+.kx-screens input:focus { border-color: #f59e0b; box-shadow: 0 0 0 1px #f59e0b; }
+.kx-screens .kx-danger { display: flex; align-items: center; justify-content: center; gap: 6px; height: 42px; border: 1px solid #5a3a3d; border-radius: 2px;
+  background: transparent; color: #ef8a8e; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
