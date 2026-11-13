@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { QRCodeCanvas } from "qrcode.react";
 import {
-  Copy, Check, Tablet, Save, Loader2, ExternalLink, Upload, ImageIcon, CheckCircle2,
+  Copy, Check, Tablet, Save, Loader2, ExternalLink,
   Wifi, RotateCcw, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
@@ -25,27 +26,6 @@ interface KioskSettingsData {
   dualScreenMode: boolean;
   smartCheckin: boolean;
 }
-
-const NAIL_GROUPS = [
-  {
-    key: "hand",
-    label: "Hand Services",
-    description: "Shown on the Manicures / Hand Services card",
-    emoji: "💅",
-  },
-  {
-    key: "foot",
-    label: "Foot Services",
-    description: "Shown on the Pedicures / Foot Services card",
-    emoji: "🦶",
-  },
-  {
-    key: "combo",
-    label: "Mani-Pedi Packages",
-    description: "Shown on the Combo / Mani-Pedi Packages card",
-    emoji: "✨",
-  },
-];
 
 interface NetworkStatus {
   enabled: boolean;
@@ -173,7 +153,6 @@ function NetworkRestrictionSection() {
 export default function KioskSettings() {
   const { toast } = useToast();
   const inShell = useInSettingsShell();
-  const qc = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [formReady, setFormReady] = useState(false);
   const [form, setForm] = useState({
@@ -186,17 +165,6 @@ export default function KioskSettings() {
     dualScreenMode: false,
     smartCheckin: true,
   });
-
-  // Per-card upload state: { [key]: { loading, url, done } }
-  const [uploadState, setUploadState] = useState<
-    Record<string, { loading: boolean; url: string | null; done: boolean }>
-  >({
-    hand:  { loading: false, url: null, done: false },
-    foot:  { loading: false, url: null, done: false },
-    combo: { loading: false, url: null, done: false },
-  });
-
-  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const { data, isLoading } = useQuery<KioskSettingsData>({
     queryKey: ["/api/kiosk-settings"],
@@ -219,18 +187,6 @@ export default function KioskSettings() {
         dualScreenMode: data.dualScreenMode,
         smartCheckin: data.smartCheckin !== false,
       });
-      // Seed upload state with any already-saved images
-      if (data.categoryImages) {
-        setUploadState(prev => {
-          const next = { ...prev };
-          for (const key of Object.keys(next)) {
-            if (data.categoryImages[key]) {
-              next[key] = { ...next[key], url: data.categoryImages[key], done: true };
-            }
-          }
-          return next;
-        });
-      }
       setFormReady(true);
     }
   }, [data, formReady]);
@@ -276,42 +232,6 @@ export default function KioskSettings() {
     onSuccess: () => toast({ title: "Kiosk settings saved" }),
     onError: () => toast({ title: "Failed to save settings", variant: "destructive" }),
   });
-
-  const handleImageUpload = async (categoryKey: string, file: File) => {
-    setUploadState(prev => ({
-      ...prev,
-      [categoryKey]: { loading: true, url: prev[categoryKey]?.url ?? null, done: false },
-    }));
-
-    try {
-      const fd = new FormData();
-      fd.append("image", file);
-      fd.append("categoryKey", categoryKey);
-
-      const r = await fetch("/api/kiosk-settings/category-image", {
-        method: "POST",
-        credentials: "include",
-        body: fd,
-      });
-
-      if (!r.ok) throw new Error("Upload failed");
-      const d = await r.json();
-
-      setUploadState(prev => ({
-        ...prev,
-        [categoryKey]: { loading: false, url: d.url, done: true },
-      }));
-
-      qc.invalidateQueries({ queryKey: ["/api/kiosk-settings"] });
-      toast({ title: `${NAIL_GROUPS.find(g => g.key === categoryKey)?.label} image uploaded!` });
-    } catch {
-      setUploadState(prev => ({
-        ...prev,
-        [categoryKey]: { ...prev[categoryKey], loading: false },
-      }));
-      toast({ title: "Upload failed — please try again", variant: "destructive" });
-    }
-  };
 
   return (
     <AppLayout>
@@ -373,141 +293,17 @@ export default function KioskSettings() {
               )}
             </div>
 
-            {/* ── Category Card Images ── */}
-            <div className="hidden bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
+            {/* ── Kiosk Builder ── */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-3">
               <div>
-                <h2 className="font-semibold text-slate-700">Category Card Images</h2>
+                <h2 className="font-semibold text-slate-700">Kiosk design</h2>
                 <p className="text-sm text-slate-500 mt-0.5">
-                  Upload one photo per card. These appear as the large image at the top of each
-                  "What brings you in today?" card on the check-in kiosk.
+                  The look, welcome picture, steps, rules and words of your check-in kiosk, with a live preview.
                 </p>
               </div>
-
-              <div className="space-y-4">
-                {NAIL_GROUPS.map(group => {
-                  const state = uploadState[group.key];
-                  const previewUrl = state?.url ?? data?.categoryImages?.[group.key] ?? null;
-
-                  return (
-                    <div key={group.key}
-                      className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50">
-
-                      {/* Thumbnail */}
-                      <div className="w-20 h-20 rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center flex-shrink-0">
-                        {previewUrl ? (
-                          <img src={previewUrl} alt={group.label} className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-3xl">{group.emoji}</span>
-                        )}
-                      </div>
-
-                      {/* Info + upload */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold text-slate-700 text-sm">{group.label}</p>
-                          {state?.done && (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400 mt-0.5">{group.description}</p>
-                      </div>
-
-                      {/* Upload button */}
-                      <div className="flex-shrink-0">
-                        <input
-                          ref={el => { fileInputRefs.current[group.key] = el; }}
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={e => {
-                            const file = e.target.files?.[0];
-                            if (file) handleImageUpload(group.key, file);
-                            e.target.value = "";
-                          }}
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                          disabled={state?.loading}
-                          onClick={() => fileInputRefs.current[group.key]?.click()}
-                        >
-                          {state?.loading ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : previewUrl ? (
-                            <ImageIcon className="w-4 h-4" />
-                          ) : (
-                            <Upload className="w-4 h-4" />
-                          )}
-                          {state?.loading ? "Uploading…" : previewUrl ? "Replace" : "Upload"}
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <p className="text-xs text-slate-400">
-                Recommended: square or landscape photos, at least 800×600px. JPG or PNG.
-              </p>
-            </div>
-
-            {/* ── Service Display ── */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-5">
-              <div>
-                <h2 className="font-semibold text-slate-700">Service Display</h2>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Control what information is shown on each service card during check-in.
-                </p>
-              </div>
-
-              <div className="flex items-start justify-between gap-4 py-1">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Show Service Price</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Display the price on each service card on the kiosk.
-                  </p>
-                </div>
-                <Switch
-                  checked={form.showServicePrice}
-                  onCheckedChange={v => setForm(f => ({ ...f, showServicePrice: v }))}
-                />
-              </div>
-
-              <div className="border-t border-slate-100" />
-
-              <div className="flex items-start justify-between gap-4 py-1">
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Show Service Duration</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    Display the estimated duration on each service card on the kiosk.
-                  </p>
-                </div>
-                <Switch
-                  checked={form.showServiceDuration}
-                  onCheckedChange={v => setForm(f => ({ ...f, showServiceDuration: v }))}
-                />
-              </div>
-            </div>
-
-            {/* ── Smart Check-In ── */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h2 className="font-semibold text-slate-700">Smart Check-In</h2>
-                  <p className="text-sm text-slate-500 mt-0.5">
-                    Greets a returning client with a suggestion based on their completed visits — a fill a few
-                    weeks after a full set, their usual manicure or pedicure — and points out an add-on they have
-                    had before. The client can always choose something else, and nothing is added to the ticket
-                    unless they pick it.
-                  </p>
-                </div>
-                <Switch
-                  checked={form.smartCheckin}
-                  onCheckedChange={v => setForm(f => ({ ...f, smartCheckin: v }))}
-                  data-testid="kiosk-setting-smart-checkin"
-                />
-              </div>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/kiosk-builder">Open Kiosk Builder</Link>
+              </Button>
             </div>
 
             {/* ── Dual Screen POS ── */}

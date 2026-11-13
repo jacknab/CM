@@ -7,6 +7,7 @@
  *   GET  /api/kiosk-builder/versions                 published history, newest first
  *   POST /api/kiosk-builder/versions/:version/restore  an old version → the draft
  *   POST /api/kiosk-builder/reset                    a preset → the draft { preset }
+ *   POST /api/kiosk-builder/welcome-image            upload the welcome picture (multipart "image") → { url }
  *
  * Needs the store-settings permission (owners and managers by default). The kiosk itself reads the published
  * layout from /api/public/kiosk/:slug/config.
@@ -16,6 +17,7 @@ import { isAuthenticated } from "../auth";
 import { requirePermission } from "../middleware/permissions";
 import { PERMISSIONS } from "@shared/permissions";
 import { resolveSessionStoreId } from "../lib/sessionStore";
+import { memoryUpload, uploadToR2 } from "../lib/r2";
 import { businessTypeOf, BUSINESS_TYPES, isBusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { validateKioskLayout } from "@shared/kiosk/layout";
 import { KIOSK_PRESETS, presetLayout } from "@shared/kiosk/presets";
@@ -125,6 +127,21 @@ router.post("/api/kiosk-builder/reset", ...guard, async (req: Request, res: Resp
   } catch (err) {
     console.error("[kiosk-builder] reset", err);
     res.status(500).json({ error: "Couldn't start from that design." });
+  }
+});
+
+// The welcome picture. Only stored as a file here; the builder puts its address in the draft.
+router.post("/api/kiosk-builder/welcome-image", ...guard, memoryUpload({ maxSizeMb: 10 }).single("image"), async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const file = (req as any).file as { buffer: Buffer; originalname: string; mimetype: string } | undefined;
+    if (!file) return res.status(400).json({ error: "Choose a picture to upload." });
+    if (!/^image\/(jpeg|png|webp)$/.test(file.mimetype)) return res.status(400).json({ error: "The picture must be a JPG, PNG or WebP." });
+    const url = await uploadToR2(file.buffer, "kiosk", file.originalname, file.mimetype);
+    res.json({ url });
+  } catch (err) {
+    console.error("[kiosk-builder] welcome image", err);
+    res.status(500).json({ error: "Couldn't upload the picture." });
   }
 });
 

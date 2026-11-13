@@ -83,4 +83,13 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   theme from the layout (+ colour overrides), welcome picture + language buttons, service limits, text
   overrides with English fallback. Checked: 16 unit tests, DB smoke test on store 41 (rows removed), live
   walk-through in headless Chromium of the nail preset and a customised layout.
-- Next: Phase 2 (Settings › Kiosk Builder UI). Then retire the dead overlay + old kiosk settings fields.
+- 2026-11-13: **Phases 2 + 3 LIVE.** /kiosk-builder (pages/KioskBuilder.tsx), opened from Settings › Check-in & Kiosk
+  ("Kiosk design" card; the old Service Display / Smart Check-In switches and the hidden category-image uploads
+  were removed from that page — the layout owns them). Starting design (presets), look + 4 colours, welcome
+  picture upload (POST /api/kiosk-builder/welcome-image) + language buttons, steps on/off + order, rules, words
+  per language; autosave to the draft; Publish with a note; History → load into draft. Live preview: the real
+  kiosk in a frame (/kiosk/:slug?preview=draft: draft layout, every active staff member, no lookup / check-in /
+  slip / device report; the builder sends refresh and go-to-screen messages). Checked end to end on the isolated
+  test server (scratch DB, 13/13).
+- Next: Phase 4 (grid layout per screen), Phase 5 (service questions for every business type). Still to retire:
+  the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

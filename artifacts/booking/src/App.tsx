@@ -106,6 +106,7 @@ const SpotPage = lazy(() => import("@/pages/line/SpotPage"));
 const LineDisplay = lazy(() => import("@/pages/line/LineDisplay"));
 const KioskCheckIn = lazy(() => import("@/pages/KioskCheckIn"));
 const KioskSetup = lazy(() => import("@/pages/KioskSetup"));
+const KioskBuilder = lazy(() => import("@/pages/KioskBuilder"));
 const KioskTicket = lazy(() => import("@/pages/KioskTicket"));
 const FrontDeskDisplay = lazy(() => import("@/pages/FrontDeskDisplay"));
 const FrontDeskSetup = lazy(() => import("@/pages/FrontDeskSetup"));
@@ -318,6 +319,7 @@ const authenticatedPaths = [
   "/data-transfer",
   "/manage/data-transfer",
   "/kiosk-settings",
+  "/kiosk-builder",
   "/walk-in-board",
   "/walkins",
   "/manage/payment-settings",
@@ -802,6 +804,7 @@ function AppRoutes() {
       <Route path="/settings" element={<SettingsShell />} />
       <Route path="/settings/:section" element={<SettingsShell />} />
       <Route path="/kiosk-settings" element={<Navigate to="/settings/kiosk" replace />} />
+      <Route path="/kiosk-builder" element={<KioskBuilder />} />
       <Route path="/subscription" element={<Navigate to="/billing" replace />} />
       <Route path="/walk-in-board" element={<WalkInBoard />} />
       <Route path="/walkins" element={<WalkInBoard />} />

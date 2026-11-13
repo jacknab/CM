@@ -205,6 +205,15 @@ function kioskStrings(lang: LangCode, text: Record<string, KioskText>): KioskStr
 
 /** Before the first config arrives (and for a config kept from before the Kiosk Builder): today's kiosk. */
 const STARTING_LAYOUT: KioskLayout = normalizeKioskLayout(null, "other");
+
+/**
+ * The Kiosk Builder's live preview (/kiosk/:slug?preview=draft, in the builder's frame): the draft layout, for a
+ * signed-in login of the salon. Nothing real happens in it — no client lookup, no check-in, no slip, no device
+ * report — and the builder can refresh it or send it to a screen (postMessage, same origin only).
+ */
+const PREVIEW = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "draft";
+const configPath = (slug: string) => `/api/public/kiosk/${slug}/config${PREVIEW ? "?preview=draft" : ""}`;
+export type KioskPreviewTarget = "welcome" | "phone" | "category" | "services" | "addons" | "provider" | "review" | "ticket";
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
 
 // ─── Category colours (lighter versions for light theme) ─────────────────────
@@ -416,7 +425,7 @@ function KioskCheckInScreens() {
   const [kioskConfig, setKioskConfig]     = useState<KioskConfig | null>(null);
   // The look (palette, serif headings) is module state read on every draw; this re-draws when it changes.
   const [lookTick, setLookTick] = useState(() => {
-    const kept = rememberedTheme();
+    const kept = PREVIEW ? null : rememberedTheme();
     if (kept) applyKioskTheme(kept);
     return 0;
   });
@@ -516,21 +525,21 @@ function KioskCheckInScreens() {
     setLayout(next);
     setLang((l) => (next.welcome.languages.includes(l) ? l : "en"));
     // Remembered for this kiosk address so the next start opens in it.
-    try { localStorage.setItem(kioskPathKey("theme"), JSON.stringify(next.theme)); } catch { /* private mode */ }
+    if (!PREVIEW) try { localStorage.setItem(kioskPathKey("theme"), JSON.stringify(next.theme)); } catch { /* private mode */ }
     if (applyKioskTheme(next.theme)) setLookTick((n) => n + 1);
     if (isInitialLoad) {
       // The kiosk stands inside the salon: never a "closed" screen.
       setScreen("idle");
       // Check-in calls need a device the salon set up: signed in (the Certxa app), or paired once.
-      if (slug) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
+      if (slug && !PREVIEW) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
     }
   }, []);
 
   useEffect(() => {
     if (!slug) return;
-    fetch(`/api/public/kiosk/${slug}/config`)
+    fetch(configPath(slug))
       .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(d => { keepJson(kioskConfigKey(slug), d); applyConfig(d, true); })
+      .then(d => { if (!PREVIEW) keepJson(kioskConfigKey(slug), d); applyConfig(d, true); })
       .catch(() => {
         // No connection: open with the last menu and settings this kiosk was sent.
         const kept = keptJson(kioskConfigKey(slug));
@@ -548,9 +557,9 @@ function KioskCheckInScreens() {
     if (!slug || screen !== "idle") return;
     let cancelled = false;
     const refresh = () => {
-      fetch(`/api/public/kiosk/${slug}/config`)
+      fetch(configPath(slug))
         .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-        .then(d => { keepJson(kioskConfigKey(slug), d); if (!cancelled) applyConfig(d, false); })
+        .then(d => { if (!PREVIEW) keepJson(kioskConfigKey(slug), d); if (!cancelled) applyConfig(d, false); })
         .catch(() => {});
     };
     refresh();
@@ -559,13 +568,13 @@ function KioskCheckInScreens() {
   }, [slug, screen, applyConfig]);
 
   // The salon hub: with no internet, lookups and check-ins go to the POS tablet over the salon's Wi-Fi.
-  useEffect(() => { if (storeId) void localHub.start(storeId, "screen"); }, [storeId]);
+  useEffect(() => { if (storeId && !PREVIEW) void localHub.start(storeId, "screen"); }, [storeId]);
   // The kiosk's offline-mode health, reported every 2 minutes (lib/deviceHealth.ts; support's Devices tab).
-  useEffect(() => (storeId ? startDeviceHealth({ role: "kiosk", storeId, slug: slug ?? null, usesOfflineQueue: false }) : undefined), [storeId, slug]);
+  useEffect(() => (storeId && !PREVIEW ? startDeviceHealth({ role: "kiosk", storeId, slug: slug ?? null, usesOfflineQueue: false }) : undefined), [storeId, slug]);
 
   // ── WebSocket: account_status_changed + dual-screen POS checkout events ──
   useEffect(() => {
-    if (!storeId) return;
+    if (!storeId || PREVIEW) return;
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     let ws: WebSocket;
     let destroyed = false;
@@ -701,6 +710,7 @@ function KioskCheckInScreens() {
     then === "service_type" && !kioskFlow(layoutRef.current).includes("category") ? "services" : then;
 
   const checkAvailabilityAndRoute = useCallback(async (then: "service_type" | "services" = "service_type") => {
+    if (PREVIEW) { setScreen(firstStepScreen(then)); return; }
     try {
       const r = await fetch(`/api/public/kiosk/${slug}/availability`);
       const d = await r.json();
@@ -839,6 +849,8 @@ function KioskCheckInScreens() {
   };
 
   const doLookup = async (p: string) => {
+    // Preview: every number is a new client (no real client is looked up or marked arrived).
+    if (PREVIEW) { setScreen("name_entry"); return; }
     setScreen("loading");
     try {
       const r = await kioskFetch(slug!, `/api/public/kiosk/${slug}/lookup`, {
@@ -1037,6 +1049,7 @@ function KioskCheckInScreens() {
   };
 
   const doCheckIn = async () => {
+    if (PREVIEW) { showPreviewTicket(); return; }
     setScreen("loading");
     const staffIdToSend = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).id : null;
     try {
@@ -1095,6 +1108,49 @@ function KioskCheckInScreens() {
       });
     }
   };
+
+  // ── Builder preview ──────────────────────────────────────────────────────────
+  // A made-up ticket for what the client picked (no check-in is made).
+  const showPreviewTicket = (svcs: ServiceItem[] = selectedServices, addons: AddonItem[] = selectedAddons) => {
+    setTicket({
+      token: "", clientName: clientInfo?.name ?? (newClientName.trim() || "Alex"), appointmentId: null, ticketNumber: 12,
+      services: svcs, addons, staffName: selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).name : null,
+    });
+    setScreen("ticket");
+  };
+  // The builder's "show this screen" buttons: sets up a sample client and service where the screen needs one.
+  const previewGoto = (target: KioskPreviewTarget) => {
+    const sample = allServices.find((sv) => addonsFor(sv).length > 0) ?? allServices[0];
+    const withSample = () => { if (!clientInfo && !newClientName) setNewClientName("Alex"); if (sample && !selectedServices.length) setSel([sample]); };
+    switch (target) {
+      case "welcome": return resetToIdle();
+      case "phone": return setScreen("phone");
+      case "category": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); return setScreen(firstStepScreen("service_type"));
+      case "services": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); setSvcPage(0); return setScreen("services");
+      case "addons": withSample(); return enterStep("addons", selectedServices[0] ?? sample, null);
+      case "provider": withSample(); return setScreen("stylist");
+      case "review": withSample(); return setScreen("review");
+      case "ticket": return showPreviewTicket(selectedServices.length ? selectedServices : sample ? [sample] : [], selectedAddons);
+    }
+  };
+  const previewGotoRef = useRef(previewGoto);
+  previewGotoRef.current = previewGoto;
+  const reloadConfigRef = useRef<() => void>(() => {});
+  reloadConfigRef.current = () => {
+    if (!slug) return;
+    fetch(configPath(slug)).then((r) => (r.ok ? r.json() : null)).then((d) => { if (d) applyConfig(d, false); }).catch(() => {});
+  };
+  useEffect(() => {
+    if (!PREVIEW) return;
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || !e.data || typeof e.data !== "object") return;
+      if (e.data.type === "kiosk-preview-refresh") reloadConfigRef.current();
+      if (e.data.type === "kiosk-preview-goto") previewGotoRef.current(e.data.target);
+    };
+    window.addEventListener("message", onMessage);
+    window.parent?.postMessage({ type: "kiosk-preview-ready" }, window.location.origin);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   // The layout's limits: how many services one visit may have, and how long a visit of more than one may be (by
   // default two, two and a half hours; the server holds the same limits). Tapping a chosen service takes it off.
@@ -1317,7 +1373,7 @@ function KioskCheckInScreens() {
 
   // Advanced Features › Check-In Kiosk off (owner, 2026-11-12): no check-in form, just a friendly pointer to the front
   // desk (never a "closed" screen). Comes back to the welcome screen by itself when the switch is turned on again.
-  if (kioskConfig && !kioskConfig.kioskEnabled && !["suspended", "pair", "loading", "error"].includes(screen)) return (
+  if (!PREVIEW && kioskConfig && !kioskConfig.kioskEnabled && !["suspended", "pair", "loading", "error"].includes(screen)) return (
     <div className="fixed inset-0 flex flex-col items-center justify-center text-center px-10 select-none" style={{ ...NO_SELECT, background: BG }} data-testid="kiosk-front-desk">
       {storeConfig?.name && <p style={{ fontSize: 26, fontWeight: 600, color: "#6b7280", margin: "0 0 18px" }}>{storeConfig.name}</p>}
       <p style={{ fontSize: "clamp(38px, 6vw, 64px)", fontWeight: 800, color: PRIMARY, margin: 0, lineHeight: 1.15 }}>{tx("frontDeskTitle")}</p>
@@ -1350,7 +1406,14 @@ function KioskCheckInScreens() {
             onPointerDown={e => { e.stopPropagation(); setLang(code); }}
             className="px-5 py-2.5 rounded-full text-base font-semibold transition-all duration-150 active:scale-95"
             // Light purple to match the welcome picture (owner, 2026-10-31); the chosen language a deeper purple.
-            style={{
+            // With the business's own picture: its own colours instead.
+            style={layout.welcome.imageUrl ? {
+              background: lang === code ? PRIMARY : SURFACE,
+              color: lang === code ? "#fff" : TEXT,
+              border: `1.5px solid ${lang === code ? PRIMARY : BORDER}`,
+              boxShadow: SHADOW,
+              cursor: "pointer",
+            } : {
               background: lang === code ? "#7c3aed" : "#ede4ff",
               color: lang === code ? "#fff" : "#5b21b6",
               border: `1.5px solid ${lang === code ? "#7c3aed" : "#d6c4ff"}`,
