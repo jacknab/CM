@@ -743,8 +743,13 @@ export function useOnboardingSession(userId: string): OnboardingSessionHook {
 
       // 6. Complete onboarding after the Google phase and remaining setup.
       await reportProgress(session, true);
-      localStorage.removeItem(storageKey(userId));
+      // The signed-in user the app reads is ["/api/auth/user"] (use-auth). It must say onboarding is done BEFORE we
+      // leave: "/" → /auth sends an owner whose cached user still says "not done" back to /onboarding, where the
+      // saved chat was just cleared — the chat started over from the first question (owner, 2026-11-13).
+      queryClient.setQueryData(["/api/auth/user"], (prev: any) => (prev ? { ...prev, onboardingCompleted: true } : prev));
+      await queryClient.refetchQueries({ queryKey: ["/api/auth/user"] }).catch(() => {});
       await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      localStorage.removeItem(storageKey(userId));
       navigate("/");
     } catch (err: unknown) {
       const msg =
