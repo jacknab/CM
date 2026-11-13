@@ -117,6 +117,14 @@ const KIOSK_W = 1080, KIOSK_H = 1920;
 
 const newId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 
+/** A new screen's temporary name: "Screen 3", the next number not in use (the owner renames it any time). */
+export function nextScreenName(d: KioskLayout): string {
+  const taken = new Set(d.menus.map((m) => m.name.trim().toLowerCase()));
+  let n = d.menus.length + 1;
+  while (taken.has(`screen ${n}`)) n++;
+  return `Screen ${n}`;
+}
+
 /** Adds a blank screen of this builder's kind (the kiosk then uses the owner's own screens). Returns the new id. */
 export function withNewScreen(d: KioskLayout, name: string): { layout: KioskLayout; id: string } {
   const m: KioskMenu = { id: newId("screen"), kind: builderScreenKind(d.builder), name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false };
@@ -276,9 +284,9 @@ export function ScreensEditor(props: {
     return { ...m, tiles };
   });
 
-  const addScreen = (name = "New screen"): string => {
+  const addScreen = (name?: string): string => {
     let id = "";
-    update((d) => { const r = withNewScreen(d, name); id = r.id; return r.layout; });
+    update((d) => { const r = withNewScreen(d, name ?? nextScreenName(d)); id = r.id; return r.layout; });
     return id;
   };
   const buildFromCatalog = () => {
@@ -380,7 +388,7 @@ export function ScreensEditor(props: {
               Certxa's category cards.
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setMenuId(addScreen("Picture screen"))} data-testid="screens-new-picture">Start with a picture screen</Button>
+              <Button onClick={() => setMenuId(addScreen())} data-testid="screens-new-picture">Start with a picture screen</Button>
               <Button variant="outline" onClick={downloadTemplate}>Download template</Button>
             </div>
           </>
@@ -414,21 +422,35 @@ export function ScreensEditor(props: {
     } finally { setUploading(false); }
   };
 
-  /** "Then…": what happens after a button or tap spot chooses a service, add-on or extra. */
-  const thenField = (value: KioskNext | undefined, onChange: (n: KioskNext | undefined) => void) => (
-    <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600" data-testid="then-field">
-      <span className="block text-sm font-semibold text-slate-900 mb-1">Then…</span>
-      <select className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value={nextValue(value)} data-testid="then-select"
-        onChange={(e) => onChange(parseNext(e.target.value))}>
-        <option value="">Stay on this screen (they can choose more)</option>
-        <option value="continue">Continue to the next step</option>
-        <option value="staff">Go to choosing staff</option>
-        <option value="review">Finish (go to the review)</option>
-        {draft.menus.filter((m) => m.id !== menu?.id).map((m) => <option key={m.id} value={`menu:${m.id}`}>Open the screen "{m.name}"</option>)}
-      </select>
-      <span className="block mt-1">What happens after a client taps it and it's chosen.</span>
-    </label>
-  );
+  /**
+   * "Then…": where the client goes after a button or tap spot chooses a service, add-on or extra — one of the
+   * owner's own screens (the guided flow: shape, then length, then design…), a kiosk screen, or nowhere.
+   */
+  const thenField = (value: KioskNext | undefined, onChange: (n: KioskNext | undefined) => void) => {
+    const others = draft.menus.filter((m) => m.id !== menu?.id);
+    return (
+      <label className="block rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600" data-testid="then-field">
+        <span className="block text-sm font-semibold text-slate-900 mb-1">Then go to…</span>
+        <select className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value={nextValue(value)} data-testid="then-select"
+          onChange={(e) => {
+            if (e.target.value === "new") { const id = addScreen(); onChange({ kind: "menu", menuId: id }); return; }
+            onChange(parseNext(e.target.value));
+          }}>
+          <option value="">Nowhere: stay on this screen (they can choose more)</option>
+          <optgroup label="Your screens">
+            {others.map((m) => <option key={m.id} value={`menu:${m.id}`}>{m.name || "Screen"}</option>)}
+            {draft.menus.length < KIOSK_MENU_LIMITS.menus && <option value="new">+ A new screen</option>}
+          </optgroup>
+          <optgroup label="Kiosk screens">
+            <option value="continue">The next step (in your kiosk's order)</option>
+            <option value="staff">Choosing staff</option>
+            <option value="review">The review (finish)</option>
+          </optgroup>
+        </select>
+        <span className="block mt-1">Where the client goes after tapping it. Pick one of your screens to guide them step by step, like shape, then length, then design.</span>
+      </label>
+    );
+  };
   const panel = (
     <div className="space-y-4">
       {/* The chosen tap spot or button: edited here, at the top of the panel. */}
@@ -436,6 +458,9 @@ export function ScreensEditor(props: {
       {props.view === "edit" && menu && menu.kind === "picture" && spot && (
         <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-spot-panel">
           <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
+          {/* Where it leads, first: the long pick lists below would push it out of sight. */}
+          {(spot.action.kind === "service" || spot.action.kind === "addon") && thenField(spot.next,
+            (n) => changeSpots((list) => list.map((x) => (x.id === spot.id ? (n ? { ...x, next: n } : (({ next: _drop, ...rest }) => rest)(x)) : x))))}
           <p className="text-xs text-slate-500">What it does when tapped:</p>
           <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 p-0.5">
             {(["service", "addon", "function", "menu"] as const).map((k) => (
@@ -532,8 +557,6 @@ export function ScreensEditor(props: {
                 onClick={() => { const id = addScreen(); setSpotAction({ kind: "menu", menuId: id }); }}>New screen for this spot</Button>
             </div>
           )}
-          {(spot.action.kind === "service" || spot.action.kind === "addon") && thenField(spot.next,
-            (n) => changeSpots((list) => list.map((x) => (x.id === spot.id ? (n ? { ...x, next: n } : (({ next: _drop, ...rest }) => rest)(x)) : x))))}
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={() => {
               if (menu.spots.length >= KIOSK_MENU_LIMITS.spots) return;

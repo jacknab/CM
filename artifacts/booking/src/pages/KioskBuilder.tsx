@@ -27,7 +27,7 @@ import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
-import { ScreensEditor, withNewScreen, withoutScreen, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensEditor, nextScreenName, withNewScreen, withoutScreen, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
 import type { HelpTopicId } from "@/pages/kiosk-builder/help";
@@ -468,12 +468,7 @@ export default function KioskBuilder() {
   const newScreen = () => {
     let sid = "";
     // A temporary name ("Screen 3"), the next one not in use; the owner renames it any time.
-    update((d) => {
-      const taken = new Set(d.menus.map((m) => m.name.trim().toLowerCase()));
-      let n = d.menus.length + 1;
-      while (taken.has(`screen ${n}`)) n++;
-      const r = withNewScreen(d, `Screen ${n}`); sid = r.id; return r.layout;
-    });
+    update((d) => { const r = withNewScreen(d, nextScreenName(d)); sid = r.id; return r.layout; });
     setScreenId(sid); openOwnScreens(); setFocusName((n) => n + 1);
   };
   const screensPanel = (
