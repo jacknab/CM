@@ -104,5 +104,10 @@ Plus **vocabulary** per business type ("stylist", "nail technician", "barber", "
   Start over) or another screen. Menu kind "picture" + spots in % of a 9:16 frame (shared/kiosk/layout.ts);
   components/kiosk/KioskPictureScreen.tsx draws kiosk + editor. Builder warns when a picture screen can't be left.
   Checked on the isolated server (16/16, real touches on a 1080×1920 kiosk). Store 2 (Prime Nails) published v1 11-13.
+- 2026-11-13: **Kiosk configurations LIVE** (owner request): Configurations panel in the builder — save the draft
+  under a name, load one into the draft, rename, delete, export to a .certxa-kiosk.json file, import a file.
+  kiosk_configs (migration 0359, applied), max 50 per store; shared/kiosk/configFile.ts (file format v1: layout +
+  names of the services/add-ons it uses, nothing private); import matches buttons/spots to the importing store's
+  catalog by name (category settles ties) and lists what didn't match. Checked on the isolated server (14/14).
 - Next: Phase 5 (service questions for every business type). Still to retire:
   the dead dual-screen overlay in KioskCheckIn.tsx, the unused welcome-headline / promo fields.

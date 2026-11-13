@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowLeft, ArrowUp, ExternalLink, History, Loader2, Upload } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ExternalLink, FolderOpen, History, Loader2, Upload } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +39,8 @@ interface BuilderState {
   presets?: Array<{ key: BusinessTypeKey; name: string; description: string }>;
   textKeys?: KioskTextKey[];
 }
+interface ConfigRow { id: number; name: string; source: "saved" | "imported"; createdAt: string; updatedAt: string }
+interface ImportResult { name: string; unmatched: { services: string[]; addons: string[] } }
 interface VersionRow { version: number; status: "published" | "archived"; note: string | null; publishedAt: string }
 
 const LANG_NAMES: Record<KioskLang, string> = { en: "English", es: "Español", vi: "Tiếng Việt", zh: "中文", ko: "한국어" };
@@ -139,6 +141,13 @@ export default function KioskBuilder() {
   const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<void> }>(null);
   const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
   const [tab, setTab] = useState<"settings" | "screens">("settings");
+  // Saved configurations (named designs to load, export, import).
+  const [configsOpen, setConfigsOpen] = useState(false);
+  const [configs, setConfigs] = useState<ConfigRow[] | null>(null);
+  const [configName, setConfigName] = useState("");
+  const [configBusy, setConfigBusy] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
   // The salon's catalog as its kiosk sees it, for the screen editor.
   const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; addons: CatalogAddon[]; storeName: string } | null>(null);
 
@@ -254,6 +263,56 @@ export default function KioskBuilder() {
     }
   };
 
+  const loadConfigs = async () => {
+    try { setConfigs((await api<{ configs: ConfigRow[] }>("/api/kiosk-builder/configs")).configs); }
+    catch (e: any) { toast({ title: "Couldn't load your configurations", description: e.message, variant: "destructive" }); }
+  };
+  const openConfigs = () => { setConfigsOpen(true); setImportResult(null); void loadConfigs(); };
+  const saveConfig = async () => {
+    if (!configName.trim()) return;
+    setConfigBusy(true);
+    try {
+      // The design as it is on screen right now.
+      if (saveTimer.current && draftRef.current) {
+        clearTimeout(saveTimer.current); saveTimer.current = null; saveSeq.current++;
+        applyState(await api<BuilderState>("/api/kiosk-builder/draft", {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: draftRef.current }),
+        }));
+        setSaving("saved");
+      }
+      const { config } = await api<{ config: ConfigRow }>("/api/kiosk-builder/configs", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: configName }),
+      });
+      setConfigName("");
+      toast({ title: `Saved as "${config.name}"` });
+      await loadConfigs();
+    } catch (e: any) {
+      toast({ title: "Couldn't save the configuration", description: e.message, variant: "destructive" });
+    } finally { setConfigBusy(false); }
+  };
+  const importConfig = async (fileObj: File) => {
+    setConfigBusy(true); setImportResult(null);
+    try {
+      if (fileObj.size > 2 * 1024 * 1024) throw new Error("That file is too big for a kiosk configuration (2 MB at most).");
+      let file: unknown;
+      try { file = JSON.parse(await fileObj.text()); } catch { throw new Error("This isn't a Certxa kiosk configuration file."); }
+      const r = await api<{ config: ConfigRow; unmatched: ImportResult["unmatched"] }>("/api/kiosk-builder/configs/import", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }),
+      });
+      setImportResult({ name: r.config.name, unmatched: r.unmatched });
+      await loadConfigs();
+    } catch (e: any) {
+      toast({ title: "Couldn't import the file", description: e.message, variant: "destructive" });
+    } finally { setConfigBusy(false); }
+  };
+  const renameConfig = async () => {
+    if (!renaming?.name.trim()) return;
+    try {
+      await api(`/api/kiosk-builder/configs/${renaming.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: renaming.name }) });
+      setRenaming(null); await loadConfigs();
+    } catch (e: any) { toast({ title: "Couldn't rename it", description: e.message, variant: "destructive" }); }
+  };
+
   const openHistory = async () => {
     setHistoryOpen(true);
     try { setVersions((await api<{ versions: VersionRow[] }>("/api/kiosk-builder/versions")).versions); }
@@ -341,6 +400,7 @@ export default function KioskBuilder() {
             <span className="text-xs text-slate-500" data-testid="kiosk-builder-save-status">
               {saving === "saving" ? "Saving…" : saving === "saved" ? "Draft saved" : saving === "error" ? "Not saved" : ""}
             </span>
+            <Button variant="outline" size="sm" onClick={openConfigs} className="gap-1.5" data-testid="kiosk-builder-configs"><FolderOpen className="w-4 h-4" /> Configurations</Button>
             <Button variant="outline" size="sm" onClick={openHistory} className="gap-1.5"><History className="w-4 h-4" /> History</Button>
             <Button size="sm" disabled={!state.unpublishedChanges || saving === "saving" || saving === "error"} onClick={() => setPublishOpen(true)}
               data-testid="kiosk-builder-publish">
@@ -623,6 +683,87 @@ export default function KioskBuilder() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ── Configurations ── */}
+      <Sheet open={configsOpen} onOpenChange={setConfigsOpen}>
+        <SheetContent className="overflow-y-auto">
+          <SheetHeader><SheetTitle>Kiosk configurations</SheetTitle></SheetHeader>
+          <p className="text-sm text-slate-500 mt-1">
+            Save designs under a name, load one back into your draft, or export one to a file to keep or use at another location.
+            Nothing here changes your kiosk until you publish.
+          </p>
+
+          <div className="mt-5 space-y-2">
+            <p className="text-sm font-medium text-slate-800">Save this design</p>
+            <div className="flex gap-2">
+              <Input placeholder="Name, e.g. Spring menu" maxLength={60} value={configName} onChange={(e) => setConfigName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void saveConfig(); }} data-testid="config-name" />
+              <Button disabled={!configName.trim() || configBusy} onClick={() => void saveConfig()} data-testid="config-save">Save</Button>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-2">
+            <p className="text-sm font-medium text-slate-800">Import a file</p>
+            <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-9 cursor-pointer bg-white hover:bg-slate-50">
+              {configBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Choose a .certxa-kiosk.json file
+              <input type="file" accept=".json,application/json" className="hidden" disabled={configBusy} data-testid="config-import"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void importConfig(f); e.target.value = ""; }} />
+            </label>
+            <p className="text-xs text-slate-500">Buttons and tap spots are matched to your own services and add-ons by name.</p>
+            {importResult && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 space-y-1" data-testid="config-import-result">
+                <p>Imported as "{importResult.name}".</p>
+                {importResult.unmatched.services.length + importResult.unmatched.addons.length === 0
+                  ? <p className="text-xs text-slate-500">Every button and tap spot found its service.</p>
+                  : <>
+                      <p className="text-xs text-amber-700">Not on your menu, so those buttons and tap spots were left off:</p>
+                      <ul className="text-xs text-slate-600 list-disc pl-4">
+                        {[...importResult.unmatched.services, ...importResult.unmatched.addons.map((a) => `${a} (add-on)`)].map((n) => <li key={n}>{n}</li>)}
+                      </ul>
+                    </>}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-6 space-y-2">
+            <p className="text-sm font-medium text-slate-800">Saved</p>
+            {configs == null ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+              : configs.length === 0 ? <p className="text-sm text-slate-500">No saved configurations yet.</p>
+              : configs.map((c) => (
+                <div key={c.id} className="border border-slate-200 rounded-xl p-3 space-y-2" data-testid="config-row">
+                  {renaming?.id === c.id ? (
+                    <div className="flex gap-2">
+                      <Input value={renaming.name} maxLength={60} autoFocus onChange={(e) => setRenaming({ id: c.id, name: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === "Enter") void renameConfig(); if (e.key === "Escape") setRenaming(null); }} />
+                      <Button size="sm" onClick={() => void renameConfig()}>Save</Button>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{c.name}</p>
+                      <p className="text-xs text-slate-500">{c.source === "imported" ? "Imported" : "Saved"} {new Date(c.updatedAt).toLocaleString()}</p>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    <Button variant="outline" size="sm" data-testid="config-load" onClick={() => setConfirm({
+                      title: `Load "${c.name}" into your draft?`,
+                      body: "Your draft is replaced by this configuration. Your kiosk doesn't change until you publish. Save your draft as a configuration first if you want to keep it.",
+                      run: async () => { takeServerDraft(await api<BuilderState>(`/api/kiosk-builder/configs/${c.id}/load`, { method: "POST" })); setConfigsOpen(false); },
+                    })}>Load</Button>
+                    <Button variant="outline" size="sm" asChild data-testid="config-export">
+                      <a href={`/api/kiosk-builder/configs/${c.id}/export`} download>Export</a>
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setRenaming({ id: c.id, name: c.name })}>Rename</Button>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirm({
+                      title: `Delete "${c.name}"?`,
+                      body: "The saved configuration is deleted. Your draft and your kiosk don't change.",
+                      run: async () => { await api(`/api/kiosk-builder/configs/${c.id}`, { method: "DELETE" }); await loadConfigs(); },
+                    })}>Delete</Button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       {/* ── History ── */}
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>

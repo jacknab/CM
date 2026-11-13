@@ -7,6 +7,14 @@
  *   GET  /api/kiosk-builder/versions                 published history, newest first
  *   POST /api/kiosk-builder/versions/:version/restore  an old version → the draft
  *   POST /api/kiosk-builder/reset                    a preset → the draft { preset }
+ *   Saved configurations (named designs; loading one only changes the draft):
+ *   GET    /api/kiosk-builder/configs                   the list
+ *   POST   /api/kiosk-builder/configs                   save the draft as a configuration { name }
+ *   POST   /api/kiosk-builder/configs/:id/load          a configuration → the draft
+ *   PATCH  /api/kiosk-builder/configs/:id               rename { name }
+ *   DELETE /api/kiosk-builder/configs/:id
+ *   GET    /api/kiosk-builder/configs/:id/export        the configuration as a file (shared/kiosk/configFile.ts)
+ *   POST   /api/kiosk-builder/configs/import            a file → a new configuration { file } → { config, unmatched }
  *   POST /api/kiosk-builder/image                    upload a picture: welcome screen, a screen button (multipart "image") → { url }
  *
  * Needs the store-settings permission (owners and managers by default). The kiosk itself reads the published
@@ -22,7 +30,9 @@ import { businessTypeOf, BUSINESS_TYPES, isBusinessTypeKey } from "@shared/kiosk
 import { validateKioskLayout } from "@shared/kiosk/layout";
 import { KIOSK_PRESETS, presetLayout } from "@shared/kiosk/presets";
 import { KIOSK_TEXT_KEYS } from "@shared/kiosk/text";
+import { buildKioskConfigFile, cleanConfigName, KIOSK_CONFIG_FILE_MAX_BYTES, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
 import {
+  createKioskConfig, deleteKioskConfig, kioskCatalogRefs, kioskConfigLayout, listKioskConfigs, renameKioskConfig, KIOSK_CONFIGS_MAX,
   draftKioskLayout, kioskContext, kioskVersionLayout, listKioskVersions, publishedKioskLayout,
   publishKioskDraft, sameKioskLayout, saveKioskDraft, type StoreKioskContext,
 } from "../lib/kioskLayouts";
@@ -143,6 +153,106 @@ router.post(["/api/kiosk-builder/image", "/api/kiosk-builder/welcome-image"], ..
   } catch (err) {
     console.error("[kiosk-builder] welcome image", err);
     res.status(500).json({ error: "Couldn't upload the picture." });
+  }
+});
+
+// ── Saved configurations ──
+const configId = (req: Request) => { const n = Number(req.params.id); return Number.isInteger(n) && n > 0 ? n : 0; };
+const tooMany = `You can keep up to ${KIOSK_CONFIGS_MAX} configurations. Delete one first.`;
+
+router.get("/api/kiosk-builder/configs", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    res.json({ configs: await listKioskConfigs(ctx.storeId) });
+  } catch (err) {
+    console.error("[kiosk-builder] configs", err);
+    res.status(500).json({ error: "Couldn't load your configurations." });
+  }
+});
+
+router.post("/api/kiosk-builder/configs", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const name = cleanConfigName(req.body?.name);
+    if (!name) return res.status(400).json({ error: "Give the configuration a name." });
+    const config = await createKioskConfig(ctx, name, (await draftKioskLayout(ctx)).layout, "saved", userIdOf(req));
+    if (!config) return res.status(409).json({ error: tooMany });
+    res.json({ config });
+  } catch (err) {
+    console.error("[kiosk-builder] config save", err);
+    res.status(500).json({ error: "Couldn't save the configuration." });
+  }
+});
+
+router.post("/api/kiosk-builder/configs/:id/load", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const found = await kioskConfigLayout(ctx, configId(req));
+    if (!found) return res.status(404).json({ error: "That configuration doesn't exist." });
+    await saveKioskDraft(ctx, found.layout, userIdOf(req));
+    res.json(await builderState(ctx));
+  } catch (err) {
+    console.error("[kiosk-builder] config load", err);
+    res.status(500).json({ error: "Couldn't load the configuration." });
+  }
+});
+
+router.patch("/api/kiosk-builder/configs/:id", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const name = cleanConfigName(req.body?.name);
+    if (!name) return res.status(400).json({ error: "Give the configuration a name." });
+    const config = await renameKioskConfig(ctx.storeId, configId(req), name);
+    if (!config) return res.status(404).json({ error: "That configuration doesn't exist." });
+    res.json({ config });
+  } catch (err) {
+    console.error("[kiosk-builder] config rename", err);
+    res.status(500).json({ error: "Couldn't rename the configuration." });
+  }
+});
+
+router.delete("/api/kiosk-builder/configs/:id", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    if (!(await deleteKioskConfig(ctx.storeId, configId(req)))) return res.status(404).json({ error: "That configuration doesn't exist." });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[kiosk-builder] config delete", err);
+    res.status(500).json({ error: "Couldn't delete the configuration." });
+  }
+});
+
+router.get("/api/kiosk-builder/configs/:id/export", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const found = await kioskConfigLayout(ctx, configId(req));
+    if (!found) return res.status(404).json({ error: "That configuration doesn't exist." });
+    const file = buildKioskConfigFile(found.name, found.layout, await kioskCatalogRefs(ctx.storeId));
+    const fileName = `${file.name.replace(/[^A-Za-z0-9 _-]+/g, "").trim().replace(/\s+/g, "-") || "kiosk"}.certxa-kiosk.json`;
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.type("application/json").send(JSON.stringify(file, null, 2));
+  } catch (err) {
+    console.error("[kiosk-builder] config export", err);
+    res.status(500).json({ error: "Couldn't export the configuration." });
+  }
+});
+
+// The file comes in as JSON ({ file }), already read by the app's body parser; a file may be up to 2 MB.
+router.post("/api/kiosk-builder/configs/import", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const size = ((req as any).rawBody as Buffer | undefined)?.length ?? 0;
+    if (size > KIOSK_CONFIG_FILE_MAX_BYTES + 64 * 1024) return res.status(413).json({ error: "That file is too big for a kiosk configuration (2 MB at most)." });
+    const parsed = parseKioskConfigFile(req.body?.file);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const { layout, unmatched } = remapKioskLayout(parsed.file, await kioskCatalogRefs(ctx.storeId));
+    const config = await createKioskConfig(ctx, parsed.file.name, layout, "imported", userIdOf(req));
+    if (!config) return res.status(409).json({ error: tooMany });
+    res.json({ config, unmatched });
+  } catch (err) {
+    console.error("[kiosk-builder] config import", err);
+    res.status(500).json({ error: "Couldn't import the file." });
   }
 });
 

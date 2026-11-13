@@ -131,3 +131,77 @@ export async function kioskVersionLayout(ctx: StoreKioskContext, version: number
 export function sameKioskLayout(a: KioskLayout, b: KioskLayout): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
+
+// ── Saved configurations (kiosk_configs, migration 0359) ───────────────────────
+
+export const KIOSK_CONFIGS_MAX = 50;
+
+export interface KioskConfigRow { id: number; name: string; source: "saved" | "imported"; createdAt: string; updatedAt: string }
+
+const configRow = (r: any): KioskConfigRow => ({
+  id: Number(r.id), name: r.name, source: r.source,
+  createdAt: new Date(r.created_at).toISOString(), updatedAt: new Date(r.updated_at).toISOString(),
+});
+
+export async function listKioskConfigs(storeId: number): Promise<KioskConfigRow[]> {
+  const r = await pool.query(
+    `SELECT id, name, source, created_at, updated_at FROM kiosk_configs WHERE store_id = $1 ORDER BY updated_at DESC LIMIT ${KIOSK_CONFIGS_MAX}`,
+    [storeId],
+  );
+  return r.rows.map(configRow);
+}
+
+/** A saved configuration's layout. null: not this store's. */
+export async function kioskConfigLayout(ctx: StoreKioskContext, id: number): Promise<{ name: string; layout: KioskLayout } | null> {
+  const r = await pool.query(`SELECT name, layout FROM kiosk_configs WHERE id = $1 AND store_id = $2`, [id, ctx.storeId]);
+  return r.rows[0] ? { name: r.rows[0].name, layout: normalizeKioskLayout(r.rows[0].layout, fallbackPreset(ctx)) } : null;
+}
+
+/** "Spring menu" → "Spring menu (2)" when the store already has one of that name. */
+async function freeConfigName(storeId: number, name: string, exceptId?: number): Promise<string> {
+  const r = await pool.query(`SELECT name FROM kiosk_configs WHERE store_id = $1 AND id <> $2`, [storeId, exceptId ?? 0]);
+  const taken = new Set(r.rows.map((x) => String(x.name).toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = `${name.slice(0, 54)} (${n})`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  return `${name.slice(0, 50)} ${Date.now()}`;
+}
+
+/** Saves a layout as a new configuration. null: the store already has the most it may keep. */
+export async function createKioskConfig(ctx: StoreKioskContext, name: string, raw: unknown, source: "saved" | "imported", userId: number | null): Promise<KioskConfigRow | null> {
+  const count = await pool.query(`SELECT count(*)::int AS n FROM kiosk_configs WHERE store_id = $1`, [ctx.storeId]);
+  if (count.rows[0].n >= KIOSK_CONFIGS_MAX) return null;
+  const layout = normalizeKioskLayout(raw, fallbackPreset(ctx));
+  const r = await pool.query(
+    `INSERT INTO kiosk_configs (store_id, name, layout, source, created_by) VALUES ($1, $2, $3::jsonb, $4, $5)
+     RETURNING id, name, source, created_at, updated_at`,
+    [ctx.storeId, await freeConfigName(ctx.storeId, name), JSON.stringify(layout), source, userId],
+  );
+  return configRow(r.rows[0]);
+}
+
+export async function renameKioskConfig(storeId: number, id: number, name: string): Promise<KioskConfigRow | null> {
+  const r = await pool.query(
+    `UPDATE kiosk_configs SET name = $3, updated_at = now() WHERE id = $1 AND store_id = $2 RETURNING id, name, source, created_at, updated_at`,
+    [id, storeId, await freeConfigName(storeId, name, id)],
+  );
+  return r.rows[0] ? configRow(r.rows[0]) : null;
+}
+
+export async function deleteKioskConfig(storeId: number, id: number): Promise<boolean> {
+  return ((await pool.query(`DELETE FROM kiosk_configs WHERE id = $1 AND store_id = $2`, [id, storeId])).rowCount ?? 0) > 0;
+}
+
+/** The store's active services and add-ons by name, for configuration files (shared/kiosk/configFile.ts). */
+export async function kioskCatalogRefs(storeId: number) {
+  const [s, a] = await Promise.all([
+    pool.query(`SELECT id, name, category FROM services WHERE store_id = $1 AND is_active = true ORDER BY id`, [storeId]),
+    pool.query(`SELECT id, name FROM addons WHERE store_id = $1 AND is_active = true ORDER BY id`, [storeId]),
+  ]);
+  return {
+    services: s.rows.map((r) => ({ id: Number(r.id), name: String(r.name), category: r.category ?? null })),
+    addons: a.rows.map((r) => ({ id: Number(r.id), name: String(r.name) })),
+  };
+}
