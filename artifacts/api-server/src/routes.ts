@@ -2042,6 +2042,8 @@ export async function registerRoutes(
     next();
   });
 
+    // The link in an "add this e-mail to your account" confirmation e-mail, opened from any inbox (routes/manage.ts).
+    if (req.path === "/manage/emails/confirm") return next();
   // ── Live settings sync ─────────────────────────────────────────────────────
   // Any successful write to a salon-settings endpoint tells every connected
   // /calendar (websocket, store-wide) to refetch. The native app has no hard

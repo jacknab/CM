@@ -159,6 +159,8 @@ export default function PersonalDetailsPage() {
                 The account email can't be changed.
               </p>
             </div>
+
+            <ExtraEmailsField />
           </div>
 
           <div className="flex items-center justify-end gap-3">
@@ -250,6 +252,86 @@ function MobileNumberField({ current }: { current: string | null }) {
         </div>
       )}
       <p className="text-[13px] text-muted-foreground">The number you verified with a text code. A new number must receive a code too. Separate from the business phone.</p>
+    </div>
+  );
+}
+
+type ExtraEmail = { id: number; email: string; confirmed: boolean };
+
+/**
+ * Extra account e-mails (owner, 2026-11-13): the login e-mail never changes, but the owner can add other addresses.
+ * Each one confirms by a link e-mailed to it; after that, every e-mail Certxa sends to the account also goes there.
+ * Server: /api/manage/emails (lib/accountEmails.ts).
+ */
+function ExtraEmailsField() {
+  const { toast } = useToast();
+  const { data } = useQuery<{ login: string | null; extras: ExtraEmail[] }>({
+    queryKey: ["/api/manage/emails"],
+    queryFn: async () => {
+      const res = await fetch("/api/manage/emails", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load e-mails");
+      return res.json();
+    },
+  });
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const extras = data?.extras ?? [];
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/manage/emails"] });
+
+  const add = async (address: string, key: string) => {
+    setBusy(key); setError("");
+    try {
+      const res = await fetch("/api/manage/emails", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: address }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || "Couldn't add that e-mail.");
+      toast({ title: "Confirmation e-mail sent", description: `Open the link sent to ${address} to start receiving account e-mails there.` });
+      if (key === "add") setEmail("");
+      await refresh();
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(null); }
+  };
+  const remove = async (x: ExtraEmail) => {
+    setBusy(`rm-${x.id}`); setError("");
+    try {
+      const res = await fetch(`/api/manage/emails/${x.id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Couldn't remove that e-mail.");
+      await refresh();
+    } catch (e: any) { setError(e.message); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <div className="space-y-2" data-testid="extra-emails">
+      <label className="text-[15px] font-medium">Also send account e-mails to</label>
+      {extras.length > 0 && (
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {extras.map((x) => (
+            <li key={x.id} className="flex flex-wrap items-center gap-2 px-3 py-2" data-testid="extra-email-row">
+              <span className="min-w-0 flex-1 truncate text-[15px]">{x.email}</span>
+              <span className="text-[13px] text-muted-foreground">{x.confirmed ? "Confirmed" : "Waiting for confirmation"}</span>
+              {!x.confirmed && (
+                <Button type="button" variant="ghost" size="sm" disabled={busy !== null} onClick={() => void add(x.email, `re-${x.id}`)}>
+                  {busy === `re-${x.id}` ? "Sending…" : "Resend link"}
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" disabled={busy !== null} onClick={() => void remove(x)} data-testid="button-remove-extra-email">
+                {busy === `rm-${x.id}` ? "Removing…" : "Remove"}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex gap-2">
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="another@email.com" className="text-[15px]" data-testid="input-extra-email" />
+        <Button type="button" variant="outline" disabled={busy !== null || !email.includes("@")} onClick={() => void add(email.trim(), "add")} data-testid="button-add-extra-email">
+          {busy === "add" ? "Adding…" : "Add"}
+        </Button>
+      </div>
+      {error && <p className="text-[13px] text-destructive" role="alert">{error}</p>}
+      <p className="text-[13px] text-muted-foreground">
+        Every e-mail Certxa sends to your account also goes to these addresses once each one is confirmed. Your sign-in e-mail stays the same.
+      </p>
     </div>
   );
 }

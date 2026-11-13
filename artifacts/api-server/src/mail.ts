@@ -43,6 +43,27 @@ export async function sendEmail(
   /** business: a salon writing to its own client — its name heads the e-mail (lib/emailLayout.ts). */
   layout?: { business?: string | null; preheader?: string },
 ): Promise<{ success: boolean; id?: string; error?: string; skipped?: boolean }> {
+  const result = await sendOneEmail(storeId, to, subject, html, text, from, layout);
+  // An account's extra e-mail addresses (owner, 2026-11-13; lib/accountEmails.ts): every e-mail sent to an account's
+  // login address also goes to each confirmed address the owner added. The result is the login address's.
+  if (to && !to.includes(",")) {
+    const { accountCopyRecipients } = await import("./lib/accountEmails");
+    for (const copy of await accountCopyRecipients(to)) {
+      await sendOneEmail(storeId, copy, subject, html, text, from, layout).catch(() => undefined);
+    }
+  }
+  return result;
+}
+
+async function sendOneEmail(
+  storeId: number,
+  to: string,
+  subject: string,
+  html: string,
+  text?: string,
+  from?: string,
+  layout?: { business?: string | null; preheader?: string },
+): Promise<{ success: boolean; id?: string; error?: string; skipped?: boolean }> {
   // Every e-mail goes out in the Certxa layout: HTML that is not already a whole e-mail is wrapped in it.
   if (!isFullEmailDocument(html)) {
     html = brandedEmail({
