@@ -513,7 +513,7 @@ The caller's number is ${callerPhone ?? "unknown"}.`;
       : "")
     + (agent.id === "tom" && !accountSupportHandoff && tomLastCall ? `\n\n${lastCallForPrompt(tomLastCall)}` : "");
   const sameDay = agent.id === "tom" && !accountSupportHandoff && tomLastCall
-    ? " Exception: the CALLING BACK record below is this same phone number's call to you today; you may use it (their name included) without verify_caller_identity."
+    ? " Exception: the CALLED BEFORE TODAY record below is this same phone number's calls to you today; you may use it (their name included) without verify_caller_identity."
     : "";
   return { voice: `${voice}\n\nCALLER MEMORY PRIVACY:\n${memoryBlock}${sameDay}${claimBlock}`, backend: `${backend}${claimBlock}` };
 }
@@ -760,7 +760,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   /** Tom: the account this caller's number belongs to (owner's mobile or a number verified before), if any. */
   let knownCustomer: VerifiedOwner | null = null;
   let knownCustomerPromise: Promise<void> = Promise.resolve();
-  /** Tom: this number's last call to him today where the caller spoke (lib/marelLastCall.ts). */
+  /** Tom: this number's calls to him today where the caller spoke (lib/marelLastCall.ts). */
   let tomLastCall: MarelLastCall | null = null;
   let callbackScheduled = false;
   let accountSupportHandoff = false;
@@ -1666,14 +1666,14 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
           }
           startPacer();
         }
-        // Calling her back: what was said on this number's last call to her today (lib/marelLastCall.ts).
+        // Calling her back: everything said on this number's calls to her today (lib/marelLastCall.ts).
         const lastCall = transferredByTom ? Promise.resolve(null) : marelLastCall(callerPhoneE164, callSid);
         // Transferred by Tom: his reason and what the caller told him (same call, migration 0349).
         const tomNote = transferredByTom ? tomTransferNote(callSid) : Promise.resolve(null);
         marilContextPromise = ownerByCallerId(callerPhone)
           .then(async (owner) => { verifiedOwner = owner; marilContext = { transferred: transferredByTom, owner, lastCall: await lastCall, tomNote: await tomNote }; })
           .catch(async (e) => { marilContext = { transferred: transferredByTom, owner: null, lastCall: await lastCall, tomNote: await tomNote }; console.warn(`${LOG} Marel caller lookup failed:`, e?.message ?? e); })
-          .then(() => { if (marilContext?.lastCall) console.log(`${LOG} Marel: caller calling back (last call ${marilContext.lastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
+          .then(() => { if (marilContext?.lastCall) console.log(`${LOG} Marel: caller calling back (${marilContext.lastCall.calls.length} earlier call(s) today, last ${marilContext.lastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
       }
       // A prepared salon page: Tom's call-back to the salon (its token came with the call), or a call from a salon's own line.
       const claimToken = String(msg.start?.customParameters?.claimCallback ?? "");
@@ -1682,7 +1682,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
         knownCustomerPromise = ownerByCallerId(callerPhone)
           .then((owner) => { knownCustomer = owner; if (owner) console.log(`${LOG} Tom: caller is a known customer (store ${owner.storeId}) call=${callSid ?? "unknown"}`); })
           .catch((e) => console.warn(`${LOG} Tom known-customer lookup failed:`, e?.message ?? e))
-          .then(async () => { tomLastCall = await lastTomCall; if (tomLastCall) console.log(`${LOG} Tom: caller calling back (last call ${tomLastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
+          .then(async () => { tomLastCall = await lastTomCall; if (tomLastCall) console.log(`${LOG} Tom: caller calling back (${tomLastCall.calls.length} earlier call(s) today, last ${tomLastCall.minutesAgo} min ago) call=${callSid ?? "unknown"}`); });
       }
       claimContextPromise = agentProfile.id !== "tom" || accountSupportHandoff ? Promise.resolve() : (async () => {
         if (claimToken) {
