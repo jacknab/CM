@@ -58,10 +58,9 @@ export function ExtraForm(props: { initial?: Partial<KioskExtra>; groups: string
   const [name, setName] = useState(props.initial?.name ?? "");
   const [price, setPrice] = useState(String(props.initial?.price ?? 0));
   const [duration, setDuration] = useState(String(props.initial?.duration ?? 0));
-  const [group, setGroup] = useState(props.initial?.group ?? "");
+  const group = props.initial?.group ?? "";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const listId = useMemo(() => `extra-groups-${Math.random().toString(36).slice(2, 7)}`, []);
   const submit = async () => {
     setBusy(true); setError("");
     try { await props.onSubmit({ name: name.trim(), price: Number(price) || 0, duration: Math.round(Number(duration) || 0), group: group.trim() || null }); }
@@ -79,10 +78,7 @@ export function ExtraForm(props: { initial?: Partial<KioskExtra>; groups: string
           <Input className="mt-1" type="number" min={0} max={480} step="5" value={duration} onChange={(e) => setDuration(e.target.value)} />
         </label>
       </div>
-      <label className="block text-xs text-slate-500">Group (pick one per group)
-        <Input className="mt-1" list={listId} placeholder="e.g. Nail shape" maxLength={40} value={group} onChange={(e) => setGroup(e.target.value)} data-testid="extra-group" />
-        <datalist id={listId}>{props.groups.map((g) => <option key={g} value={g} />)}</datalist>
-      </label>
+      {/* One place for "pick one" now: the screen's own setting. An extra's old group is kept as it was. */}
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
         <Button size="sm" disabled={!name.trim() || busy} onClick={() => void submit()} data-testid="extra-submit">{props.submitLabel}</Button>
@@ -107,8 +103,8 @@ export function ExtrasPanel({ store, draft, update }: {
         {form !== "new" && <Button variant="outline" size="sm" onClick={() => setForm("new")} data-testid="extras-add">Add extra</Button>}
       </div>
       <p className="text-xs text-slate-500">
-        Free or with a price. A pick goes on the client's ticket and is charged at checkout. Extras don't show on your booking site or in your
-        add-ons. Put them on your screens as buttons or tap spots.
+        Free or with a price. A pick goes on the client's ticket and is charged at checkout. Put them on your own screens as buttons or tap
+        spots; whether clients can pick one or several is set on the screen.
       </p>
       {form === "new" && (
         <ExtraForm groups={store.groups} submitLabel="Add" onCancel={() => setForm(null)} initial={{ group: store.groups[0] ?? "" }}
@@ -117,24 +113,6 @@ export function ExtrasPanel({ store, draft, update }: {
       <div className="space-y-1">
         {[...(extras ?? [])].sort((a, b) => (a.group ?? "￿").localeCompare(b.group ?? "￿") || a.id - b.id).map((x, i, list) => (
           <div key={x.id}>
-            {(i === 0 || list[i - 1].group !== x.group) && (
-              <div className="flex items-center justify-between gap-2 pt-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{x.group || "No group"}</p>
-                {x.group && (() => {
-                  const g = x.group;
-                  const on = draft.requiredGroups.some((r) => sameGroup(r, g));
-                  return (
-                    <label className="inline-flex items-center gap-1.5 text-xs text-slate-600" data-testid="extra-group-required">
-                      <input type="checkbox" checked={on}
-                        onChange={(e) => update((d) => ({ ...d, requiredGroups: e.target.checked
-                          ? [...d.requiredGroups.filter((r) => !sameGroup(r, g)), g]
-                          : d.requiredGroups.filter((r) => !sameGroup(r, g)) }))} />
-                      Clients must choose one
-                    </label>
-                  );
-                })()}
-              </div>
-            )}
             {form === x.id ? (
               <ExtraForm groups={store.groups} submitLabel="Save" initial={x} onCancel={() => setForm(null)}
                 onSubmit={async (v) => { await store.save(x.id, v); setForm(null); }} />

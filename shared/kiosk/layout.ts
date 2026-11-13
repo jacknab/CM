@@ -120,6 +120,13 @@ export interface KioskMenu {
   spots: KioskSpot[];
   /** Picture screens: the kiosk's footer (Back, what was chosen, total, Continue) over the bottom of the picture. */
   footer: boolean;
+  /**
+   * What clients can choose among this screen's services, add-ons and extras (owner, 2026-11-13): "one" — another
+   * tap replaces the first (a nail shape); "many" — each tap adds or removes.
+   */
+  choose: "one" | "many";
+  /** Continue, Finish and "Then…" wait until something on this screen is chosen. */
+  mustChoose: boolean;
 }
 
 export type KioskBuilderKind = "easy" | "picture";
@@ -358,6 +365,8 @@ export function normalizeMenus(raw: unknown): KioskMenu[] {
       imageUrl: kind === "picture" && isKioskImageUrl(m.imageUrl) ? m.imageUrl : null,
       spots,
       footer: kind === "picture" && m.footer === true,
+      choose: m.choose === "one" ? "one" : "many",
+      mustChoose: m.mustChoose === true,
     };
   });
 }

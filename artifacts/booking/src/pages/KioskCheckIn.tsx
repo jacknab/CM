@@ -215,13 +215,15 @@ const STARTING_LAYOUT: KioskLayout = normalizeKioskLayout(null, "other");
  * signed-in login of the salon. Nothing real happens in it — no client lookup, no check-in, no slip, no device
  * report — and the builder can refresh it or send it to a screen (postMessage, same origin only).
  */
-const PREVIEW = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("preview") === "draft";
+const PREVIEW_PARAM = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("preview") ?? "" : "";
+/** The builder's preview: the draft, or one of the business's kiosk configurations (preview=config-<id>). */
+const PREVIEW = PREVIEW_PARAM === "draft" || /^config-\d+$/.test(PREVIEW_PARAM);
 /**
  * The builder's screen editor (?preview=draft&edit=1): a click on something marked data-kx-edit tells the builder
  * what to change instead of doing anything; parts that can be changed are outlined; the kiosk never resets by itself.
  */
 const PREVIEW_EDIT = PREVIEW && new URLSearchParams(window.location.search).get("edit") === "1";
-const configPath = (slug: string) => `/api/public/kiosk/${slug}/config${PREVIEW ? "?preview=draft" : ""}`;
+const configPath = (slug: string) => `/api/public/kiosk/${slug}/config${PREVIEW ? `?preview=${encodeURIComponent(PREVIEW_PARAM)}` : ""}`;
 export type KioskPreviewTarget = "welcome" | "phone" | "category" | "services" | "addons" | "provider" | "review" | "ticket" | "screen";
 const NO_SELECT: React.CSSProperties = { WebkitUserSelect: "none", userSelect: "none" };
 
@@ -980,8 +982,20 @@ function KioskCheckInScreens() {
    * Continue from one of the business's own screens: a service must be chosen, and every "must choose one" Kiosk
    * Extras group this screen shows (layout.requiredGroups) needs its pick. Otherwise the screen says what's missing.
    */
+  /** The services and add-ons a screen offers (its buttons and tap spots). */
+  const screenItems = (m: KioskMenu) => ({
+    services: new Set([...m.tiles.flatMap((x) => (x?.kind === "service" && x.serviceId != null ? [x.serviceId] : [])),
+      ...m.spots.flatMap((sp) => (sp.action.kind === "service" ? [sp.action.serviceId] : []))]),
+    addons: new Set([...m.tiles.flatMap((x) => (x?.kind === "addon" && x.addonId != null ? [x.addonId] : [])),
+      ...m.spots.flatMap((sp) => (sp.action.kind === "addon" ? [sp.action.addonId] : []))]),
+  });
   const continueFromScreen = (screenMenu: KioskMenu, note: (text: string) => void, dest: "next" | "staff" | "review" = "next") => {
     kick();
+    // "They must choose before moving on" (the screen's own setting).
+    if (screenMenu.mustChoose) {
+      const items = screenItems(screenMenu);
+      if (!selectedServices.some((x) => items.services.has(x.id)) && !selectedAddons.some((x) => items.addons.has(x.id))) return note(t.chooseOneHere);
+    }
     if (!selectedServices.length) return note(t.chooseServiceFirst);
     const shownIds = [
       ...screenMenu.spots.flatMap((sp) => (sp.action.kind === "addon" ? [sp.action.addonId] : [])),
@@ -2325,12 +2339,26 @@ body *{cursor:default}`;
         if (tile.next && tile.kind === "addon" && tile.addonId != null && !selectedAddons.some((x) => x.id === tile.addonId)) {
           setPendingNext({ next: tile.next, fromMenuId: current.id, addonId: tile.addonId });
         }
-        if (tile.kind === "addon" && tile.addonId != null) return chooseAddonOnScreen(tile.addonId, showPictureNote);
+        // "Clients can choose: One" (the screen's setting): a new pick takes the place of the one before from this screen.
+        const items = current.choose === "one" ? screenItems(current) : null;
+        if (tile.kind === "addon" && tile.addonId != null) {
+          if (items && !selectedAddons.some((x) => x.id === tile.addonId) && selectedServices.length) {
+            setSelectedAddons((cur) => cur.filter((x) => !items.addons.has(x.id)));
+          }
+          return chooseAddonOnScreen(tile.addonId, showPictureNote);
+        }
         if (tile.kind === "menu" && tile.menuId && menusById.has(tile.menuId)) { setMenuStack((st) => [...st, tile.menuId!]); setMenuPage(0); return; }
         const svc = tile.serviceId != null ? svcById.get(tile.serviceId) : undefined;
         if (!svc) return;
         if ((svc.optionCount ?? (serviceOptionsMap[svc.id]?.length ?? 0)) > 0) {
           setParentServiceForOptions(svc); setSelectedOption(null); setScreen("service_options"); return;
+        }
+        if (items && !selectedServices.some((x) => x.id === svc.id)) {
+          const kept = selectedServices.filter((x) => !items.services.has(x.id));
+          const next = [...kept, svc].slice(-Math.max(1, layout.services.maxServices));
+          if (next[0]?.id !== selectedServices[0]?.id) setSelectedAddons([]);
+          setSvcLimitNote(false);
+          return setSel(next);
         }
         toggleSvc(svc);
       };

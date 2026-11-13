@@ -136,17 +136,22 @@ export function sameKioskLayout(a: KioskLayout, b: KioskLayout): boolean {
 
 export const KIOSK_CONFIGS_MAX = 50;
 
-export interface KioskConfigRow { id: number; name: string; source: "saved" | "imported"; builder: "easy" | "picture"; createdAt: string; updatedAt: string }
+export interface KioskConfigRow { id: number; name: string; source: "saved" | "imported"; builder: "easy" | "picture";
+  /** This configuration is the one on the kiosk now (its last publish is the live version). */
+  live: boolean; createdAt: string; updatedAt: string }
 
 const configRow = (r: any): KioskConfigRow => ({
   id: Number(r.id), name: r.name, source: r.source,
   builder: r.layout ? normalizeKioskLayout(r.layout, "other").builder : "easy",
+  live: r.live === true,
   createdAt: new Date(r.created_at).toISOString(), updatedAt: new Date(r.updated_at).toISOString(),
 });
 
 export async function listKioskConfigs(storeId: number): Promise<KioskConfigRow[]> {
   const r = await pool.query(
-    `SELECT id, name, source, layout, created_at, updated_at FROM kiosk_configs WHERE store_id = $1 ORDER BY updated_at DESC LIMIT ${KIOSK_CONFIGS_MAX}`,
+    `SELECT c.id, c.name, c.source, c.layout, c.created_at, c.updated_at,
+            EXISTS (SELECT 1 FROM kiosk_layouts l WHERE l.store_id = c.store_id AND l.status = 'published' AND l.config_id = c.id) AS live
+       FROM kiosk_configs c WHERE c.store_id = $1 ORDER BY c.updated_at DESC LIMIT ${KIOSK_CONFIGS_MAX}`,
     [storeId],
   );
   return r.rows.map(configRow);
@@ -181,6 +186,61 @@ export async function createKioskConfig(ctx: StoreKioskContext, name: string, ra
     [ctx.storeId, await freeConfigName(ctx.storeId, name), JSON.stringify(layout), source, userId],
   );
   return configRow(r.rows[0]);
+}
+
+/**
+ * A new configuration made with one builder (owner, 2026-11-13: name it, choose the builder, then build): the
+ * business type's preset, with that builder and the category cards until screens are made.
+ */
+export async function newKioskConfig(ctx: StoreKioskContext, name: string, builder: "easy" | "picture", userId: number | null): Promise<KioskConfigRow | null> {
+  const base = defaultKioskLayout(ctx.category, ctx.legacy);
+  return createKioskConfig(ctx, name, { ...base, builder, menus: [], startMenuId: null, menuMode: "catalog" }, "saved", userId);
+}
+
+/** Saves a configuration's design. Its builder never changes (the builder is chosen when it's made). null: not this store's. */
+export async function saveKioskConfigLayout(ctx: StoreKioskContext, id: number, raw: unknown): Promise<{ config: KioskConfigRow; layout: KioskLayout } | null> {
+  const cur = await pool.query(`SELECT layout FROM kiosk_configs WHERE id = $1 AND store_id = $2`, [id, ctx.storeId]);
+  if (!cur.rows[0]) return null;
+  const builder = normalizeKioskLayout(cur.rows[0].layout, fallbackPreset(ctx)).builder;
+  const layout = normalizeKioskLayout({ ...(raw as object), builder }, fallbackPreset(ctx));
+  const r = await pool.query(
+    `UPDATE kiosk_configs c SET layout = $3::jsonb, updated_at = now() WHERE c.id = $1 AND c.store_id = $2
+     RETURNING c.id, c.name, c.source, c.layout, c.created_at, c.updated_at,
+       EXISTS (SELECT 1 FROM kiosk_layouts l WHERE l.store_id = c.store_id AND l.status = 'published' AND l.config_id = c.id) AS live`,
+    [id, ctx.storeId, JSON.stringify(layout)],
+  );
+  return { config: configRow(r.rows[0]), layout };
+}
+
+/** Puts a configuration on the kiosk: it becomes the draft and is published as the next version. */
+export async function publishKioskConfig(ctx: StoreKioskContext, id: number, userId: number | null, note: string | null): Promise<number | null> {
+  const found = await kioskConfigLayout(ctx, id);
+  if (!found) return null;
+  await saveKioskDraft(ctx, found.layout, userId);
+  const version = await publishKioskDraft(ctx, userId, note || found.name);
+  if (version != null) await pool.query(`UPDATE kiosk_layouts SET config_id = $3 WHERE store_id = $1 AND version = $2`, [ctx.storeId, version, id]);
+  return version;
+}
+
+/**
+ * The first time a business opens the configurations, what it already has becomes configurations: "My kiosk"
+ * (what is on the kiosk now, marked as live), and its unpublished draft if that is different. Later, if no
+ * configuration is the kiosk's (published before configurations), "My kiosk" is made for what the kiosk shows.
+ */
+export async function ensureKioskConfigs(ctx: StoreKioskContext, userId: number | null): Promise<void> {
+  const configs = await listKioskConfigs(ctx.storeId);
+  if (configs.some((c) => c.live)) return;
+  const published = await publishedKioskLayout(ctx);
+  // Configurations saved before 2026-11-13 aren't marked as the kiosk's: what the kiosk shows still gets its own.
+  if (configs.length && published.version == null) return;
+  const draft = await draftKioskLayout(ctx);
+  const mine = await createKioskConfig(ctx, "My kiosk", published.layout, "saved", userId);
+  if (mine && published.version != null) {
+    await pool.query(`UPDATE kiosk_layouts SET config_id = $2 WHERE store_id = $1 AND status = 'published'`, [ctx.storeId, mine.id]);
+  }
+  if (!configs.length && draft.savedAt && !sameKioskLayout(draft.layout, published.layout)) {
+    await createKioskConfig(ctx, "My kiosk (changes not on the kiosk yet)", draft.layout, "saved", userId);
+  }
 }
 
 export async function renameKioskConfig(storeId: number, id: number, name: string): Promise<KioskConfigRow | null> {

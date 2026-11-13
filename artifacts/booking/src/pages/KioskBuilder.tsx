@@ -1,19 +1,19 @@
 /**
- * Kiosk Builder (plans/kiosk-builder.md) — the owner shapes the self check-in kiosk: starting design, look,
- * welcome screen, steps, rules and words, with a live preview of the kiosk beside it.
+ * Kiosk Builder › one kiosk configuration (plans/kiosk-builder.md), opened from the start page (KioskConfigsHome).
+ * A configuration is made with one builder and keeps it (owner, 2026-11-13): the Easy builder (category cards or
+ * button grids made from the catalog) or the Picture builder (the owner's own pictures with tap spots). The tabs
+ * are the kiosk's screens; a click on a part of the screen opens its setting.
  *
- * Every change saves to the draft by itself (PUT /api/kiosk-builder/draft) and the preview reloads it; the
- * kiosk in the salon changes only when the owner publishes. Published versions are kept: History loads any of
- * them back into the draft.
+ * Every change saves to the configuration by itself (PUT /api/kiosk-builder/configs/:id/layout) and the preview
+ * (?preview=config-<id>) reloads it; the kiosk changes only when the owner presses "Put on my kiosk".
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowDown, ArrowLeft, ArrowUp, CircleHelp, ExternalLink, FolderOpen, History, Loader2, Upload } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import { ArrowDown, ArrowLeft, ArrowUp, CircleHelp, ExternalLink, Loader2, Upload } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -23,29 +23,18 @@ import { translations } from "@/lib/kioskTranslations";
 import {
   KIOSK_LIMITS, normalizeSteps, type KioskLayout, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
-import type { BusinessType, BusinessTypeKey } from "@shared/kiosk/businessTypes";
+import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensEditor, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
-import { SECTION_HELP, type HelpTopicId } from "@/pages/kiosk-builder/help";
+import type { HelpTopicId } from "@/pages/kiosk-builder/help";
+import { BUILDERS } from "@/pages/KioskConfigsHome";
 import { currentStaffTitle, STAFF_TEXT_KEYS, STAFF_TITLES, staffTextFor } from "@shared/kiosk/presets";
 
-interface BuilderState {
-  businessType: BusinessType;
-  draft: KioskLayout;
-  draftSavedAt: string | null;
-  published: KioskLayout;
-  publishedVersion: number | null;
-  unpublishedChanges: boolean;
-  businessTypes?: BusinessType[];
-  presets?: Array<{ key: BusinessTypeKey; name: string; description: string }>;
-  textKeys?: KioskTextKey[];
-}
-interface ConfigRow { id: number; name: string; source: "saved" | "imported"; builder: "easy" | "picture"; createdAt: string; updatedAt: string }
-interface ImportResult { name: string; unmatched: { services: string[]; addons: string[] }; createdExtras: string[] }
-interface VersionRow { version: number; status: "published" | "archived"; note: string | null; publishedAt: string }
+interface ConfigRow { id: number; name: string; builder: "easy" | "picture"; live: boolean; updatedAt: string }
+interface ConfigState { config: ConfigRow; layout: KioskLayout; businessType: BusinessType; textKeys: KioskTextKey[] }
 
 const LANG_NAMES: Record<KioskLang, string> = { en: "English", es: "Español", vi: "Tiếng Việt", zh: "中文", ko: "한국어" };
 
@@ -86,18 +75,23 @@ const FRAMES = {
   portrait: { w: 720, h: 1280, name: "15\" kiosk" },
 } as const;
 
-/** The kiosk's screens, in the order clients see them: the editor's tabs. */
-type ScreenKey = "welcome" | "phone" | "categories" | "services" | "addons" | "staff" | "review" | "ticket";
-const SCREENS: Array<{ key: ScreenKey; name: string; preview: KioskPreviewTarget; about: string }> = [
+/** The kiosk's screens, in the order clients see them: the editor's tabs. "screens" is the Picture builder's own screens. */
+type ScreenKey = "welcome" | "phone" | "categories" | "services" | "screens" | "addons" | "staff" | "review" | "ticket";
+const ALL_SCREENS: Array<{ key: ScreenKey; name: string; preview: KioskPreviewTarget; about: string }> = [
   { key: "welcome", name: "Welcome", preview: "welcome", about: "The first thing clients see. A tap anywhere starts the check-in." },
   { key: "phone", name: "Phone number", preview: "phone", about: "Clients type their mobile number." },
   { key: "categories", name: "Categories", preview: "category", about: "Clients choose what kind of service they want." },
   { key: "services", name: "Services", preview: "services", about: "Clients choose their service." },
+  { key: "screens", name: "Your screens", preview: "category", about: "Your pictures. Clients tap the spots on them to choose." },
   { key: "addons", name: "Add-ons", preview: "addons", about: "Clients can add extras to their service." },
   { key: "staff", name: "Staff", preview: "provider", about: "Clients choose who does their service." },
   { key: "review", name: "Review", preview: "review", about: "Clients check their visit, then press Check In." },
   { key: "ticket", name: "Ticket", preview: "ticket", about: "Clients see they're checked in." },
 ];
+
+/** Each builder's tabs: the Picture builder's own screens take the place of Categories and Services. */
+const screensFor = (builder: "easy" | "picture") =>
+  ALL_SCREENS.filter((x) => (builder === "picture" ? x.key !== "categories" && x.key !== "services" : x.key !== "screens"));
 
 /** One setting on the right. Lights up when the owner clicks its part of the screen. */
 function Field({ id, focus, title, about, children }: { id: string; focus: string | null; title: string; about?: string; children: React.ReactNode }) {
@@ -158,7 +152,8 @@ const selectClass = "h-9 rounded-md border border-slate-200 bg-white px-2 text-s
 
 export default function KioskBuilder() {
   const { toast } = useToast();
-  const [state, setState] = useState<BuilderState | null>(null);
+  const id = Number(useParams().id);
+  const [state, setState] = useState<ConfigState | null>(null);
   const [draft, setDraft] = useState<KioskLayout | null>(null);
   const [slug, setSlug] = useState<string | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -168,57 +163,50 @@ export default function KioskBuilder() {
   const [openLang, setOpenLang] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
-  const [publishNote, setPublishNote] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [versions, setVersions] = useState<VersionRow[] | null>(null);
-  const [confirm, setConfirm] = useState<null | { title: string; body: string; run: () => Promise<void> }>(null);
-  const [presetPick, setPresetPick] = useState<BusinessTypeKey | "">("");
   // The screen being edited (the tabs), the part of it clicked on (data-kx-edit), and the Style panel.
   const [scr, setScr] = useState<ScreenKey>("welcome");
   const [focus, setFocus] = useState<string | null>(null);
   const [styleOpen, setStyleOpen] = useState(false);
-  // Categories: the owner chose to make their own screens (the grid editor) instead of the category cards.
+  // Easy builder › Categories: the owner chose to make their own button screens instead of the category cards.
   const [ownScreens, setOwnScreens] = useState(false);
   const extrasStore = useKioskExtras();
   // The guide, behind Help (it doesn't open by itself: the one-line hint under the tabs is the start).
   const [helpOpen, setHelpOpen] = useState(false);
   const [helpTopic, setHelpTopic] = useState<HelpTopicId>("start");
   const openHelp = (t: HelpTopicId) => { setHelpTopic(t); setHelpOpen(true); };
-  // Screens tab: editing the screen, or the live kiosk preview (the same one the Settings tab shows).
+  // Own screens: editing the screen, or the live kiosk preview.
   const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
-  // Saved configurations (named designs to load, export, import).
-  const [configsOpen, setConfigsOpen] = useState(false);
-  const [configs, setConfigs] = useState<ConfigRow[] | null>(null);
-  const [configName, setConfigName] = useState("");
-  const [configBusy, setConfigBusy] = useState(false);
-  const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
   // The salon's catalog as its kiosk sees it, for the screen editor.
   const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; addons: CatalogAddon[]; storeName: string } | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  // A callback ref: the preview box is drawn again when the section changes, and the fit must follow it.
+  // A callback ref: the preview box is drawn again when the screen changes, and the fit must follow it.
   const [previewBox, setPreviewBox] = useState<HTMLDivElement | null>(null);
   const [scale, setScale] = useState(0.5);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSeq = useRef(0);
 
+  const builder = draft?.builder ?? "easy";
+  const SCREENS = screensFor(builder);
+  const editingOwn = (scr === "categories" && (ownScreens || draft?.menuMode === "screens")) || scr === "screens";
+
   // ── Load ──
   useEffect(() => {
+    if (!id) { setLoadError("That configuration doesn't exist."); return; }
     Promise.all([
-      api<BuilderState>("/api/kiosk-builder"),
+      api<ConfigState>(`/api/kiosk-builder/configs/${id}`),
       api<{ bookingSlug: string | null }>("/api/kiosk-settings"),
-    ]).then(([b, k]) => {
-      setState(b); setDraft(b.draft); setSlug(k.bookingSlug);
+    ]).then(([c, k]) => {
+      setState(c); setDraft(c.layout); setSlug(k.bookingSlug);
     }).catch((e) => setLoadError(e.message));
-  }, []);
+  }, [id]);
   useEffect(() => {
-    if (!slug || !(scr === "categories" && ownScreens) || catalog) return;
-    api<any>(`/api/public/kiosk/${slug}/config?preview=draft`)
+    if (!slug || !editingOwn || catalog) return;
+    api<any>(`/api/public/kiosk/${slug}/config?preview=config-${id}`)
       .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }))
       .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
-  }, [slug, scr, ownScreens, catalog, toast]);
+  }, [slug, editingOwn, catalog, toast, id]);
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       const fd = new FormData();
@@ -241,10 +229,10 @@ export default function KioskBuilder() {
       if (e.origin !== window.location.origin) return;
       // The preview has loaded the design: show the screen being edited.
       if (e.data?.type === "kiosk-preview-ready") {
-        if (scr === "categories" && ownScreens && screensView === "preview" && pendingScreenRef.current) {
+        if (editingOwn && screensView === "preview" && pendingScreenRef.current) {
           postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId: pendingScreenRef.current });
         } else {
-          postToPreview({ type: "kiosk-preview-goto", target: SCREENS.find((x) => x.key === scr)!.preview });
+          postToPreview({ type: "kiosk-preview-goto", target: (ALL_SCREENS.find((x) => x.key === scr) ?? ALL_SCREENS[0]).preview });
         }
       }
       // A part of the screen was clicked: open its setting.
@@ -252,7 +240,7 @@ export default function KioskBuilder() {
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [scr, ownScreens, screensView, postToPreview]);
+  }, [scr, editingOwn, screensView, postToPreview]);
 
   useEffect(() => {
     const box = previewBox;
@@ -268,9 +256,14 @@ export default function KioskBuilder() {
   }, [frame, previewBox]);
 
   // ── Save (every change, after a short pause) ──
-  const applyState = (b: BuilderState) => setState((s) => ({ ...s, ...b }));
   const draftRef = useRef<KioskLayout | null>(null);
   draftRef.current = draft;
+  const saveNow = async (layout: KioskLayout) => {
+    const r = await api<{ config: ConfigRow; layout: KioskLayout }>(`/api/kiosk-builder/configs/${id}/layout`, {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout }),
+    });
+    setState((s) => (s ? { ...s, config: r.config } : s));
+  };
   const update = (change: (d: KioskLayout) => KioskLayout) => {
     const d = draftRef.current;
     if (!d) return;
@@ -283,25 +276,15 @@ export default function KioskBuilder() {
       saveTimer.current = null;
       const seq = ++saveSeq.current;
       try {
-        const b = await api<BuilderState>("/api/kiosk-builder/draft", {
-          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: next }),
-        });
+        await saveNow(next);
         if (seq !== saveSeq.current) return;
-        applyState(b); setSaving("saved"); setSaveError("");
+        setSaving("saved"); setSaveError("");
         postToPreview({ type: "kiosk-preview-refresh" });
       } catch (e: any) {
         if (seq !== saveSeq.current) return;
         setSaving("error"); setSaveError(e.message);
       }
     }, 600);
-  };
-
-  // Replaces the whole draft from the server's answer (reset, restore).
-  const takeServerDraft = (b: BuilderState) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveSeq.current++;
-    applyState(b); setDraft(b.draft); setSaving("saved"); setSaveError("");
-    postToPreview({ type: "kiosk-preview-refresh" });
   };
 
   const publish = async () => {
@@ -312,77 +295,18 @@ export default function KioskBuilder() {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
         saveSeq.current++;
-        applyState(await api<BuilderState>("/api/kiosk-builder/draft", {
-          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: draftRef.current }),
-        }));
+        await saveNow(draftRef.current);
+        setSaving("saved");
       }
-      const b = await api<BuilderState & { version: number }>("/api/kiosk-builder/publish", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: publishNote }),
-      });
-      applyState(b); setSaving("saved");
-      setPublishOpen(false); setPublishNote(""); setVersions(null);
-      toast({ title: `Version ${b.version} is live`, description: "Your kiosk shows it the next time it's idle." });
+      await api(`/api/kiosk-builder/configs/${id}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      setState((s) => (s ? { ...s, config: { ...s.config, live: true } } : s));
+      setPublishOpen(false);
+      toast({ title: "It's on your kiosk", description: "Your kiosk shows it the next time no one is using it." });
     } catch (e: any) {
-      toast({ title: "Couldn't publish", description: e.message, variant: "destructive" });
+      toast({ title: "Couldn't put it on your kiosk", description: e.message, variant: "destructive" });
     } finally {
       setPublishing(false);
     }
-  };
-
-  const loadConfigs = async () => {
-    try { setConfigs((await api<{ configs: ConfigRow[] }>("/api/kiosk-builder/configs")).configs); }
-    catch (e: any) { toast({ title: "Couldn't load your configurations", description: e.message, variant: "destructive" }); }
-  };
-  const openConfigs = () => { setConfigsOpen(true); setImportResult(null); void loadConfigs(); };
-  const saveConfig = async () => {
-    if (!configName.trim()) return;
-    setConfigBusy(true);
-    try {
-      // The design as it is on screen right now.
-      if (saveTimer.current && draftRef.current) {
-        clearTimeout(saveTimer.current); saveTimer.current = null; saveSeq.current++;
-        applyState(await api<BuilderState>("/api/kiosk-builder/draft", {
-          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: draftRef.current }),
-        }));
-        setSaving("saved");
-      }
-      const { config } = await api<{ config: ConfigRow }>("/api/kiosk-builder/configs", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: configName }),
-      });
-      setConfigName("");
-      toast({ title: `Saved as "${config.name}"` });
-      await loadConfigs();
-    } catch (e: any) {
-      toast({ title: "Couldn't save the configuration", description: e.message, variant: "destructive" });
-    } finally { setConfigBusy(false); }
-  };
-  const importConfig = async (fileObj: File) => {
-    setConfigBusy(true); setImportResult(null);
-    try {
-      if (fileObj.size > 2 * 1024 * 1024) throw new Error("That file is too big for a kiosk configuration (2 MB at most).");
-      let file: unknown;
-      try { file = JSON.parse(await fileObj.text()); } catch { throw new Error("This isn't a Certxa kiosk configuration file."); }
-      const r = await api<{ config: ConfigRow; unmatched: ImportResult["unmatched"]; createdExtras?: string[] }>("/api/kiosk-builder/configs/import", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }),
-      });
-      setImportResult({ name: r.config.name, unmatched: r.unmatched, createdExtras: r.createdExtras ?? [] });
-      await loadConfigs();
-    } catch (e: any) {
-      toast({ title: "Couldn't import the file", description: e.message, variant: "destructive" });
-    } finally { setConfigBusy(false); }
-  };
-  const renameConfig = async () => {
-    if (!renaming?.name.trim()) return;
-    try {
-      await api(`/api/kiosk-builder/configs/${renaming.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: renaming.name }) });
-      setRenaming(null); await loadConfigs();
-    } catch (e: any) { toast({ title: "Couldn't rename it", description: e.message, variant: "destructive" }); }
-  };
-
-  const openHistory = async () => {
-    setHistoryOpen(true);
-    try { setVersions((await api<{ versions: VersionRow[] }>("/api/kiosk-builder/versions")).versions); }
-    catch (e: any) { toast({ title: "Couldn't load the history", description: e.message, variant: "destructive" }); }
   };
 
   const uploadWelcome = async (file: File) => {
@@ -401,17 +325,13 @@ export default function KioskBuilder() {
   };
 
   const textKeys = state?.textKeys ?? [];
-  const presetName = useMemo(
-    () => (k: BusinessTypeKey) => state?.presets?.find((p) => p.key === k)?.name ?? k,
-    [state?.presets],
-  );
 
   if (loadError) {
     return (
       <AppLayout>
         <div className="max-w-xl mx-auto p-8 text-center space-y-3">
           <p className="text-slate-700">{loadError}</p>
-          <Link to="/settings/kiosk" className="text-sm underline text-slate-600">Back to Check-in & Kiosk</Link>
+          <Link to="/kiosk-builder" className="text-sm underline text-slate-600">Back to your kiosk configurations</Link>
         </div>
       </AppLayout>
     );
@@ -444,7 +364,7 @@ export default function KioskBuilder() {
   const minuteChoices: number[] = [];
   for (let m = KIOSK_LIMITS.maxVisitMinutes.min; m <= KIOSK_LIMITS.maxVisitMinutes.max; m += 30) minuteChoices.push(m);
   const fmtMinutes = (m: number) => (m < 60 ? `${m} min` : `${m / 60} ${m === 60 ? "hour" : "hours"}`);
-  const previewUrl = slug ? `/kiosk/${slug}?preview=draft` : null;
+  const previewUrl = slug ? `/kiosk/${slug}?preview=config-${id}` : null;
   const staffTitle = currentStaffTitle(draft.text);
   const f = FRAMES[frame];
   /**
@@ -528,34 +448,60 @@ export default function KioskBuilder() {
     setScr(k); setFocus(null); setStyleOpen(false); setScreensView("edit");
     postToPreview({ type: "kiosk-preview-goto", target: SCREENS.find((x) => x.key === k)!.preview });
   };
-  const screen = SCREENS.find((x) => x.key === scr)!;
+  const screen = SCREENS.find((x) => x.key === scr) ?? SCREENS[0];
   const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");
+  // Easy builder › Categories: the category cards, or the owner's own button screens (the kiosk uses what's chosen).
+  const howField = (
+    <Field id="how" focus={focus} title="How clients pick a service">
+      <div className="grid grid-cols-2 gap-2">
+        {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
+          <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
+            onClick={() => { setOwnScreens(own); update((d) => ({ ...d, menuMode: own && d.startMenuId ? "screens" : "catalog" })); }}
+            className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+            <p className="text-sm font-medium text-slate-800">{name}</p>
+            <p className="text-xs text-slate-500">{about}</p>
+          </button>
+        ))}
+      </div>
+    </Field>
+  );
+  // How many services one client can pick, for both builders.
+  const limitsField = (
+    <Field id="limits" focus={focus} title="How many services">
+      <Row label="Services one client can pick">
+        <select className={selectClass} value={draft.services.maxServices}
+          onChange={(e) => update((d) => ({ ...d, services: { ...d.services, maxServices: Number(e.target.value) } }))}>
+          {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </Row>
+      <Row label="Longest visit" about="Only with more than one service">
+        <select className={selectClass} value={draft.services.maxVisitMinutes}
+          onChange={(e) => update((d) => ({ ...d, services: { ...d.services, maxVisitMinutes: Number(e.target.value) } }))}>
+          {minuteChoices.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
+        </select>
+      </Row>
+    </Field>
+  );
 
   return (
     <AppLayout fullHeight>
       <div className="h-full flex flex-col bg-slate-50">
         {/* ── Top bar ── */}
         <div className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-3 border-b border-slate-200 bg-white">
-          <Link to="/settings/kiosk" className="text-slate-500 hover:text-slate-800" aria-label="Back"><ArrowLeft className="w-5 h-5" /></Link>
+          <Link to="/kiosk-builder" className="text-slate-500 hover:text-slate-800" aria-label="Back to your kiosk configurations"><ArrowLeft className="w-5 h-5" /></Link>
           <div className="min-w-0">
-            <h1 className="font-semibold text-slate-900 leading-tight">Kiosk Builder</h1>
+            <h1 className="font-semibold text-slate-900 leading-tight" data-testid="config-title">{state.config.name}</h1>
             <p className="text-xs text-slate-500">
-              {state.publishedVersion
-                ? `Live: version ${state.publishedVersion}`
-                : `Live: the ${presetName(state.published.preset)} design (not changed yet)`}
-              {state.unpublishedChanges ? " · You have changes that aren't live yet" : ""}
+              {BUILDERS[builder].name} · {state.config.live ? "On your kiosk now" : "Not on your kiosk"}
             </p>
           </div>
           <div className="ml-auto flex items-center gap-3">
             <span className="text-xs text-slate-500" data-testid="kiosk-builder-save-status">
-              {saving === "saving" ? "Saving…" : saving === "saved" ? "Draft saved" : saving === "error" ? "Not saved" : ""}
+              {saving === "saving" ? "Saving…" : saving === "saved" ? "Saved" : saving === "error" ? "Not saved" : ""}
             </span>
             <Button variant="outline" size="sm" onClick={() => openHelp(helpTopic)} className="gap-1.5" data-testid="kiosk-builder-help"><CircleHelp className="w-4 h-4" /> Help</Button>
-            <Button variant="outline" size="sm" onClick={openConfigs} className="gap-1.5" data-testid="kiosk-builder-configs"><FolderOpen className="w-4 h-4" /> Configurations</Button>
-            <Button variant="outline" size="sm" onClick={openHistory} className="gap-1.5"><History className="w-4 h-4" /> History</Button>
-            <Button size="sm" disabled={!state.unpublishedChanges || saving === "saving" || saving === "error"} onClick={() => setPublishOpen(true)}
-              data-testid="kiosk-builder-publish">
-              Publish
+            <Button size="sm" disabled={saving === "saving" || saving === "error"} onClick={() => setPublishOpen(true)} data-testid="kiosk-builder-publish">
+              {state.config.live ? "Update my kiosk" : "Put on my kiosk"}
             </Button>
           </div>
         </div>
@@ -578,7 +524,7 @@ export default function KioskBuilder() {
           </div>
         </div>
         <div className="shrink-0 px-5 py-2 text-sm text-slate-600 bg-slate-50 border-b border-slate-200" data-testid="builder-hint">
-          <span className="font-medium text-slate-800">How it works:</span> pick a screen above, click what you want to change on it, then press Publish when you're happy.{" "}
+          <span className="font-medium text-slate-800">How it works:</span> pick a screen above, click what you want to change on it. Changes save by themselves; your kiosk changes when you press {state.config.live ? "Update my kiosk" : "Put on my kiosk"}.{" "}
           <button type="button" className="underline" onClick={() => openHelp("start")}>More help</button>
         </div>
 
@@ -629,40 +575,15 @@ export default function KioskBuilder() {
             </Field>
           ));
 
-          if (usingOwn) {
-            if (!catalog) return layout(renderPreview(), <>{
-          <Field id="how" focus={focus} title="How clients pick a service">
-            <div className="grid grid-cols-2 gap-2">
-              {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
-                <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
-                  onClick={() => { setOwnScreens(own); if (!own && draft.menuMode === "screens") update((d) => ({ ...d, menuMode: "catalog" })); }}
-                  className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
-                  <p className="text-sm font-medium text-slate-800">{name}</p>
-                  <p className="text-xs text-slate-500">{about}</p>
-                </button>
-              ))}
-            </div>
-          </Field>
-          }<div className="flex items-center gap-2 text-slate-500 py-6"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div></>);
+          // Own screens: the Easy builder's button grids (Categories › My own screens) or the Picture builder's pictures.
+          if (usingOwn || scr === "screens") {
+            const top = builder === "easy" ? howField : limitsField;
+            if (!catalog) return layout(renderPreview(), <>{top}<div className="flex items-center gap-2 text-slate-500 py-6"><Loader2 className="w-5 h-5 animate-spin" /> Loading your services…</div></>);
             return (
               <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
                 renderPreview={(extra) => renderPreview(extra, false)} view={screensView} onView={setScreensView} extras={extrasStore} onHelp={openHelp}
                 previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
-                {({ panel, canvas }) => layout(canvas ?? renderPreview(undefined, false), <>
-          <Field id="how" focus={focus} title="How clients pick a service">
-            <div className="grid grid-cols-2 gap-2">
-              {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
-                <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
-                  onClick={() => { setOwnScreens(own); if (!own && draft.menuMode === "screens") update((d) => ({ ...d, menuMode: "catalog" })); }}
-                  className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
-                  <p className="text-sm font-medium text-slate-800">{name}</p>
-                  <p className="text-xs text-slate-500">{about}</p>
-                </button>
-              ))}
-            </div>
-          </Field>
-                  {panel}
-                </>)}
+                {({ panel, canvas }) => layout(canvas ?? renderPreview(undefined, false), <>{top}{panel}</>)}
               </ScreensEditor>
             );
           }
@@ -709,18 +630,7 @@ export default function KioskBuilder() {
               </Field>
             ),
             categories: (<>
-          <Field id="how" focus={focus} title="How clients pick a service">
-            <div className="grid grid-cols-2 gap-2">
-              {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
-                <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
-                  onClick={() => { setOwnScreens(own); if (!own && draft.menuMode === "screens") update((d) => ({ ...d, menuMode: "catalog" })); }}
-                  className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
-                  <p className="text-sm font-medium text-slate-800">{name}</p>
-                  <p className="text-xs text-slate-500">{about}</p>
-                </button>
-              ))}
-            </div>
-          </Field>
+              {howField}
               <Field id="category-cards" focus={focus} title="Category cards" about="One card for each category in your catalog. Card pictures come from Catalog › Categories.">
                 {showSwitch("category", "Show this screen")}
                 <p className="text-xs text-slate-500">Off: clients go straight to one list of all your services.</p>
@@ -732,20 +642,7 @@ export default function KioskBuilder() {
                 <Row label="Show prices"><Switch checked={draft.services.showPrice} onCheckedChange={(v) => update((d) => ({ ...d, services: { ...d.services, showPrice: v } }))} /></Row>
                 <Row label="Show how long they take"><Switch checked={draft.services.showDuration} onCheckedChange={(v) => update((d) => ({ ...d, services: { ...d.services, showDuration: v } }))} /></Row>
               </Field>
-              <Field id="limits" focus={focus} title="How many services">
-                <Row label="Services one client can pick">
-                  <select className={selectClass} value={draft.services.maxServices}
-                    onChange={(e) => update((d) => ({ ...d, services: { ...d.services, maxServices: Number(e.target.value) } }))}>
-                    {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </Row>
-                <Row label="Longest visit" about="Only with more than one service">
-                  <select className={selectClass} value={draft.services.maxVisitMinutes}
-                    onChange={(e) => update((d) => ({ ...d, services: { ...d.services, maxVisitMinutes: Number(e.target.value) } }))}>
-                    {minuteChoices.map((m) => <option key={m} value={m}>{fmtMinutes(m)}</option>)}
-                  </select>
-                </Row>
-              </Field>
+              {limitsField}
               <Field id="smart" focus={focus} title="Suggestions">
                 <Row label="Suggest a returning client's usual service"><Switch checked={draft.smartCheckin} onCheckedChange={(v) => update((d) => ({ ...d, smartCheckin: v }))} /></Row>
               </Field>
@@ -790,6 +687,7 @@ export default function KioskBuilder() {
             review: (<>
               {textField("yourStylist", "Staff label")}
             </>),
+            screens: null,
             ticket: (<>
               <Field id="ticket-timer" focus={focus} title="How long this screen stays">
                 <select className={`${selectClass} w-full`} value={draft.timing.ticketResetSeconds}
@@ -807,178 +705,26 @@ export default function KioskBuilder() {
         })()}
       </div>
 
-      {/* ── Publish ── */}
+      {/* ── Put on my kiosk ── */}
       <AlertDialog open={publishOpen} onOpenChange={setPublishOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Publish to your kiosk?</AlertDialogTitle>
+            <AlertDialogTitle>{state.config.live ? "Update your kiosk?" : `Put "${state.config.name}" on your kiosk?`}</AlertDialogTitle>
             <AlertDialogDescription>
-              Your kiosk switches to this design the next time no one is using it. You can go back to any earlier version from History.
+              Your kiosk switches to it the next time no one is using it. You can put another configuration back any time from your kiosk configurations.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <Input placeholder="Note for History (optional)" maxLength={200} value={publishNote} onChange={(e) => setPublishNote(e.target.value)} />
           <AlertDialogFooter>
             <AlertDialogCancel disabled={publishing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction disabled={publishing} onClick={(e) => { e.preventDefault(); void publish(); }}>
-              {publishing ? "Publishing…" : "Publish"}
+            <AlertDialogAction disabled={publishing} onClick={(e) => { e.preventDefault(); void publish(); }} data-testid="kiosk-builder-publish-confirm">
+              {publishing ? "Putting it on…" : state.config.live ? "Update my kiosk" : "Put on my kiosk"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Confirm (start over, restore) ── */}
-      <AlertDialog open={!!confirm} onOpenChange={(o) => { if (!o) setConfirm(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{confirm?.title}</AlertDialogTitle>
-            <AlertDialogDescription>{confirm?.body}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={async () => {
-              const c = confirm; setConfirm(null);
-              try { await c?.run(); } catch (e: any) { toast({ title: "Something went wrong", description: e.message, variant: "destructive" }); }
-            }}>Continue</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── Configurations ── */}
-      <Sheet open={configsOpen} onOpenChange={setConfigsOpen}>
-        <SheetContent className="overflow-y-auto">
-          <SheetHeader><SheetTitle>Kiosk configurations</SheetTitle></SheetHeader>
-          <p className="text-sm text-slate-500 mt-1">
-            Save designs under a name, load one back into your draft, or export one to a file to keep or use at another location.
-            Nothing here changes your kiosk until you publish.{" "}
-            <button type="button" className="underline text-slate-700" onClick={() => openHelp("configurations")}>How this works</button>
-          </p>
-
-          <div className="mt-5 space-y-2">
-            <p className="text-sm font-medium text-slate-800">Save this design</p>
-            <div className="flex gap-2">
-              <Input placeholder="Name, e.g. Spring menu" maxLength={60} value={configName} onChange={(e) => setConfigName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") void saveConfig(); }} data-testid="config-name" />
-              <Button disabled={!configName.trim() || configBusy} onClick={() => void saveConfig()} data-testid="config-save">Save</Button>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-2">
-            <p className="text-sm font-medium text-slate-800">Import a file</p>
-            <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-9 cursor-pointer bg-white hover:bg-slate-50">
-              {configBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Choose a .certxa-kiosk.json file
-              <input type="file" accept=".json,application/json" className="hidden" disabled={configBusy} data-testid="config-import"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) void importConfig(f); e.target.value = ""; }} />
-            </label>
-            <p className="text-xs text-slate-500">Buttons and tap spots are matched to your own services and add-ons by name.</p>
-            {importResult && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 space-y-1" data-testid="config-import-result">
-                <p>Imported as "{importResult.name}".</p>
-                {importResult.createdExtras.length > 0 && (
-                  <p className="text-xs text-slate-600">Kiosk Extras added from the file: {importResult.createdExtras.join(", ")}.</p>
-                )}
-                {importResult.unmatched.services.length + importResult.unmatched.addons.length === 0
-                  ? <p className="text-xs text-slate-500">Every button and tap spot found its service.</p>
-                  : <>
-                      <p className="text-xs text-amber-700">Not on your menu, so those buttons and tap spots were left off:</p>
-                      <ul className="text-xs text-slate-600 list-disc pl-4">
-                        {[...importResult.unmatched.services, ...importResult.unmatched.addons.map((a) => `${a} (add-on)`)].map((n) => <li key={n}>{n}</li>)}
-                      </ul>
-                    </>}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 space-y-2">
-            <p className="text-sm font-medium text-slate-800">Saved</p>
-            {configs == null ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              : configs.length === 0 ? <p className="text-sm text-slate-500">No saved configurations yet.</p>
-              : configs.map((c) => (
-                <div key={c.id} className="border border-slate-200 rounded-xl p-3 space-y-2" data-testid="config-row">
-                  {renaming?.id === c.id ? (
-                    <div className="flex gap-2">
-                      <Input value={renaming.name} maxLength={60} autoFocus onChange={(e) => setRenaming({ id: c.id, name: e.target.value })}
-                        onKeyDown={(e) => { if (e.key === "Enter") void renameConfig(); if (e.key === "Escape") setRenaming(null); }} />
-                      <Button size="sm" onClick={() => void renameConfig()}>Save</Button>
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-sm font-medium text-slate-800">{c.name}</p>
-                      <p className="text-xs text-slate-500">{c.builder === "picture" ? "Picture builder" : "Easy builder"} · {c.source === "imported" ? "Imported" : "Saved"} {new Date(c.updatedAt).toLocaleString()}</p>
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button variant="outline" size="sm" data-testid="config-load" onClick={() => setConfirm({
-                      title: `Load "${c.name}" into your draft?`,
-                      body: "Your draft is replaced by this configuration. Your kiosk doesn't change until you publish. Save your draft as a configuration first if you want to keep it.",
-                      run: async () => { takeServerDraft(await api<BuilderState>(`/api/kiosk-builder/configs/${c.id}/load`, { method: "POST" })); setConfigsOpen(false); },
-                    })}>Load</Button>
-                    <Button variant="outline" size="sm" asChild data-testid="config-export">
-                      <a href={`/api/kiosk-builder/configs/${c.id}/export`} download>Export</a>
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setRenaming({ id: c.id, name: c.name })}>Rename</Button>
-                    <Button variant="ghost" size="sm" onClick={() => setConfirm({
-                      title: `Delete "${c.name}"?`,
-                      body: "The saved configuration is deleted. Your draft and your kiosk don't change.",
-                      run: async () => { await api(`/api/kiosk-builder/configs/${c.id}`, { method: "DELETE" }); await loadConfigs(); },
-                    })}>Delete</Button>
-                  </div>
-                </div>
-              ))}
-          </div>
-          <div className="mt-8 pt-5 border-t border-slate-200 space-y-2">
-            <p className="text-sm font-medium text-slate-800">Start over from a business-type design</p>
-            <p className="text-xs text-slate-500">
-              Replaces your whole draft (look, pictures, words, steps and screens) with Certxa's design for that kind of business.
-              Save this design above first if you want to keep it. Your kiosk doesn't change until you publish.
-            </p>
-              <div className="flex gap-2">
-                <select className={`${selectClass} flex-1 min-w-0 w-0`} value={presetPick} onChange={(e) => setPresetPick(e.target.value as BusinessTypeKey)}
-                  data-testid="kiosk-builder-preset">
-                  <option value="">Choose a design…</option>
-                  {state.presets?.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
-                </select>
-                <Button variant="outline" size="sm" className="h-9" disabled={!presetPick} onClick={() => presetPick && setConfirm({
-                  title: `Start over from ${presetName(presetPick)}?`,
-                  body: "Your draft is replaced by this design. The kiosk in your salon doesn't change until you publish.",
-                  run: async () => {
-                    takeServerDraft(await api<BuilderState>("/api/kiosk-builder/reset", {
-                      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preset: presetPick }),
-                    }));
-                    setPresetPick("");
-                  },
-                })}>Use</Button>
-              </div>
-              {presetPick && <p className="text-xs text-slate-500">{state.presets?.find((p) => p.key === presetPick)?.description}</p>}
-          </div>
-        </SheetContent>
-      </Sheet>
-
       <HelpGuide open={helpOpen} onOpenChange={setHelpOpen} topic={helpTopic} onTopic={setHelpTopic} />
 
-      {/* ── History ── */}
-      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-        <SheetContent>
-          <SheetHeader><SheetTitle>History</SheetTitle></SheetHeader>
-          <div className="mt-4 space-y-2">
-            {versions == null ? <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-              : versions.length === 0 ? <p className="text-sm text-slate-500">Nothing published yet.</p>
-              : versions.map((v) => (
-                <div key={v.version} className="border border-slate-200 rounded-xl p-3 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-800">Version {v.version}{v.status === "published" ? " · Live" : ""}</p>
-                    <p className="text-xs text-slate-500">{new Date(v.publishedAt).toLocaleString()}</p>
-                    {v.note && <p className="text-xs text-slate-600 mt-1">{v.note}</p>}
-                  </div>
-                  <Button variant="outline" size="sm" onClick={() => setConfirm({
-                    title: `Load version ${v.version} into your draft?`,
-                    body: "Your draft is replaced by this version. Publish it to put it back on your kiosk.",
-                    run: async () => { takeServerDraft(await api<BuilderState>(`/api/kiosk-builder/versions/${v.version}/restore`, { method: "POST" })); setHistoryOpen(false); },
-                  })}>Load</Button>
-                </div>
-              ))}
-          </div>
-        </SheetContent>
-      </Sheet>
     </AppLayout>
   );
 }

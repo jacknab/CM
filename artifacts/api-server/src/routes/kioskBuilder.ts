@@ -36,7 +36,7 @@ import { KIOSK_TEXT_KEYS } from "@shared/kiosk/text";
 import { buildKioskConfigFile, cleanConfigName, KIOSK_CONFIG_FILE_MAX_BYTES, missingKioskExtras, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
 import {
   cleanKioskExtra, createKioskExtra, listKioskExtras, removeKioskExtra, updateKioskExtra, KIOSK_EXTRAS_MAX,
-  createKioskConfig, deleteKioskConfig, kioskCatalogRefs, kioskConfigLayout, listKioskConfigs, renameKioskConfig, KIOSK_CONFIGS_MAX,
+  createKioskConfig, deleteKioskConfig, ensureKioskConfigs, newKioskConfig, publishKioskConfig, saveKioskConfigLayout, kioskCatalogRefs, kioskConfigLayout, listKioskConfigs, renameKioskConfig, KIOSK_CONFIGS_MAX,
   draftKioskLayout, kioskContext, kioskVersionLayout, listKioskVersions, publishedKioskLayout,
   publishKioskDraft, sameKioskLayout, saveKioskDraft, type StoreKioskContext,
 } from "../lib/kioskLayouts";
@@ -167,7 +167,10 @@ const tooMany = `You can keep up to ${KIOSK_CONFIGS_MAX} configurations. Delete 
 router.get("/api/kiosk-builder/configs", ...guard, async (req: Request, res: Response) => {
   try {
     const ctx = await storeContext(req, res); if (!ctx) return;
-    res.json({ configs: await listKioskConfigs(ctx.storeId) });
+    // The first time: what the business already has becomes configurations ("My kiosk").
+    await ensureKioskConfigs(ctx, userIdOf(req));
+    const published = await publishedKioskLayout(ctx);
+    res.json({ configs: await listKioskConfigs(ctx.storeId), publishedVersion: published.version });
   } catch (err) {
     console.error("[kiosk-builder] configs", err);
     res.status(500).json({ error: "Couldn't load your configurations." });
@@ -179,12 +182,72 @@ router.post("/api/kiosk-builder/configs", ...guard, async (req: Request, res: Re
     const ctx = await storeContext(req, res); if (!ctx) return;
     const name = cleanConfigName(req.body?.name);
     if (!name) return res.status(400).json({ error: "Give the configuration a name." });
-    const config = await createKioskConfig(ctx, name, (await draftKioskLayout(ctx)).layout, "saved", userIdOf(req));
+    const builder = req.body?.builder;
+    // A new configuration: named, then made with one builder (owner, 2026-11-13). Without a builder: a copy of the draft.
+    const config = builder === "easy" || builder === "picture"
+      ? await newKioskConfig(ctx, name, builder, userIdOf(req))
+      : await createKioskConfig(ctx, name, (await draftKioskLayout(ctx)).layout, "saved", userIdOf(req));
     if (!config) return res.status(409).json({ error: tooMany });
     res.json({ config });
   } catch (err) {
     console.error("[kiosk-builder] config save", err);
     res.status(500).json({ error: "Couldn't save the configuration." });
+  }
+});
+
+// ── One configuration, in its builder ──
+router.get("/api/kiosk-builder/configs/:id", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const found = await kioskConfigLayout(ctx, configId(req));
+    if (!found) return res.status(404).json({ error: "That configuration doesn't exist." });
+    const config = (await listKioskConfigs(ctx.storeId)).find((c) => c.id === configId(req))!;
+    const published = await publishedKioskLayout(ctx);
+    res.json({ config, layout: found.layout, businessType: businessTypeOf(ctx.category), textKeys: KIOSK_TEXT_KEYS, publishedVersion: published.version });
+  } catch (err) {
+    console.error("[kiosk-builder] config open", err);
+    res.status(500).json({ error: "Couldn't open the configuration." });
+  }
+});
+
+router.put("/api/kiosk-builder/configs/:id/layout", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const errors = validateKioskLayout(req.body?.layout);
+    if (errors.length) return res.status(400).json({ error: errors[0], errors });
+    const saved = await saveKioskConfigLayout(ctx, configId(req), req.body.layout);
+    if (!saved) return res.status(404).json({ error: "That configuration doesn't exist." });
+    res.json(saved);
+  } catch (err) {
+    console.error("[kiosk-builder] config layout save", err);
+    res.status(500).json({ error: "Couldn't save the kiosk." });
+  }
+});
+
+// Put this configuration on the kiosk.
+router.post("/api/kiosk-builder/configs/:id/publish", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const version = await publishKioskConfig(ctx, configId(req), userIdOf(req), typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 200) : null);
+    if (version == null) return res.status(404).json({ error: "That configuration doesn't exist." });
+    res.json({ version });
+  } catch (err) {
+    console.error("[kiosk-builder] config publish", err);
+    res.status(500).json({ error: "Couldn't put it on your kiosk." });
+  }
+});
+
+router.post("/api/kiosk-builder/configs/:id/duplicate", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    const found = await kioskConfigLayout(ctx, configId(req));
+    if (!found) return res.status(404).json({ error: "That configuration doesn't exist." });
+    const config = await createKioskConfig(ctx, `${found.name} copy`, found.layout, "saved", userIdOf(req));
+    if (!config) return res.status(409).json({ error: tooMany });
+    res.json({ config });
+  } catch (err) {
+    console.error("[kiosk-builder] config duplicate", err);
+    res.status(500).json({ error: "Couldn't copy the configuration." });
   }
 });
 

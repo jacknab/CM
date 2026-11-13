@@ -107,6 +107,7 @@ const LineDisplay = lazy(() => import("@/pages/line/LineDisplay"));
 const KioskCheckIn = lazy(() => import("@/pages/KioskCheckIn"));
 const KioskSetup = lazy(() => import("@/pages/KioskSetup"));
 const KioskBuilder = lazy(() => import("@/pages/KioskBuilder"));
+const KioskConfigsHome = lazy(() => import("@/pages/KioskConfigsHome"));
 const KioskTicket = lazy(() => import("@/pages/KioskTicket"));
 const FrontDeskDisplay = lazy(() => import("@/pages/FrontDeskDisplay"));
 const FrontDeskSetup = lazy(() => import("@/pages/FrontDeskSetup"));
@@ -804,7 +805,8 @@ function AppRoutes() {
       <Route path="/settings" element={<SettingsShell />} />
       <Route path="/settings/:section" element={<SettingsShell />} />
       <Route path="/kiosk-settings" element={<Navigate to="/settings/kiosk" replace />} />
-      <Route path="/kiosk-builder" element={<KioskBuilder />} />
+      <Route path="/kiosk-builder" element={<KioskConfigsHome />} />
+      <Route path="/kiosk-builder/:id" element={<KioskBuilder />} />
       <Route path="/subscription" element={<Navigate to="/billing" replace />} />
       <Route path="/walk-in-board" element={<WalkInBoard />} />
       <Route path="/walkins" element={<WalkInBoard />} />

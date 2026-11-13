@@ -141,6 +141,8 @@ export interface KioskStrings {
   addonNotForService: string;
   /** A Kiosk Extras group the client must choose from (the business's own group name, e.g. "Nail shape"). */
   chooseFromGroup: (group: string) => string;
+  /** A screen set to "must choose" (Kiosk Builder) and nothing on it chosen yet. */
+  chooseOneHere: string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -287,6 +289,7 @@ const en: KioskStrings = {
   chooseServiceFirst: "Please choose a service first.",
   addonNotForService: "That add-on doesn't go with the service you chose.",
   chooseFromGroup: (g) => `Please choose your ${g.toLowerCase()}.`,
+  chooseOneHere: "Please choose one to continue.",
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -425,6 +428,7 @@ const es: KioskStrings = {
   chooseServiceFirst: "Primero elige un servicio.",
   addonNotForService: "Ese extra no está disponible con el servicio que elegiste.",
   chooseFromGroup: (g) => `Elige una opción: ${g}`,
+  chooseOneHere: "Elige una opción para continuar.",
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -563,6 +567,7 @@ const vi: KioskStrings = {
   chooseServiceFirst: "Vui lòng chọn dịch vụ trước.",
   addonNotForService: "Dịch vụ thêm này không áp dụng cho dịch vụ bạn đã chọn.",
   chooseFromGroup: (g) => `Vui lòng chọn: ${g}`,
+  chooseOneHere: "Vui lòng chọn một mục để tiếp tục.",
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -701,6 +706,7 @@ const zh: KioskStrings = {
   chooseServiceFirst: "请先选择一项服务。",
   addonNotForService: "此附加项不适用于您选择的服务。",
   chooseFromGroup: (g) => `请选择：${g}`,
+  chooseOneHere: "请先选择一项再继续。",
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -839,6 +845,7 @@ const ko: KioskStrings = {
   chooseServiceFirst: "먼저 서비스를 선택해 주세요.",
   addonNotForService: "선택하신 서비스에는 이 추가 옵션을 이용할 수 없습니다.",
   chooseFromGroup: (g) => `선택해 주세요: ${g}`,
+  chooseOneHere: "계속하려면 하나를 선택해 주세요.",
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",

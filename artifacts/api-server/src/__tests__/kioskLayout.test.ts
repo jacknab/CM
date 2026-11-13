@@ -274,3 +274,13 @@ describe("what happens after a choice", () => {
     expect(e.menus[0].tiles).toEqual([{ id: "t1", kind: "service", serviceId: 1, next: { kind: "review" } }]);
   });
 });
+
+describe("what clients can choose on a screen", () => {
+  it("is 'more than one' and optional unless the screen says otherwise", () => {
+    const l = normalizeKioskLayout({ builder: "picture", menus: [
+      { id: "a", name: "Shapes", kind: "picture", choose: "one", mustChoose: true },
+      { id: "b", name: "Other", kind: "picture", choose: "weird", mustChoose: "yes" },
+    ] }, "nail");
+    expect(l.menus.map((m) => [m.choose, m.mustChoose])).toEqual([["one", true], ["many", false]]);
+  });
+});
