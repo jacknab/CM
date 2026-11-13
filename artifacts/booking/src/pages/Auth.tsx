@@ -1129,8 +1129,18 @@ export default function Auth() {
                       && phone.replace(/\D/g, "").length === 10
                       && email.trim().length > 0 && email.includes("@")
                       && professionalConfirmed;
+                    // Everything filled in but the box: say why Next is grey (owner, 2026-11-13).
+                    const onlyBoxMissing = !professionalConfirmed
+                      && firstName.trim().length > 0 && lastName.trim().length > 0
+                      && phone.replace(/\D/g, "").length === 10
+                      && email.trim().length > 0 && email.includes("@");
                     return (
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, marginTop: 6 }}>
+                        {onlyBoxMissing && !otpSendError && (
+                          <p style={{ fontSize: ".8rem", color: "#6b7280", margin: 0, textAlign: "right" }} data-testid="text-confirm-box-hint">
+                            Tick the box above to continue
+                          </p>
+                        )}
                         {otpSendError && (
                           <p style={{ fontSize: ".8rem", color: "#ef4444", margin: 0, textAlign: "right" }}>
                             {otpSendError}
