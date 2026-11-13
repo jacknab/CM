@@ -475,7 +475,8 @@ export default function KioskBuilder() {
     <ScreensPanel draft={draft} activeId={editingOwn ? screenId : null} focusName={focusName}
       onOpen={openScreen} onNew={newScreen}
       onRename={(sid, name) => update((d) => ({ ...d, menus: d.menus.map((m) => (m.id === sid ? { ...m, name } : m)) }))}
-      onDelete={(sid) => { update((d) => withoutScreen(d, sid)); setScreenId(null); }} />
+      onDelete={(sid) => { update((d) => withoutScreen(d, sid)); setScreenId(null); }}
+      onMove={(from, to) => update((d) => { const menus = [...d.menus]; const [m] = menus.splice(from, 1); menus.splice(to, 0, m); return { ...d, menus }; })} />
   );
   const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");
   // Easy builder › Categories: the category cards, or the owner's own button screens (the kiosk uses what's chosen).

@@ -14,3 +14,7 @@
 .kx-screens input:focus { border-color: #f59e0b; box-shadow: 0 0 0 1px #f59e0b; }
 .kx-screens .kx-danger { display: flex; align-items: center; justify-content: center; gap: 6px; height: 42px; border: 1px solid #5a3a3d; border-radius: 2px;
   background: transparent; color: #ef8a8e; font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.kx-screens > button[draggable="true"] { cursor: grab; }
+.kx-screens > button.kx-dragging { opacity: .4; }
+.kx-screens > button.kx-drop-before { box-shadow: 0 -3px 0 #0d9bd1; }
+.kx-screens > button.kx-drop-after { box-shadow: 0 3px 0 #0d9bd1; }
