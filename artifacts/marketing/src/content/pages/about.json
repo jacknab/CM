@@ -48,6 +48,12 @@
       "name": "June Lea",
       "role": "Head of Marketing",
       "bio": "June leads marketing at Certxa, making sure salon owners hear about the platform in plain language. June's focus is showing owners how Certxa saves them time at the front desk and keeps their clients coming back."
+    },
+    {
+      "id": "t4",
+      "name": "Jim Sobet",
+      "role": "System Administrator",
+      "bio": "Jim is Certxa's in-house system administrator. He keeps every team member's workstation and the company phone lines running, so the team can stay focused on supporting salons."
     }
   ],
   "cta": {

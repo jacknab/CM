@@ -34,6 +34,11 @@
     "type": "image/webp",
     "local": true
   },
+  "team/jim-sobet": {
+    "file": "team__jim-sobet",
+    "type": "image/webp",
+    "local": true
+  },
   "pages/autumn/device-mockup": {
     "file": "pages__autumn__device-mockup",
     "type": "image/png"
