@@ -19,10 +19,11 @@ export interface BoardOrderLine { key: string; name: string; price: number | nul
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 /**
- * A size given in pixels on the 1080-wide kiosk, in proportion to the screen's width (the builder's smaller preview
- * shows the same board, smaller) and never larger than designed (owner, 2026-11-15).
+ * A size given in pixels on the 1080-wide kiosk, in proportion to the board's own width (the builder's smaller
+ * preview shows the same board, smaller) and never larger than designed (owner, 2026-11-15). The board's width, not
+ * the window's: a window's width counts a scroll bar, which made the board too wide in the preview.
  */
-const u = (px: number) => `min(${(px / 10.8).toFixed(3)}vw, ${px}px)`;
+const u = (px: number) => `min(${(px / 10.8).toFixed(3)}cqw, ${px}px)`;
 
 /** A picture, else the first letter on a tint (the nail look has no emoji). */
 function Thumb({ url, name, w, h, colors, radius = 16, letterSize }: { url?: string | null; name: string; w: number | string; h: number | string; colors: BoardColors; radius?: number | string; letterSize?: number | string }) {
@@ -92,7 +93,7 @@ export function KioskOrderBoard(p: {
   const press = (fn: () => void) => ({ onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); fn(); } });
 
   return (
-    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: c.bg, color: c.text, userSelect: "none" }} data-testid="kiosk-order-board">
+    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: c.bg, color: c.text, userSelect: "none", overflow: "hidden", containerType: "inline-size" }} data-testid="kiosk-order-board">
       {/* ── Top: the category's picture, name and line; Search Services ── */}
       <header style={{ display: "flex", alignItems: "center", gap: u(20), padding: `${u(28)} ${u(28)} ${u(22)}` }}>
         <button type="button" {...press(p.onBack)} data-testid="board-back" aria-label={p.labels.back}

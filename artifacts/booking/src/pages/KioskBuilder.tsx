@@ -256,7 +256,8 @@ export default function KioskBuilder() {
     if (!box) return;
     const fit = () => {
       const f = FRAMES[frame];
-      setScale(Math.min(box.clientWidth / f.w, box.clientHeight / f.h, 1));
+      // The frame's 8px border is drawn outside the screen (content-box), so leave room for it.
+      setScale(Math.min((box.clientWidth - 16) / f.w, (box.clientHeight - 16) / f.h, 1));
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -391,7 +392,7 @@ export default function KioskBuilder() {
       </div>
       <div ref={setPreviewBox} className="flex-1 min-h-0 flex items-start justify-center overflow-hidden">
         {previewUrl ? (
-          <div style={{ width: f.w * scale, height: f.h * scale }} className="relative rounded-[22px] overflow-hidden border-[8px] border-slate-800 bg-white shadow-md">
+          <div style={{ width: f.w * scale, height: f.h * scale, boxSizing: "content-box" }} className="relative rounded-[22px] overflow-hidden border-[8px] border-slate-800 bg-white shadow-md">
             <iframe ref={iframeRef} key={`${frame}-${edit ? "edit" : "live"}`} src={edit ? `${previewUrl}&edit=1` : previewUrl} title="Kiosk preview" data-testid="kiosk-builder-preview"
               style={{ width: f.w, height: f.h, transform: `scale(${scale})`, transformOrigin: "0 0", border: 0, position: "absolute", top: 0, left: 0 }} />
           </div>
