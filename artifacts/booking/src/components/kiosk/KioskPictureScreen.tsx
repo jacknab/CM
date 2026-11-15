@@ -53,6 +53,11 @@ export function KioskPictureScreen(p: {
   onChangeSpot?: (id: string, rect: Rect) => void;
   spotLabel?: (spot: KioskSpot) => string;
   emptyText?: string;
+  /** A spot's price as shown ("$25", "+$5", "Included"); null: none (not a service or add-on, or unknown). */
+  spotPrice?: (spot: KioskSpot) => string | null;
+  /** editor: the spot whose price the arrow keys are moving (its price is outlined). */
+  activePriceSpotId?: string | null;
+  onSelectPrice?: (spotId: string) => void;
   /** The language the kiosk is showing (text boxes show theirs, else English). */
   lang?: string;
   // editor: text boxes (owner, 2026-11-15) — chosen, dragged and sized like tap spots
@@ -67,7 +72,8 @@ export function KioskPictureScreen(p: {
   const [live, setLive] = useState<{ id: string; rect: Rect } | null>(null);
   const editor = p.mode === "editor";
   const texts = menu.texts ?? [];
-  useEffect(() => { loadKioskFonts(texts.map((t) => t.font)); }, [texts.map((t) => t.font).join(",")]);
+  const fonts = [...texts.map((t) => t.font), ...menu.spots.flatMap((sp) => (sp.price?.show ? [sp.price.font] : []))];
+  useEffect(() => { loadKioskFonts(fonts); }, [fonts.join(",")]);
 
   // The drag lives in a ref: pointer events can arrive before React has drawn the last change.
   const dragRef = useRef<Drag | null>(null);
@@ -147,9 +153,28 @@ export function KioskPictureScreen(p: {
                 boxShadow: editor ? "0 0 0 1px rgba(255,255,255,.8)" : chosen && menu.footer ? undefined
                   : chosen ? `0 0 0 4px #fff, 0 0 0 8px ${c.primary}, 0 6px 18px rgba(0,0,0,.25)` : undefined,
               }}>
+              {spot.price?.show && (() => {
+                const text = p.spotPrice?.(spot);
+                if (!text) return null;
+                const pr = spot.price;
+                const picked = editor && p.activePriceSpotId === spot.id;
+                return (
+                  <span data-testid={`kiosk-spot-price-${spot.id}`}
+                    onPointerDown={editor ? (e) => { e.stopPropagation(); e.preventDefault(); p.onSelectPrice?.(spot.id); } : undefined}
+                    style={{
+                      position: "absolute", left: `${pr.x}%`, top: `${pr.y}%`, transform: "translate(-50%, -50%)", whiteSpace: "nowrap",
+                      // Pixels on the 1080-wide kiosk, like text boxes (the screen is the size container, not the spot).
+                      fontSize: `${(pr.size / 1080) * 100}cqw`, lineHeight: 1.1, fontFamily: kioskFontCss(pr.font),
+                      fontWeight: pr.style === "bold" ? 700 : 400, fontStyle: pr.style === "italic" ? "italic" : "normal", color: pr.color,
+                      pointerEvents: editor ? "auto" : "none", cursor: editor ? "pointer" : undefined, zIndex: 1,
+                      outline: picked ? `2px solid ${c.primary}` : editor ? "1px dashed rgba(37,99,235,.6)" : "none", outlineOffset: 2,
+                    }}>{text}</span>
+                );
+              })()}
               {editor && label && (
                 // The name along the bottom of the spot (owner, 2026-11-15), where it doesn't cover what the spot is over.
-                <span style={{ position: "absolute", left: "50%", bottom: 4, transform: "translateX(-50%)", maxWidth: "calc(100% - 8px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                // With the price shown the name goes to the top edge, so it never covers the price.
+                <span style={{ position: "absolute", left: "50%", ...(spot.price?.show ? { top: 4 } : { bottom: 4 }), transform: "translateX(-50%)", maxWidth: "calc(100% - 8px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   background: "rgba(15,23,42,.85)", color: "#fff", fontSize: 11, lineHeight: "16px", padding: "0 6px", borderRadius: 4, pointerEvents: "none" }}>{label}</span>
               )}
               {!editor && chosen && (
@@ -176,7 +201,9 @@ export function KioskPictureScreen(p: {
               onPointerDown={editor ? (e) => startDrag(e, t, "move", "text") : undefined}
               style={{
                 position: "absolute", left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%`,
-                display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                // Lines left, centred or right in the box (the box stays where it was put).
+                display: "flex", alignItems: "center", textAlign: t.align ?? "center",
+                justifyContent: t.align === "left" ? "flex-start" : t.align === "right" ? "flex-end" : "center",
                 // The size is pixels on the 1080-wide kiosk: the same share of the screen at any size.
                 fontSize: `${(t.size / 1080) * 100}cqw`, lineHeight: 1.15, fontFamily: kioskFontCss(t.font),
                 fontWeight: t.style === "bold" ? 700 : 400, fontStyle: t.style === "italic" ? "italic" : "normal",

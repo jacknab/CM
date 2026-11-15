@@ -10,7 +10,7 @@ import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
 import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
-  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, type KioskMenu, type KioskNext,
+  kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, spotPriceText, type KioskMenu, type KioskNext,
   type KioskLayout, type KioskLook, type KioskScreenPictureKey, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
 import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
@@ -2438,6 +2438,8 @@ body *{cursor:default}`;
                 onBack: back, onContinue: () => continueFromPicture(current, showPictureNote),
               }}
               onSpot={tapSpot} note={pictureNote ?? (svcLimitNote ? limitText : null)}
+              spotPrice={(sp) => sp.action.kind === "service" ? (svcById.get(sp.action.serviceId) ? spotPriceText("service", Number(svcById.get(sp.action.serviceId)!.price)) : null)
+                : sp.action.kind === "addon" ? (() => { const a = allAddons.find((x) => x.id === (sp.action as { addonId: number }).addonId); return a ? spotPriceText("addon", Number(a.price)) : null; })() : null}
               spotLabel={(sp) => sp.action.kind === "service" ? svcById.get(sp.action.serviceId)?.name ?? "" : sp.action.kind === "addon" ? allAddons.find((x) => x.id === (sp.action as { addonId: number }).addonId)?.name ?? "" : ""} />
           </div>
         );

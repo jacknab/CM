@@ -100,7 +100,30 @@ function normalizeNext(raw: unknown, menuIds: Set<string>, ownId: string): Kiosk
  */
 export interface KioskSpot { id: string; x: number; y: number; w: number; h: number; action: KioskSpotAction;
   /** For a spot that chooses a service or add-on: where to go after (none: stay on the screen). */
-  next?: KioskNext }
+  next?: KioskNext;
+  /** For a spot that chooses a service or add-on: its catalog price drawn in the spot (owner, 2026-11-15). */
+  price?: KioskSpotPrice }
+
+/**
+ * The price shown in a tap spot. x, y: where its middle is, as % of the spot (moved with the arrow keys in the
+ * builder); size: pixels on the 1080-wide kiosk, like a text box. Kept when switched off, so it comes back as it was.
+ */
+export interface KioskSpotPrice {
+  show: boolean;
+  x: number; y: number;
+  size: number;
+  font: string;
+  style: "regular" | "bold" | "italic";
+  color: string;
+}
+export const KIOSK_SPOT_PRICE_DEFAULT: Omit<KioskSpotPrice, "color"> = { show: true, x: 50, y: 80, size: 48, font: "dm-sans", style: "bold" };
+
+/** A price as a tap spot shows it: a service "$25"; an add-on or Kiosk Extra "+$5", or "Included" when free. */
+export function spotPriceText(kind: "service" | "addon", price: number): string {
+  const n = Number(price) || 0;
+  const money = `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+  return kind === "service" ? money : n > 0 ? `+${money}` : "Included";
+}
 
 export interface KioskMenu {
   id: string;
@@ -185,6 +208,8 @@ export interface KioskTextBox {
   font: KioskTextFont;
   style: "regular" | "bold" | "italic";
   color: string;
+  /** Where the lines sit in the box (owner, 2026-11-15); centred unless set. */
+  align: "left" | "center" | "right";
 }
 export const KIOSK_TEXT_LIMITS = { boxes: 30, chars: 200, size: { min: 16, max: 240 } } as const;
 
@@ -385,6 +410,21 @@ function normalizeSpotAction(raw: unknown, menuIds: Set<string>, ownId: string):
 }
 
 /** The business's screens: unknown links and broken buttons dropped, sizes clamped, at most 10 pages each. */
+/** A tap spot's price settings: position inside the spot, size in range, a known font, a colour. */
+export function normalizeSpotPrice(p: Record<string, any>): KioskSpotPrice {
+  const num = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const d = KIOSK_SPOT_PRICE_DEFAULT;
+  return {
+    show: p.show === true,
+    x: Math.round(Math.min(100, Math.max(0, num(p.x, d.x))) * 10) / 10,
+    y: Math.round(Math.min(100, Math.max(0, num(p.y, d.y))) * 10) / 10,
+    size: Math.round(Math.min(KIOSK_TEXT_LIMITS.size.max, Math.max(KIOSK_TEXT_LIMITS.size.min, num(p.size, d.size)))),
+    font: KIOSK_TEXT_FONTS.some((f) => f.key === p.font) ? p.font : d.font,
+    style: p.style === "regular" || p.style === "italic" ? p.style : p.style === "bold" ? "bold" : d.style,
+    color: typeof p.color === "string" && HEX.test(p.color) ? p.color.toLowerCase() : "#111827",
+  };
+}
+
 /** A picture screen's text boxes: valid ids once each, inside the screen, known font, size in range. */
 export function normalizeTextBoxes(raw: unknown): KioskTextBox[] {
   const seen = new Set<string>();
@@ -404,6 +444,7 @@ export function normalizeTextBoxes(raw: unknown): KioskTextBox[] {
       font: KIOSK_TEXT_FONTS.some((f) => f.key === t.font) ? t.font : "dm-sans",
       style: t.style === "bold" || t.style === "italic" ? t.style : "regular",
       color: typeof t.color === "string" && HEX.test(t.color) ? t.color.toLowerCase() : "#111827",
+      align: t.align === "left" || t.align === "right" ? t.align : "center",
     }];
   });
 }
@@ -450,8 +491,11 @@ export function normalizeMenus(raw: unknown, workflowIds: Set<string> = new Set(
       const w = Math.min(100, Math.max(KIOSK_SPOT_MIN.w, num(sp.w, 20)));
       const h = Math.min(100, Math.max(KIOSK_SPOT_MIN.h, num(sp.h, 10)));
       const round = (n: number) => Math.round(n * 100) / 100;
-      const next = action.kind === "service" || action.kind === "addon" ? normalizeNext(sp.next, ids, m.id) : undefined;
-      return [{ id: sp.id, x: round(Math.min(100 - w, Math.max(0, num(sp.x, 0)))), y: round(Math.min(100 - h, Math.max(0, num(sp.y, 0)))), w: round(w), h: round(h), action, ...(next ? { next } : {}) }];
+      const chooses = action.kind === "service" || action.kind === "addon";
+      const next = chooses ? normalizeNext(sp.next, ids, m.id) : undefined;
+      const price = chooses && isObj(sp.price) ? normalizeSpotPrice(sp.price) : undefined;
+      return [{ id: sp.id, x: round(Math.min(100 - w, Math.max(0, num(sp.x, 0)))), y: round(Math.min(100 - h, Math.max(0, num(sp.y, 0)))), w: round(w), h: round(h), action,
+        ...(next ? { next } : {}), ...(price ? { price } : {}) }];
     });
     return {
       id: m.id, kind, name: cleanLabel(m.name, KIOSK_MENU_LIMITS.name) || "Screen", title, style, cols, rows,

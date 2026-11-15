@@ -79,8 +79,10 @@ export function ScreensPanel(props: {
     const nextId = list[i + 1]?.id ?? null;
     const cls = [nested ? "kx-nested" : "", m.id === activeId && !flowId ? "active" : "", dragId === m.id ? "kx-dragging" : "",
       target?.rowKey === m.id ? (target.after ? "kx-drop-after" : "kx-drop-before") : ""].filter(Boolean).join(" ");
+    // The row: the screen's name (open it, drag it) and a bin to delete it (owner, 2026-11-15: deleting must be easy to find).
     return (
-      <button key={m.id} type="button" draggable className={cls} data-testid="screens-panel-item"
+      <div key={m.id} className={`kx-row ${cls}`}>
+      <button type="button" draggable className="kx-row-main" data-testid="screens-panel-item"
         title={m.workflowId ? "Drag to change the order or move it to another workflow" : "Drag onto a workflow to copy it there"}
         onClick={() => { setFlowId(null); props.onOpen(m.id); }}
         onDragStart={(e) => { e.dataTransfer.effectAllowed = m.workflowId ? "move" : "copyMove"; e.dataTransfer.setData("text/kiosk-screen", m.id); setDragId(m.id); }}
@@ -95,6 +97,11 @@ export function ScreensPanel(props: {
         onDragEnd={endDrag}>
         {m.name}
       </button>
+      <button type="button" className="kx-row-del" aria-label={`Delete ${m.name || "this screen"}`} title="Delete this screen" data-testid="screens-panel-row-delete"
+        onClick={() => { if (window.confirm(`Delete "${m.name || "this screen"}"? Buttons and tap spots that open it are removed too.`)) props.onDelete(m.id); }}>
+        <Trash2 size={15} />
+      </button>
+      </div>
     );
   };
   const newScreenButton = (workflowId: string | null, nested: boolean) => (

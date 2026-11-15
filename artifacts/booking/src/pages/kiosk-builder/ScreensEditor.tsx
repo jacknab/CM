@@ -7,7 +7,7 @@
  * button to change it, drag a button onto another slot to move it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Upload } from "lucide-react";
+import { AlignCenter, AlignLeft, AlignRight, Loader2, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -16,7 +16,7 @@ import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
 import { loadKioskFonts } from "@/lib/kioskFonts";
 import { ExtraForm, priceText, type KioskExtrasStore } from "./extras";
 import {
-  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_TEXT_FONTS, KIOSK_TEXT_LIMITS, KIOSK_WORKFLOW_LIMITS, type KioskTextBox, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
+  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_SPOT_PRICE_DEFAULT, KIOSK_TEXT_FONTS, KIOSK_TEXT_LIMITS, KIOSK_WORKFLOW_LIMITS, spotPriceText, type KioskSpotPrice, type KioskTextBox, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
   type KioskLayout, type KioskMenu, type KioskNext, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
 } from "@shared/kiosk/layout";
 
@@ -300,7 +300,7 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
  * A text size typed in: what is typed shows as typed, and is applied (within the limits) as soon as it is a size in
  * range, or on leaving the box / Enter (so typing "96" never passes through 9 → 16).
  */
-function SizeInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
+function SizeInput({ value, onCommit, testId = "text-size" }: { value: number; onCommit: (n: number) => void; testId?: string }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => { setDraft(String(value)); }, [value]);
   const { min, max } = KIOSK_TEXT_LIMITS.size;
@@ -311,7 +311,7 @@ function SizeInput({ value, onCommit }: { value: number; onCommit: (n: number) =
     if (v !== value) onCommit(v);
   };
   return (
-    <Input type="number" min={min} max={max} value={draft} className="w-16 h-8 px-2 text-sm" data-testid="text-size"
+    <Input type="number" min={min} max={max} value={draft} className="w-16 h-8 px-2 text-sm" data-testid={testId}
       onChange={(e) => { setDraft(e.target.value); const n = Number(e.target.value); if (Number.isInteger(n) && n >= min && n <= max) onCommit(n); }}
       onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
   );
@@ -364,6 +364,8 @@ export function ScreensEditor(props: {
   const [spotId, setSpotId] = useState<string | null>(null);
   // The chosen text box (owner, 2026-11-15): one thing is chosen at a time, a tap spot or a text box.
   const [textId, setTextId] = useState<string | null>(null);
+  // The arrow keys move the chosen spot's price inside it (its price was clicked, or "Move with arrow keys").
+  const [priceMode, setPriceMode] = useState(false);
   // The right panel's tab (owner, 2026-11-15): Screen, then Tap spots and Text (picture screens) or Buttons.
   const [panelTab, setPanelTab] = useState<"screen" | "spots" | "text" | "buttons">("screen");
   const [spotTab, setSpotTab] = useState<"service" | "addon" | "function" | "menu">("service");
@@ -475,7 +477,7 @@ export function ScreensEditor(props: {
   const patchText = (change: Partial<KioskTextBox>) => textBox && changeTexts((list) => list.map((t) => (t.id === textBox.id ? { ...t, ...change } : t)));
   const addText = () => {
     if (!menu || (menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes) return;
-    const t: KioskTextBox = { id: newId("text"), x: 10, y: 8, w: 80, h: 8, text: { en: "Your text" }, size: 72, font: "dm-sans", style: "regular", color: palette.text };
+    const t: KioskTextBox = { id: newId("text"), x: 10, y: 8, w: 80, h: 8, text: { en: "Your text" }, size: 72, font: "dm-sans", style: "regular", color: palette.text, align: "center" };
     changeTexts((list) => [...list, t]);
     setTextId(t.id); setSpotId(null);
   };
@@ -487,6 +489,20 @@ export function ScreensEditor(props: {
   }));
   // The font list shows each font in itself.
   useEffect(() => { if (textBox) loadKioskFonts(KIOSK_TEXT_FONTS.map((f) => f.key)); }, [!!textBox]);
+  /** A spot's price as the kiosk shows it, from the catalog (services, add-ons, Kiosk Extras). */
+  const spotPrice = (sp: KioskSpot): string | null => {
+    if (sp.action.kind === "service") { const sv = svcById.get(sp.action.serviceId); return sv ? spotPriceText("service", Number(sv.price)) : null; }
+    if (sp.action.kind === "addon") {
+      const id = sp.action.addonId;
+      const a = addonMap.get(id) ?? (extras ?? []).find((x) => x.id === id);
+      return a ? spotPriceText("addon", Number(a.price)) : null;
+    }
+    return null;
+  };
+  const patchPrice = (change: Partial<KioskSpotPrice>) => spot && changeSpots((list) => list.map((x) => (x.id !== spot.id ? x
+    : { ...x, price: { ...KIOSK_SPOT_PRICE_DEFAULT, color: palette.text, ...(x.price ?? {}), ...change } })));
+  const movePrice = (dx: number, dy: number) => spot?.price && patchPrice({
+    x: Math.round(Math.min(100, Math.max(0, spot.price.x + dx)) * 10) / 10, y: Math.round(Math.min(100, Math.max(0, spot.price.y + dy)) * 10) / 10 });
   const setSpotAction = (action: KioskSpotAction) => spot && changeSpots((list) => list.map((x) => (x.id === spot.id ? { ...x, action } : x)));
   const nudge = (dx: number, dy: number, grow: boolean) => spot && changeSpots((list) => list.map((x) => {
     if (x.id !== spot.id) return x;
@@ -767,10 +783,17 @@ export function ScreensEditor(props: {
               </p>
               <div className="space-y-1">
                 {menu.spots.map((sp) => (
-                  <button key={sp.id} type="button" onClick={() => setSpotId(sp.id)}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${sp.id === spotId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
-                    {spotName(sp)}
-                  </button>
+                  <div key={sp.id} className="flex items-stretch gap-1" data-testid="spot-row">
+                    <button type="button" onClick={() => { setSpotId(sp.id); setPriceMode(false); }}
+                      className={`flex-1 min-w-0 text-left px-3 py-1.5 rounded-lg text-sm truncate ${sp.id === spotId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                      {spotName(sp)}
+                    </button>
+                    <button type="button" aria-label={`Delete the tap spot ${spotName(sp)}`} title="Delete this tap spot" data-testid="spot-row-delete"
+                      className="shrink-0 w-9 rounded-lg border border-slate-100 text-slate-400 hover:text-red-600 hover:bg-slate-50 grid place-items-center"
+                      onClick={() => { changeSpots((list) => list.filter((x) => x.id !== sp.id)); if (sp.id === spotId) { setSpotId(null); setPriceMode(false); } }}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </section>
@@ -794,6 +817,62 @@ export function ScreensEditor(props: {
           {/* Where it leads, first: the long pick lists below would push it out of sight. */}
           {(spot.action.kind === "service" || spot.action.kind === "addon") && thenField(spot.next,
             (n) => changeSpots((list) => list.map((x) => (x.id === spot.id ? (n ? { ...x, next: n } : (({ next: _drop, ...rest }) => rest)(x)) : x))))}
+          {(spot.action.kind === "service" || spot.action.kind === "addon") && (
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 space-y-3" data-testid="spot-price-settings">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Show the price</p>
+                  <p className="text-xs text-slate-500">{spotPrice(spot) ? `The catalog's price, ${spotPrice(spot)}, inside this tap spot.` : "The catalog's price, inside this tap spot."}</p>
+                </div>
+                <Switch checked={!!spot.price?.show} aria-label="Show the price" data-testid="spot-price-show"
+                  onCheckedChange={(v) => { patchPrice({ show: v }); if (!v) setPriceMode(false); }} />
+              </div>
+              {spot.price?.show && (<>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-slate-500">
+                    Size
+                    <div className="mt-1 flex items-center gap-2">
+                      <input type="range" min={KIOSK_TEXT_LIMITS.size.min} max={KIOSK_TEXT_LIMITS.size.max} value={spot.price.size} className="flex-1"
+                        onChange={(e) => patchPrice({ size: Number(e.target.value) })} />
+                      <SizeInput key={spot.id} value={spot.price.size} onCommit={(size) => patchPrice({ size })} testId="spot-price-size" />
+                    </div>
+                  </label>
+                  <label className="block text-xs text-slate-500">
+                    Colour
+                    <div className="mt-1 flex items-center gap-2">
+                      <input type="color" value={spot.price.color} aria-label="Price colour" data-testid="spot-price-color" className="w-9 h-9 rounded border border-slate-200 bg-white p-0.5"
+                        onChange={(e) => patchPrice({ color: e.target.value })} />
+                      <span className="text-xs text-slate-500">{spot.price.color}</span>
+                    </div>
+                  </label>
+                </div>
+                <label className="block text-xs text-slate-500">
+                  Font
+                  <select value={spot.price.font} data-testid="spot-price-font" className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
+                    style={{ fontFamily: KIOSK_TEXT_FONTS.find((f) => f.key === spot.price!.font)?.css }}
+                    onFocus={() => loadKioskFonts(KIOSK_TEXT_FONTS.map((f) => f.key))}
+                    onChange={(e) => patchPrice({ font: e.target.value })}>
+                    {KIOSK_TEXT_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.css }}>{f.name}</option>)}
+                  </select>
+                </label>
+                <div className="grid grid-cols-3 gap-1 rounded-md border border-slate-200 p-0.5" role="radiogroup" aria-label="Price style">
+                  {([["regular", "Regular"], ["bold", "Bold"], ["italic", "Italic"]] as const).map(([k, name]) => (
+                    <button key={k} type="button" role="radio" aria-checked={spot.price!.style === k} data-testid={`spot-price-style-${k}`}
+                      onClick={() => patchPrice({ style: k })}
+                      className={`h-8 text-sm rounded ${spot.price!.style === k ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                      style={{ fontWeight: k === "bold" ? 700 : 400, fontStyle: k === "italic" ? "italic" : "normal" }}>{name}</button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-slate-500">
+                    {priceMode ? "The arrow keys move the price inside the tap spot (Shift: further). Esc: back to moving the spot." : "Click the price on the screen, or press the button, then move it with the arrow keys."}
+                  </p>
+                  <Button size="sm" variant={priceMode ? "default" : "outline"} data-testid="spot-price-move" className="shrink-0"
+                    onClick={() => { setPriceMode((m) => !m); canvasBox.current?.focus(); }}>{priceMode ? "Done moving" : "Move with arrow keys"}</Button>
+                </div>
+              </>)}
+            </div>
+          )}
           <p className="text-xs text-slate-500">What it does when tapped:</p>
           <div className="grid grid-cols-4 gap-1 rounded-md border border-slate-200 p-0.5">
             {(["service", "addon", "function", "menu"] as const).map((k) => (
@@ -903,10 +982,17 @@ export function ScreensEditor(props: {
               <p className="text-xs text-slate-500">Your own words on the screen, in the size, font, style and colour you choose.</p>
               <div className="space-y-1">
                 {(menu.texts ?? []).map((t) => (
-                  <button key={t.id} type="button" onClick={() => { setTextId(t.id); setSpotId(null); }} data-testid="text-row"
-                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${t.id === textId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
-                    {t.text.en?.trim() || "Empty text"}
-                  </button>
+                  <div key={t.id} className="flex items-stretch gap-1">
+                    <button type="button" onClick={() => { setTextId(t.id); setSpotId(null); }} data-testid="text-row"
+                      className={`flex-1 min-w-0 text-left px-3 py-1.5 rounded-lg text-sm truncate ${t.id === textId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                      {t.text.en?.trim() || "Empty text"}
+                    </button>
+                    <button type="button" aria-label="Delete this text" title="Delete this text" data-testid="text-row-delete"
+                      className="shrink-0 w-9 rounded-lg border border-slate-100 text-slate-400 hover:text-red-600 hover:bg-slate-50 grid place-items-center"
+                      onClick={() => { changeTexts((list) => list.filter((x) => x.id !== t.id)); if (t.id === textId) setTextId(null); }}>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </section>
@@ -951,7 +1037,19 @@ export function ScreensEditor(props: {
                 style={{ fontWeight: k === "bold" ? 700 : 400, fontStyle: k === "italic" ? "italic" : "normal" }}>{name}</button>
             ))}
           </div>
-          <p className="text-xs text-slate-500">Drag the box to move it and its corners to size it; the words stay in the middle of the box. Arrow keys nudge it.</p>
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Line up the words</p>
+            <div className="grid grid-cols-3 gap-1 rounded-md border border-slate-200 p-0.5" role="radiogroup" aria-label="Text alignment">
+              {([["left", "Left", AlignLeft], ["center", "Centre", AlignCenter], ["right", "Right", AlignRight]] as const).map(([k, name, Icon]) => (
+                <button key={k} type="button" role="radio" aria-checked={(textBox.align ?? "center") === k} data-testid={`text-align-${k}`}
+                  onClick={() => patchText({ align: k })}
+                  className={`h-8 text-sm rounded inline-flex items-center justify-center gap-1.5 ${(textBox.align ?? "center") === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>
+                  <Icon className="w-4 h-4" /> {name}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">Drag the box to move it and its corners to size it; the words line up inside the box as chosen above. Arrow keys nudge it.</p>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" onClick={() => {
               if ((menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes) return;
@@ -1105,6 +1203,13 @@ export function ScreensEditor(props: {
                   return;
                 }
                 if (!spot) return;
+                // The price, while it is being moved: 1% of the spot a press, 5% with Shift; Esc goes back to the spot.
+                if (priceMode && spot.price?.show) {
+                  const ps = e.shiftKey ? 5 : 1;
+                  const pm: Record<string, [number, number]> = { ArrowLeft: [-ps, 0], ArrowRight: [ps, 0], ArrowUp: [0, -ps], ArrowDown: [0, ps] };
+                  if (pm[e.key]) { e.preventDefault(); movePrice(pm[e.key][0], pm[e.key][1]); return; }
+                  if (e.key === "Escape") { e.preventDefault(); setPriceMode(false); return; }
+                }
                 const step = e.shiftKey ? 2 : 0.5;
                 const map: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
                 if (map[e.key]) { e.preventDefault(); nudge(map[e.key][0], map[e.key][1], e.altKey); }
@@ -1113,7 +1218,9 @@ export function ScreensEditor(props: {
               <div style={{ width: KIOSK_W * scale, height: KIOSK_H * scale }} className="rounded-[18px] border-[6px] border-slate-800 bg-slate-800 shadow-md overflow-hidden" data-testid="screens-canvas">
                 <KioskPictureScreen menu={menu} mode="editor" colors={{ primary: palette.primary, bg: palette.bg, surface: palette.surface, text: palette.text, muted: palette.muted, border: palette.border }}
                   footer={{ backLabel: "← Back", continueLabel: "Continue →", summary: "What the client chose", total: draft.services.showPrice ? "$0" : null }}
-                  activeSpotId={spotId} onSelectSpot={(id) => { setSpotId(id); if (id) canvasBox.current?.focus(); }}
+                  activeSpotId={spotId} onSelectSpot={(id) => { setSpotId(id); setPriceMode(false); if (id) canvasBox.current?.focus(); }}
+                  spotPrice={spotPrice} activePriceSpotId={priceMode ? spotId : null}
+                  onSelectPrice={(id) => { setSpotId(id); setTextId(null); setPriceMode(true); canvasBox.current?.focus(); }}
                   activeTextId={textId} onSelectText={(id) => { setTextId(id); if (id) canvasBox.current?.focus(); }}
                   onChangeText={(id, rect) => changeTexts((list) => list.map((x) => (x.id === id ? { ...x, ...rect } : x)))}
                   onChangeSpot={(id, rect) => changeSpots((list) => list.map((x) => (x.id === id ? { ...x, ...rect } : x)))}

@@ -42,3 +42,14 @@
   font-size: 14px; font-family: inherit; }
 .kx-screens > .kx-add.kx-add-wrap { white-space: normal; line-height: 1.25; padding-top: 8px; padding-bottom: 8px; }
 .kx-screens > .kx-add.kx-add-wrap svg { flex-shrink: 0; }
+/* A screen row: name + bin (2026-11-15). Same look as the panel's buttons. */
+.kx-screens .kx-row { position: relative; display: flex; }
+.kx-screens .kx-row > .kx-row-main { flex: 1; min-width: 0; min-height: 46px; padding: 0 40px 0 12px; text-align: left; border: 1px solid #454c56; border-radius: 2px;
+  background: #343943; color: #eef3fb; font-family: inherit; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: grab; }
+.kx-screens .kx-row.active > .kx-row-main { border-color: #0d9bd1; background: #1d3a48; }
+.kx-screens .kx-row.kx-dragging { opacity: .4; }
+.kx-screens .kx-row.kx-drop-before > .kx-row-main { box-shadow: 0 -3px 0 #0d9bd1; }
+.kx-screens .kx-row.kx-drop-after > .kx-row-main { box-shadow: 0 3px 0 #0d9bd1; }
+.kx-screens .kx-row-del { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 30px; height: 30px; display: grid; place-items: center;
+  border: 0; border-radius: 2px; background: transparent; color: #8b94a0; cursor: pointer; }
+.kx-screens .kx-row-del:hover { color: #ef8a8e; background: rgba(239, 138, 142, .12); }

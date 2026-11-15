@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { businessTypeOf } from "@shared/kiosk/businessTypes";
-import { kioskFlow, menuPageCount, nextKioskStep, normalizeKioskLayout, normalizeSteps, previousKioskStep, validateKioskLayout } from "@shared/kiosk/layout";
+import { kioskFlow, menuPageCount, nextKioskStep, normalizeKioskLayout, normalizeSteps, previousKioskStep, spotPriceText, validateKioskLayout } from "@shared/kiosk/layout";
 import { defaultKioskLayout, KIOSK_PRESETS } from "@shared/kiosk/presets";
 import { fillKioskText, resolveKioskText } from "@shared/kiosk/text";
 
@@ -318,14 +318,16 @@ describe("workflows (owner, 2026-11-15)", () => {
 describe("text boxes on picture screens (owner, 2026-11-15)", () => {
   const screen = (texts: unknown, kind = "picture") => normalizeKioskLayout({ builder: kind === "picture" ? "picture" : "easy", menus: [{ id: "s", name: "S", kind, texts }] }, "nail").menus[0];
   it("keeps size, font, style and colour, and clamps what's out of range", () => {
-    const [a, b] = screen([
+    const [a, left, b] = screen([
       { id: "t1", x: 10, y: 5, w: 80, h: 8, text: { en: "Choose your shape", es: "Elige tu forma" }, size: 72, font: "playfair", style: "italic", color: "#AA00CC" },
+      { id: "t3", text: { en: "Left" }, align: "left" },
       { id: "t2", x: 95, y: 99, w: 30, h: 10, text: { en: "x".repeat(300) }, size: 999, font: "comic-sans", style: "underline", color: "red" },
       { id: "t1", text: { en: "duplicate id" } },
     ]).texts;
-    expect(a).toEqual({ id: "t1", x: 10, y: 5, w: 80, h: 8, text: { en: "Choose your shape", es: "Elige tu forma" }, size: 72, font: "playfair", style: "italic", color: "#aa00cc" });
-    expect(b).toMatchObject({ x: 70, y: 90, size: 240, font: "dm-sans", style: "regular", color: "#111827" });
+    expect(a).toEqual({ id: "t1", x: 10, y: 5, w: 80, h: 8, text: { en: "Choose your shape", es: "Elige tu forma" }, size: 72, font: "playfair", style: "italic", color: "#aa00cc", align: "center" });
+    expect(b).toMatchObject({ x: 70, y: 90, size: 240, font: "dm-sans", style: "regular", color: "#111827", align: "center" });
     expect(b.text.en).toHaveLength(200);
+    expect(left.align).toBe("left");
   });
   it("button screens and old designs have none", () => {
     expect(screen([{ id: "t1", text: { en: "Hi" } }], "buttons").texts).toEqual([]);
@@ -334,5 +336,25 @@ describe("text boxes on picture screens (owner, 2026-11-15)", () => {
   it("refuses more than 30 on a screen", () => {
     const many = Array.from({ length: 31 }, (_, i) => ({ id: `t${i}`, text: { en: "a" } }));
     expect(validateKioskLayout({ builder: "picture", menus: [{ id: "s", name: "S", kind: "picture", texts: many }] }).join(" ")).toContain("more than 30 text boxes");
+  });
+});
+
+describe("a tap spot's price (owner, 2026-11-15)", () => {
+  const spotsOf = (spots: unknown[]) => normalizeKioskLayout({ builder: "picture", menus: [{ id: "s", name: "S", kind: "picture", spots }] }, "nail").menus[0].spots;
+  it("keeps its look and place, clamped, on spots that choose a service or add-on", () => {
+    const [svc, fn, odd] = spotsOf([
+      { id: "a", x: 10, y: 10, w: 30, h: 10, action: { kind: "service", serviceId: 1 }, price: { show: true, x: 62.34, y: 80, size: 60, font: "playfair", style: "italic", color: "#FF0000" } },
+      { id: "b", x: 10, y: 30, w: 30, h: 10, action: { kind: "function", fn: "continue" }, price: { show: true } },
+      { id: "c", x: 10, y: 50, w: 30, h: 10, action: { kind: "addon", addonId: 4 }, price: { show: false, x: 150, y: -5, size: 5, font: "comic", style: "underline", color: "red" } },
+    ]);
+    expect(svc.price).toEqual({ show: true, x: 62.3, y: 80, size: 60, font: "playfair", style: "italic", color: "#ff0000" });
+    expect(fn.price).toBeUndefined();
+    expect(odd.price).toEqual({ show: false, x: 100, y: 0, size: 16, font: "dm-sans", style: "bold", color: "#111827" });
+  });
+  it("reads like the rest of the kiosk", () => {
+    expect(spotPriceText("service", 25)).toBe("$25");
+    expect(spotPriceText("service", 32.5)).toBe("$32.50");
+    expect(spotPriceText("addon", 5)).toBe("+$5");
+    expect(spotPriceText("addon", 0)).toBe("Included");
   });
 });
