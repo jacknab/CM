@@ -12,7 +12,9 @@
 import { useRef, useState } from "react";
 import { KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, type KioskMenu, type KioskSpot } from "@shared/kiosk/layout";
 
-export interface PictureColors { primary: string; bg: string; surface?: string; text?: string; muted?: string; border?: string }
+export interface PictureColors { primary: string; bg: string; surface?: string; text?: string; muted?: string; border?: string;
+  /** The dashed outline around a chosen tap spot on a screen with the footer (theme colour "selected"). */
+  selected?: string }
 
 /** The kiosk's footer on a picture screen (menu.footer): Back, what was chosen, the total, Continue. */
 export interface PictureFooter {
@@ -127,10 +129,14 @@ export function KioskPictureScreen(p: {
               style={{
                 position: "absolute", left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%`,
                 cursor: editor ? "move" : "pointer", borderRadius: 8,
-                border: editor ? `2px ${active ? "solid" : "dashed"} ${active ? c.primary : "rgba(15,23,42,.75)"}` : "none",
+                // On a screen with the footer the client picks and then presses Continue: what they chose has a dashed
+                // outline, as in the builder (owner, 2026-11-15), in the theme's "selected" colour.
+                border: editor ? `2px ${active ? "solid" : "dashed"} ${active ? c.primary : "rgba(15,23,42,.75)"}`
+                  : chosen && menu.footer ? `4px dashed ${c.selected ?? c.primary}` : "none",
                 background: editor ? (active ? `${c.primary}26` : "rgba(255,255,255,.18)") : chosen ? "rgba(255,255,255,.16)" : "transparent",
                 // Chosen: a white ring inside a ring of the kiosk's colour, so it shows on any picture.
-                boxShadow: editor ? "0 0 0 1px rgba(255,255,255,.8)" : chosen ? `0 0 0 4px #fff, 0 0 0 8px ${c.primary}, 0 6px 18px rgba(0,0,0,.25)` : undefined,
+                boxShadow: editor ? "0 0 0 1px rgba(255,255,255,.8)" : chosen && menu.footer ? undefined
+                  : chosen ? `0 0 0 4px #fff, 0 0 0 8px ${c.primary}, 0 6px 18px rgba(0,0,0,.25)` : undefined,
               }}>
               {editor && label && (
                 // The name along the bottom of the spot (owner, 2026-11-15), where it doesn't cover what the spot is over.

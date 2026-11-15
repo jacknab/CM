@@ -40,6 +40,8 @@ export interface KioskThemeColors {
   surface?: string;
   /** Headings and body text. */
   text?: string;
+  /** The dashed outline around a chosen tap spot on a picture screen with the footer (2026-11-15); absent: primary. */
+  selected?: string;
 }
 
 // ── Screens (the owner's own menu screens, like a POS grid) ───────────────────
@@ -401,7 +403,7 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
   const d = KIOSK_DEFAULTS;
   const colorsIn = isObj(r.theme?.colors) ? r.theme.colors : {};
   const colors: KioskThemeColors = {};
-  for (const k of ["primary", "background", "surface", "text"] as const) {
+  for (const k of ["primary", "background", "surface", "text", "selected"] as const) {
     if (typeof colorsIn[k] === "string" && HEX.test(colorsIn[k])) colors[k] = colorsIn[k].toLowerCase();
   }
   const langs: KioskLang[] = Array.isArray(r.welcome?.languages)
@@ -448,7 +450,7 @@ export function validateKioskLayout(raw: unknown): string[] {
   if (!isObj(raw)) return ["The layout is missing."];
   const colors = isObj(raw.theme?.colors) ? raw.theme.colors : {};
   for (const [k, v] of Object.entries(colors)) {
-    if (!["primary", "background", "surface", "text"].includes(k)) errors.push(`Unknown colour "${k}".`);
+    if (!["primary", "background", "surface", "text", "selected"].includes(k)) errors.push(`Unknown colour "${k}".`);
     else if (v != null && v !== "" && !(typeof v === "string" && HEX.test(v))) errors.push(`The ${k} colour must look like #a1b2c3.`);
   }
   if (raw.theme?.look != null && raw.theme.look !== "classic" && raw.theme.look !== "boutique") errors.push("Unknown look.");

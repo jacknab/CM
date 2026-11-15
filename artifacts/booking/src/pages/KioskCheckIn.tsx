@@ -2425,7 +2425,7 @@ body *{cursor:default}`;
           || (sp.action.kind === "addon" && selectedAddons.some((ad) => ad.id === (sp.action as { addonId: number }).addonId))).map((sp) => sp.id);
         return (
           <div className="fixed inset-0 select-none" onContextMenu={e => e.preventDefault()} style={NO_SELECT} data-testid="kiosk-menu-screen">
-            <KioskPictureScreen menu={current} mode="kiosk" colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER }} selectedSpotIds={chosen}
+            <KioskPictureScreen menu={current} mode="kiosk" colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, selected: layout.theme.colors.selected ?? PRIMARY }} selectedSpotIds={chosen}
               footer={{
                 backLabel: t.backBtn, continueLabel: t.continueBtn, continueDisabled: selectedServices.length === 0,
                 summary: chosenSummary || t.noServiceSelected,

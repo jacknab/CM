@@ -52,12 +52,13 @@ const COLOR_INFO: Array<{ key: keyof KioskThemeColors; name: string }> = [
   { key: "background", name: "Background" },
   { key: "surface", name: "Cards and bars" },
   { key: "text", name: "Text" },
+  { key: "selected", name: "Dashes around a chosen tap spot" },
 ];
 
 /** Each look's own colours (KioskCheckIn.tsx palettes), shown until the business picks its own. */
 const LOOK_COLORS: Record<"classic" | "boutique", Required<KioskThemeColors>> = {
-  classic: { primary: "#e84891", background: "#f5f3ff", surface: "#ffffff", text: "#18111a" },
-  boutique: { primary: "#b9785c", background: "#f7ede6", surface: "#fffaf6", text: "#3b2a26" },
+  classic: { primary: "#e84891", background: "#f5f3ff", surface: "#ffffff", text: "#18111a", selected: "#e84891" },
+  boutique: { primary: "#b9785c", background: "#f7ede6", surface: "#fffaf6", text: "#3b2a26", selected: "#b9785c" },
 };
 
 const PREVIEW_SCREENS: Array<{ target: KioskPreviewTarget; name: string }> = [
@@ -607,9 +608,9 @@ export default function KioskBuilder() {
                 {COLOR_INFO.map(({ key, name }) => {
                   const v = draft.theme.colors[key];
                   return (
-                    <Row key={key} label={name} about={v ? undefined : "The look's own colour"}>
+                    <Row key={key} label={name} about={v ? undefined : key === "selected" ? "Same as the buttons. Shown on screens with the kiosk footer." : "The look's own colour"}>
                       <div className="flex items-center gap-2">
-                        <input type="color" aria-label={name} value={v ?? LOOK_COLORS[draft.theme.look][key]} className="w-9 h-9 rounded border border-slate-200 bg-white p-0.5"
+                        <input type="color" aria-label={name} value={v ?? (key === "selected" ? draft.theme.colors.primary : undefined) ?? LOOK_COLORS[draft.theme.look][key]} className="w-9 h-9 rounded border border-slate-200 bg-white p-0.5"
                           onChange={(e) => update((d) => ({ ...d, theme: { ...d.theme, colors: { ...d.theme.colors, [key]: e.target.value } } }))} />
                         {v && (
                           <button type="button" className="text-xs text-slate-500 underline"
