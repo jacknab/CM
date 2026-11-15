@@ -21,7 +21,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { translations } from "@/lib/kioskTranslations";
 import {
-  KIOSK_LIMITS, normalizeSteps, type KioskLayout, type KioskStepId, type KioskThemeColors,
+  KIOSK_LIMITS, normalizeSteps, type KioskLayout, type KioskScreenPictureKey, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
 import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
@@ -164,6 +164,7 @@ export default function KioskBuilder() {
   const frame: keyof typeof FRAMES = "portrait";
   const [openLang, setOpenLang] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadingScreen, setUploadingScreen] = useState<KioskScreenPictureKey | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   // The screen being edited (the tabs), the part of it clicked on (data-kx-edit), and the Style panel.
@@ -472,8 +473,47 @@ export default function KioskBuilder() {
     update((d) => { const r = withNewScreen(d, nextScreenName(d, workflowId), workflowId); sid = r.id; return r.layout; });
     setScreenId(sid); openOwnScreens(); setFocusName((n) => n + 1);
   };
+  // The kiosk's own screens in the Screens tab (owner, 2026-11-15): opening one is the same as its tab above.
+  const KIOSK_SCREEN_KEYS: ScreenKey[] = ["welcome", "phone", "addons", "staff", "review", "ticket"];
+  const kioskScreens = KIOSK_SCREEN_KEYS.map((k) => ({ key: k, name: ALL_SCREENS.find((x) => x.key === k)!.name }));
+  const activeKioskScreen = !editingOwn && !styleOpen && KIOSK_SCREEN_KEYS.includes(scr) ? scr : null;
+  /** A kiosk screen's own picture, behind its content (Welcome has its own Picture setting). */
+  const screenPictureField = (k: KioskScreenPictureKey) => {
+    const url = draft.screenPictures[k];
+    return (
+      <Field id="screen-picture" focus={focus} title="Screen picture" about="Behind this screen's content, filling the screen. Make it 1080 × 1920 pixels (tall).">
+        <div className="flex items-center gap-3">
+          <div className="w-16 h-24 rounded-lg border border-slate-200 bg-slate-100 overflow-hidden shrink-0">
+            {url
+              ? <img src={url} alt="" className="w-full h-full object-cover" />
+              : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-400 text-center px-1">Background colour</div>}
+          </div>
+          <div className="flex flex-col gap-2 items-start">
+            <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-9 cursor-pointer bg-white hover:bg-slate-50">
+              {uploadingScreen === k ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {url ? "Replace picture" : "Upload picture"}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploadingScreen != null} data-testid={`screen-picture-upload-${k}`}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]; e.target.value = "";
+                  if (!file) return;
+                  setUploadingScreen(k);
+                  const up = await uploadImage(file);
+                  setUploadingScreen(null);
+                  if (up) update((d) => ({ ...d, screenPictures: { ...d.screenPictures, [k]: up } }));
+                }} />
+            </label>
+            {url && (
+              <button type="button" className="text-xs text-slate-500 underline" data-testid={`screen-picture-remove-${k}`}
+                onClick={() => update((d) => { const p = { ...d.screenPictures }; delete p[k]; return { ...d, screenPictures: p }; })}>Use the background colour</button>
+            )}
+          </div>
+        </div>
+      </Field>
+    );
+  };
   const screensPanel = (
     <ScreensPanel draft={draft} activeId={editingOwn ? screenId : null} focusName={focusName}
+      kioskScreens={kioskScreens} activeKioskScreen={activeKioskScreen} onOpenKioskScreen={(k) => goScreen(k as ScreenKey)}
       onOpen={openScreen} onNew={newScreen}
       onRename={(sid, name) => update((d) => ({ ...d, menus: d.menus.map((m) => (m.id === sid ? { ...m, name } : m)) }))}
       onDelete={(sid) => { update((d) => withoutScreen(d, sid)); setScreenId(null); }}
@@ -676,11 +716,12 @@ export default function KioskBuilder() {
                 </div>
               </Field>
             </>),
-            phone: (
-              <Field id="phone" focus={focus} title="Nothing to change here">
-                <p className="text-sm text-slate-600">Clients type their mobile number on this screen. New clients then type their first name. It looks the same for every salon.</p>
+            phone: (<>
+              {screenPictureField("phone")}
+              <Field id="phone" focus={focus} title="What clients do here">
+                <p className="text-sm text-slate-600">Clients type their mobile number on this screen. New clients then type their first name.</p>
               </Field>
-            ),
+            </>),
             categories: (<>
               {howField}
               <Field id="category-cards" focus={focus} title="Category cards" about="One card for each category in your catalog. Card pictures come from Catalog › Categories.">
@@ -703,6 +744,7 @@ export default function KioskBuilder() {
               </Field>
             </>),
             addons: (<>
+              {screenPictureField("addons")}
               <Field id="addon-cards" focus={focus} title="Add-ons" about="The add-ons that go with the service they picked.">
                 {showSwitch("addons", "Show this screen")}
               </Field>
@@ -712,6 +754,7 @@ export default function KioskBuilder() {
               </Field>
             </>),
             staff: (<>
+              {screenPictureField("staff")}
               <Field id="staff-cards" focus={focus} title="Staff cards" about="Only staff who are clocked in and free are shown.">
                 {showSwitch("provider", "Show this screen")}
               </Field>
@@ -737,10 +780,12 @@ export default function KioskBuilder() {
               {orderField}
             </>),
             review: (<>
+              {screenPictureField("review")}
               {textField("yourStylist", "Staff label")}
             </>),
             screens: null,
             ticket: (<>
+              {screenPictureField("ticket")}
               <Field id="ticket-timer" focus={focus} title="How long this screen stays">
                 <select className={`${selectClass} w-full`} value={draft.timing.ticketResetSeconds}
                   onChange={(e) => update((d) => ({ ...d, timing: { ticketResetSeconds: Number(e.target.value) } }))}>

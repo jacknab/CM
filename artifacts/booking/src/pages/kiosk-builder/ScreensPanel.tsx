@@ -28,6 +28,11 @@ export function ScreensPanel(props: {
   onNewWorkflow: () => string;
   onRenameWorkflow: (id: string, name: string) => void;
   onDeleteWorkflow: (id: string) => void;
+  /** The kiosk's own screens (Welcome, Phone number…), listed first on the Screens tab; always there, no name box. */
+  kioskScreens: Array<{ key: string; name: string }>;
+  /** The kiosk screen open in the editor, if any. */
+  activeKioskScreen: string | null;
+  onOpenKioskScreen: (key: string) => void;
   /** Picture builder: one screen per catalog category with a tap spot per service (absent: not offered). */
   onCategoryScreens?: () => Promise<void>;
   /** Bumped when a new screen is made: the name box takes the focus. */
@@ -44,6 +49,7 @@ export function ScreensPanel(props: {
   // The tab: a screen in a workflow is shown on the Workflows tab.
   const [tab, setTab] = useState<"screens" | "workflows">(active?.workflowId ? "workflows" : "screens");
   useEffect(() => { if (active) setTab(active.workflowId ? "workflows" : "screens"); }, [active?.id, active?.workflowId]);
+  useEffect(() => { if (props.activeKioskScreen) setTab("screens"); }, [props.activeKioskScreen]);
   const [making, setMaking] = useState(false);
   // The open screen's workflow is always open.
   useEffect(() => {
@@ -108,7 +114,14 @@ export function ScreensPanel(props: {
           ))}
         </div>
         {tab === "screens" && (<>
-        <p className="kx-label">Screens</p>
+        <p className="kx-label">Kiosk screens</p>
+        {props.kioskScreens.map((k) => (
+          <button key={k.key} type="button" className={props.activeKioskScreen === k.key ? "active" : ""} data-testid={`screens-panel-kiosk-${k.key}`}
+            onClick={() => { setFlowId(null); props.onOpenKioskScreen(k.key); }}>
+            {k.name}
+          </button>
+        ))}
+        <p className="kx-label kx-label-gap">Your screens</p>
         {loose.map((m, i) => screenRow(m, loose, i, false))}
         {newScreenButton(null, false)}
         </>)}

@@ -141,6 +141,13 @@ export interface KioskMenu {
 export interface KioskWorkflow { id: string; name: string }
 export const KIOSK_WORKFLOW_LIMITS = { workflows: 20, name: 40 } as const;
 
+/**
+ * The kiosk's own screens that can have a picture behind their content (owner, 2026-11-15); listed in the builder's
+ * Screens tab with Welcome (whose picture is welcome.imageUrl).
+ */
+export const KIOSK_SCREEN_PICTURE_KEYS = ["phone", "addons", "staff", "review", "ticket"] as const;
+export type KioskScreenPictureKey = typeof KIOSK_SCREEN_PICTURE_KEYS[number];
+
 export type KioskBuilderKind = "easy" | "picture";
 /** The kind of screen each builder makes. */
 export const builderScreenKind = (b: KioskBuilderKind): KioskMenu["kind"] => (b === "picture" ? "picture" : "buttons");
@@ -205,6 +212,8 @@ export interface KioskLayout {
    * Every screen in `menus` is of this builder's kind.
    */
   builder: KioskBuilderKind;
+  /** A picture behind each of these kiosk screens' content (uploaded, 1080 × 1920); absent: the background colour. */
+  screenPictures: Partial<Record<KioskScreenPictureKey, string>>;
   /** The owner's workflows, in the builder's order (KioskWorkflow). */
   workflows: KioskWorkflow[];
   menus: KioskMenu[];
@@ -233,6 +242,7 @@ export const KIOSK_DEFAULTS: Omit<KioskLayout, "preset"> = {
   menuMode: "catalog",
   startMenuId: null,
   builder: "easy",
+  screenPictures: {},
   workflows: [],
   menus: [],
   requiredGroups: [],
@@ -441,6 +451,7 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
       return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, builder, workflows, menus };
     })(),
     requiredGroups: normalizeGroupNames(r.requiredGroups),
+    screenPictures: Object.fromEntries(KIOSK_SCREEN_PICTURE_KEYS.flatMap((k) => (isKioskImageUrl(r.screenPictures?.[k]) ? [[k, r.screenPictures[k]]] : []))),
   };
 }
 
@@ -454,6 +465,10 @@ export function validateKioskLayout(raw: unknown): string[] {
     else if (v != null && v !== "" && !(typeof v === "string" && HEX.test(v))) errors.push(`The ${k} colour must look like #a1b2c3.`);
   }
   if (raw.theme?.look != null && raw.theme.look !== "classic" && raw.theme.look !== "boutique") errors.push("Unknown look.");
+  for (const [k, v] of Object.entries(isObj(raw.screenPictures) ? raw.screenPictures : {})) {
+    if (!(KIOSK_SCREEN_PICTURE_KEYS as readonly string[]).includes(k)) errors.push(`Unknown screen "${k}".`);
+    else if (v != null && v !== "" && !isKioskImageUrl(v)) errors.push("A screen picture must be an uploaded picture.");
+  }
   if (raw.welcome?.imageUrl != null && raw.welcome.imageUrl !== "" && !isKioskImageUrl(raw.welcome.imageUrl)) {
     errors.push("The welcome picture must be an uploaded picture.");
   }

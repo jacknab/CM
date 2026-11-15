@@ -11,7 +11,7 @@ import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
   kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, type KioskMenu, type KioskNext,
-  type KioskLayout, type KioskLook, type KioskStepId, type KioskThemeColors,
+  type KioskLayout, type KioskLook, type KioskScreenPictureKey, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
 import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { fillKioskText, resolveKioskText, type KioskText } from "@shared/kiosk/text";
@@ -1331,6 +1331,11 @@ body *{cursor:default}`;
     kick();
   };
 
+  /** A kiosk screen's background: its picture (Kiosk Builder › Screens) over the background colour, else the colour. */
+  const screenBg = (k: KioskScreenPictureKey) => {
+    const url = layout.screenPictures?.[k];
+    return url ? `${BG} url("${url}") center / cover no-repeat` : BG;
+  };
   const clientFirst = fmtName(clientInfo?.name?.split(" ")[0] ?? newClientName.split(" ")[0]) || "there";
   const ticketUrl   = ticket ? `${window.location.origin}/kiosk/${slug}/ticket/${ticket.token}` : "";
   const selTotal    = selectedServices.reduce((s, x) => s + x.price, 0);
@@ -1808,7 +1813,7 @@ body *{cursor:default}`;
   // ── PHONE ───────────────────────────────────────────────────────────────────
   if (screen === "phone") return (
     <div className="fixed inset-0 flex select-none" onContextMenu={e => e.preventDefault()}
-      style={{ ...NO_SELECT, background: BG }}>
+      style={{ ...NO_SELECT, background: screenBg("phone") }}>
 
       {/* Right panel — numpad (left panel hidden for kiosk phone screen) */}
       <div className={`flex-1 flex flex-col items-center justify-center gap-5 px-8 ${shakeClass}`} onAnimationEnd={onShakeEnd}>
@@ -3026,7 +3031,7 @@ body *{cursor:default}`;
     const tech = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).name : t.nextAvailable;
     const back = () => goBack("review");
     return (
-      <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: BG }} data-testid="kiosk-review">
+      <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: screenBg("review") }} data-testid="kiosk-review">
         <div className="px-8 py-6 text-center shrink-0" style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
           <h2 className="text-5xl font-black" style={{ color: TEXT }}>{t.reviewTitle}</h2>
           <p className="text-xl mt-2" style={{ color: MUTED }}>{t.reviewSub}</p>
@@ -3062,7 +3067,7 @@ body *{cursor:default}`;
   // ── STYLIST PICKER ──────────────────────────────────────────────────────────
   if (screen === "stylist") return (
     <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()}
-      style={{ ...NO_SELECT, background: BG }}>
+      style={{ ...NO_SELECT, background: screenBg("staff") }}>
 
       <div className="px-8 py-6 text-center shrink-0"
         style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
@@ -3158,7 +3163,7 @@ body *{cursor:default}`;
     const proceedFromAddons = () => advance("addons");
     return (
       <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()}
-        style={{ ...NO_SELECT, background: BG }}>
+        style={{ ...NO_SELECT, background: screenBg("addons") }}>
         <div className="px-8 py-6 shrink-0"
           style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
           <p className="text-sm font-semibold uppercase tracking-widest mb-2" style={{ color: PRIMARY }}>{t.optional}</p>
@@ -3262,7 +3267,7 @@ body *{cursor:default}`;
   // ── TICKET / SUCCESS ─────────────────────────────────────────────────────────
   if (screen === "ticket" && ticket) return (
     <div className="fixed inset-0 flex select-none" onContextMenu={e => e.preventDefault()}
-      style={{ ...NO_SELECT, background: BG }}>
+      style={{ ...NO_SELECT, background: screenBg("ticket") }}>
       <div className="w-[55%] flex flex-col items-center justify-center px-12 gap-5"
         style={{ borderRight: `1.5px solid ${BORDER}` }}>
         <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl shadow-2xl"
