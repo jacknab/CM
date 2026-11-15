@@ -4,6 +4,74 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
+## 2026-11-15 — Kiosk offline check-in puts every add-on under the first service; calendar counts add-on time twice
+
+- **Where:** (1) `artifacts/booking/src/pages/KioskCheckIn.tsx` `doCheckIn` offline branch (`hubKioskCheckin({ … addonIds })`) and the hub's kiosk check-in on the POS tablet. (2) `artifacts/booking/src/pages/Calendar.tsx:3622-3625` (`getRemainingMin`: `apt.duration + addonsDur`).
+- **Symptom:** (1) With no internet, the kiosk checks in over the salon hub with plain `addonIds`, so on a two-service visit the second service's add-ons and Kiosk Extras land on the first service (online check-ins send `forServiceId` since 0d2f861d and are correct). (2) Every booking path saves `appointments.duration` already including add-on minutes (routes.ts setAppointmentAddons callers, the kiosk), but the calendar's remaining-time math adds the add-ons' minutes again, so a ticket with add-ons shows more time left than it has.
+- **Context:** found while checking that kiosk check-ins build the right POS tickets (owner, 11-15). (1) needs the hub protocol (lib/nail-offline / tablet hub) to carry the add-on → service link.
+- **Why not fixed now:** (1) touches the offline hub protocol on the tablets (app side + server), its own task; (2) is in the calendar, unrelated to the kiosk change; verify no other view relies on the doubled number first.
+
+## 2026-11-13 — Kiosk: settings that do nothing, and a staff picker that may cut off technicians
+
+- **Where:** `artifacts/booking/src/pages/KioskCheckIn.tsx:2627-2628` (stylist screen); `artifacts/booking/src/pages/KioskSettings.tsx:376` (hidden "Category Card Images" section) and the Welcome headline / sub-text / loyalty promo fields; `KioskCheckIn.tsx:1025-1200` (retired dual-screen POS overlay, unreachable).
+- **Symptom:** (1) the stylist grid is `grid-cols-4` inside `overflow: hidden` with no paging, so with 8+ free clocked-in staff the later cards are likely drawn off-screen and can't be picked (not reproduced on a device). (2) Welcome headline, sub-text and loyalty promo text are saved by `PUT /api/kiosk-settings` and sent by `/config`, but no kiosk screen shows them since the idle screen became the bundled welcome picture (10-31). (3) The hand/foot/combo image upload is `hidden` and its keys no longer match anything (cards key images by catalog category name).
+- **Context:** found during the 11-13 kiosk audit for the grid-editor plan. (2)-(3) go away naturally if the kiosk layout becomes owner-editable.
+- **Why not fixed now:** (1) is unverified and the fix (paging vs scrolling) is a design choice; (2)-(3) are product decisions (remove the fields, or show them again).
+
+## 2026-11-12 — Committed code needs files that were never committed (HEAD doesn't build or test on its own)
+
+- **Where:** `artifacts/api-server/src/lib/marilAccountSupport.ts:18` imports `./supportPolicy` (untracked since 11-04); `src/lib/salesAgentTransfer.test.ts` reads `public/account-services-hold.wav` (the whole `artifacts/api-server/public/` folder is untracked since 11-03). A clean checkout of `main` also fails `tsc` on: `lib/categoryPages.ts:32` (`isUnclaimedAutoCreated` not on `TenantData`), `lib/template-serve.ts:915-936` (`siteName` not on `TenantSeoMeta`, the field is in the uncommitted `lib/tenant-seo.ts`), `routes/certxaPro.ts:807` (`routeForAppointment`), `lib/marilAccountSupport.ts:20` (`retryFailedCharge` not exported by the committed `services/saas-billing.ts`), `lib/healthCheck/segments/frontDesk.ts:11-14` (implicit any).
+- **Symptom:** on a clean worktree of `main` (`/apps/CM-lcf-phase2`, 11-12) 4 unit-test files fail (`marilAccountTools`, `marilTrialExtension`, `verifiedCallerNumbers`: cannot find `./supportPolicy`; `salesAgentTransfer`: ENOENT on the wav) and `tsc` reports the 12 errors above. In `/apps/CM` itself everything passes (796/796), because the missing pieces are on disk.
+- **Context:** live is built from the working tree, so production is fine; but anyone building from git (or a rollback to a commit) gets a broken build. Found while checking the Last Cut Formula Phase 2 branch. Two of my own commits had a worse variant (lines staged in the wrong place, files didn't even parse) and were fixed on 11-12 (29120d81, d44b60bc).
+- **Why not fixed now:** the missing files belong to other work (11-03 / 11-04) with more uncommitted changes around them; committing them is that work's owner's call.
+
+## 2026-11-12 — Payout reminder scheduler gives up for good if the database is slow at startup
+
+- **Where:** `artifacts/api-server/src/services/payout-reminder-scheduler.ts:29` (`ALTER TABLE contractors ADD COLUMN IF NOT EXISTS payout_reminder_sent_at` at start).
+- **Symptom:** `[PayoutReminder] Migration failed, scheduler not started: … Connection terminated due to connection timeout` twice in `/root/.pm2/logs/certxa-api-error-9__2026-11-12_00-00-00.log` (after the 00:05 reboot, while the pool wasn't ready). That worker then never sends payout reminders until the next restart; nothing retries.
+- **Context:** other startup tasks wait for the pool (`[db:ready] … attempt 1, 41s left`); this one doesn't. Seen while checking logs after the Last Cut Formula migrations; the 13:14 reload started it normally.
+- **Why not fixed now:** unrelated to the migration task. Fix: run it after `waitForDb()` (or retry), and the column could move into a real migration.
+
+## 2026-11-11 — Business Phone line row deleted while its Twilio number stays (and keeps billing)
+
+- **File:** `artifacts/api-server/src/lib/businessPhoneBilling.ts:63-72` (`releaseLine`)
+- **Symptom:** store 41's `business_phone_lines` row disappeared while its number (…3468, PN068e…) was still on Twilio and set up; the app showed the number picker and every search failed. No "number released" log line survived log rotation, so the exact trigger is unconfirmed.
+- **Context:** `releaseLine` DELETEs the row first, then removes the number at Twilio and only logs if that fails. While the Twilio account was suspended (status 4, 11-11) any release would leave an orphan number Certxa no longer knows about. Restored by hand on 11-11 (row re-inserted, paid_until 2026-12-04 = the month paid on 11-04).
+- **Why not fixed now:** the user asked to get Business Phone working again; changing when a paid line is released is a billing decision (keep the row until Twilio confirms, or retry the Twilio removal) that should be agreed first.
+
+## 2026-11-10 — Plan change still goes through Stripe Subscriptions, which in-house billing no longer uses
+
+- **Where:** `artifacts/api-server/src/routes/billing.ts:573-640` (`POST /api/billing/change-plan/:salonId`: `stripe.subscriptions.retrieve` / `stripe.subscriptions.update` with `proration_behavior: "create_prorations"`), called by the owner Billing pages (`pages/DashboardBilling.tsx`, `pages/manage/BillingPage.tsx`).
+- **Symptom/conflict:** `services/saas-billing.ts` (header) says Stripe Subscriptions are no longer used — Certxa charges the saved card itself from `saas_billing_profiles`. A store billed in-house has no Stripe subscription id, so changing plan there likely fails or changes nothing in `saas_billing_profiles` (amount/plan the billing run charges). Not reproduced: no store has a paid subscription yet (saas_billing_charges and payment_transactions are empty; SAAS_BILLING_MODE is dry_run).
+- **Context:** found while writing Maril's (AI Account Services) knowledge; her facts deliberately don't promise how a plan change is charged.
+- **Why not fixed now:** billing behaviour (proration, when the new price starts) is a product decision and the file has other uncommitted work. Fix: make change-plan update `saas_billing_profiles` (plan_id, amount_cents) and decide the proration rule.
+
+## 2026-11-07 — Bloom template can't rebuild on the server: a server restart can leave ~12 sites with no build
+
+- **Where:** `templates-storage/nail-salon-bloom/project/package-lock.json` (every `resolved` URL is `http://package-firewall.replit.local/npm/…`) + `artifacts/api-server/src/startup/seedNailSalonBloomTemplate.ts:19-27,70-80`.
+- **Symptom:** on startup, if `src/context/SiteContext.tsx` is newer than `dist/index.html`, the seed **deletes `dist/`** and rebuilds in the background (`lib/screenshot.ts` buildAndScreenshot: npm install + build in a temp copy). npm can't reach the Replit mirror (`EAI_AGAIN`, then "Exit handler never called"), so the build fails and every Bloom website is left without files. Lacquer's lock uses the public registry and rebuilds fine. The isolated test server runs the same seed against the same `templates-storage` folders.
+- **How it was avoided today:** after editing Bloom, a fresh build was copied into `project/dist` before any restart, so dist was newer than SiteContext. (A scratch copy builds fine with `sed -i 's#http://package-firewall.replit.local/npm/#https://registry.npmjs.org/#g' package-lock.json`.)
+- **Why not fixed now:** the Bloom template has another session's uncommitted work, and changing its lockfile or the seed's delete-then-rebuild is their call. Fix: rewrite the lockfile URLs as above, and/or have the seed build into a temp dir and swap only on success instead of deleting dist first.
+
+## 2026-11-06 — the last commit doesn't compile: `shared/schema.ts` is cut off (commit e646caff)
+
+- **Where:** `shared/schema.ts:415` at HEAD — `error TS1109: Expression expected`. The Add-on Groups commit (e646caff) left a half table definition before `// ── Packages ──`.
+- **Symptom:** a clean checkout of the repo doesn't type-check (API and anything importing `@shared/schema`). The working tree has the fixed file (22+/12- uncommitted), so the live build is fine.
+- **Why not fixed now:** it belongs to the Add-on Groups session's uncommitted work; found while checking the SEO release commit in a clean checkout. Fix: commit the working `shared/schema.ts` with that session's work.
+
+## 2026-11-06 — `salesAgentTransfer.test.ts` fails on a clean checkout
+
+- **Where:** `artifacts/api-server/src/lib/salesAgentTransfer.test.ts:21` — `ENOENT ... public/account-services-hold.wav`.
+- **Symptom:** the test reads a hold-music file that isn't committed (it exists only in the working tree), so it fails anywhere but this server.
+- **Why not fixed now:** sales-agent work, unrelated to the SEO release. Fix: commit the .wav (or have the test skip when it's absent).
+
+## 2026-11-06 — `/book/<slug>` shows "Store not found" when the store request is rate-limited
+
+- **Where:** `artifacts/booking/src/pages/PublicBooking.tsx:47` (`if (!effectiveStore)` → "Store not found"), with `retry: false` in `artifacts/booking/src/lib/queryClient.ts`.
+- **Symptom:** on `certxa.com/book/<slug>` (not the salon's own subdomain), the store comes from `GET /api/public/store/:slug`. If that answers 429 Too Many Requests, react-query doesn't retry and the page says "Store not found" for a business that exists.
+- **Context:** found while fixing the Solo rate-limit messages. That endpoint now has the larger 240-a-minute read allowance (`lib/publicRateLimit.ts`), so this is much less likely. The subdomain page loads the store from `/api/store/by-subdomain`, which isn't rate-limited, so it's unaffected.
+- **Why not fixed now:** `PublicBooking.tsx` is the shared wrapper for every booking theme, and the task said not to change other templates. Fix: retry that query on 429 (honouring Retry-After) and show a "busy, try again" message instead of "Store not found".
+
 ## 2026-11-05 — Certxa Pro browser version: delete/remove confirmations do nothing (found testing Add-on Groups)
 
 - `certxa-pro-replit/staff-app-latest/artifacts/certxa-pro` (every screen that confirms with `Alert.alert` before removing: `app/catalog/addons.tsx` "Remove add-on", `app/services.tsx` "Remove service", `app/catalog/addon-groups.tsx` "Delete group", and others): react-native-web's `Alert.alert` is a no-op, so on the browser build (pro.certxa.com, `scripts/build-web-preview.sh`) tapping these shows nothing and nothing is removed. The iPhone app is unaffected. Found while driving the web build in a headless browser; deletes were tested through the API instead.
