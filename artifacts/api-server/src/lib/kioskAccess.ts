@@ -16,6 +16,8 @@
  *   4. the request comes from a device the salon set up: a signed-in session for this salon — what
  *      the Certxa owner app's kiosk and customer screen carry — or a browser paired once with the
  *      salon's device code (Settings → POS Stations), which sends its token in X-Kiosk-Device.
+ *      Since 2026-11-15 the /kiosk check-in calls skip this (needDevice: false): the kiosk opens from
+ *      its URL alone. The customer screen's own calls still need it.
  */
 
 import type { Request, Response } from "express";
@@ -65,7 +67,7 @@ export async function sessionCoversStore(req: Request, storeId: number): Promise
  * The kiosk stands inside the salon, so it is never "closed": only a suspended account, an untrusted
  * network or an unpaired device stops it.
  */
-export async function kioskGate(req: Request, res: Response, store: StoreRow): Promise<boolean> {
+export async function kioskGate(req: Request, res: Response, store: StoreRow, opts: { needDevice?: boolean } = {}): Promise<boolean> {
   const status = String(store.accountStatus ?? "active").toLowerCase();
   if (status === "suspended" || status === "canceled" || status === "cancelled") {
     res.status(403).json({ accountSuspended: true, error: "This business is not currently accepting check-ins." });
@@ -77,7 +79,8 @@ export async function kioskGate(req: Request, res: Response, store: StoreRow): P
     res.status(403).json({ code: "untrusted_network", error: "Check-in is only available on the salon's own network." });
     return false;
   }
-  if (!(await deviceAuthorizedFor(req, store.id))) {
+  // The /kiosk check-in opens straight from its URL, no sign-in or device code (owner, 2026-11-15).
+  if (opts.needDevice !== false && !(await deviceAuthorizedFor(req, store.id))) {
     res.status(401).json({ code: "device_not_paired", error: "This device isn't set up for check-in yet." });
     return false;
   }

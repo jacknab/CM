@@ -80,7 +80,7 @@ router.post("/api/public/kiosk/:slug/checkin/:token/cancel", async (req: Request
   try {
     const store = await storeBySlug(String(req.params.slug));
     if (!store) return res.status(404).json({ error: "Store not found" });
-    if (!(await kioskGate(req, res, store))) return;
+    if (!(await kioskGate(req, res, store, { needDevice: false }))) return;
     const token = String(req.params.token);
     if (!/^[0-9a-f]{16,128}$/i.test(token)) return res.status(400).json({ error: "Invalid check-in" });
     const r = await pool.query(

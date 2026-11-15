@@ -17,7 +17,7 @@ import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { fillKioskText, resolveKioskText, type KioskText } from "@shared/kiosk/text";
 import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
-import { kioskFetch, isKioskDeviceAuthorized } from "../lib/kioskDevice";
+import { kioskFetch } from "../lib/kioskDevice";
 import { localHub } from "../lib/local-hub";
 import { hubKioskCheckin, hubKioskLookup, hubKioskWait } from "../lib/kiosk-hub";
 import { installRequestDeadline } from "../lib/request-deadline";
@@ -558,8 +558,6 @@ function KioskCheckInScreens() {
       setScreen("idle");
       // The builder's preview: the design is in, so the builder may send it to a screen now.
       if (PREVIEW) setTimeout(() => window.parent?.postMessage({ type: "kiosk-preview-ready" }, window.location.origin), 0);
-      // Check-in calls need a device the salon set up: signed in (the Certxa app), or paired once.
-      if (slug && !PREVIEW) isKioskDeviceAuthorized(slug).then(ok => { if (!ok) setScreen("pair"); });
     }
   }, []);
 

@@ -26332,7 +26332,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any))) return;
+      if (!(await kioskGate(req, res, store as any, { needDevice: false }))) return;
 
       let client = await storage.searchCustomerByPhone(digits, store.id);
       const isNew = !client;
@@ -26449,7 +26449,7 @@ or
       const nailArtEffectId = toIdOrNull(rawNailArtEffectId);
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any))) return;
+      if (!(await kioskGate(req, res, store as any, { needDevice: false }))) return;
 
       // What is being booked comes from this salon's catalog: the browser only says which services,
       // options and add-ons. Names, prices and durations are the catalog's (lib/kioskAccess.ts).
@@ -26906,7 +26906,15 @@ or
     try {
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, req.params.slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any))) return;
+      if (!(await kioskGate(req, res, store as any, { needDevice: false }))) return;
+      // Advanced Features › Check-In Kiosk off: no new check-ins at the kiosk (owner, 2026-11-12); the kiosk asks clients to
+      // check in at the front desk. Never a "closed" screen (kiosk-never-closed).
+      {
+        const [ss] = await db.select({ preferences: storeSettings.preferences }).from(storeSettings).where(eq(storeSettings.storeId, store.id));
+        if ((safeParsePreferences(ss?.preferences as string | undefined).kioskSettings as any)?.kioskEnabled === false) {
+          return res.status(409).json({ error: "Please check in at the front desk.", kioskOff: true });
+        }
+      }
       if (!nailTickets.isNailSalonCategory((store as any).category)) return res.status(400).json({ error: "Service check-in is not available here." });
       const body = z.object({
         clientId: z.number().int().positive(),
@@ -27001,7 +27009,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any))) return;
+      if (!(await kioskGate(req, res, store as any, { needDevice: false }))) return;
       if (!claimMissedYouText(store.id, e164MissedPhone)) return res.json({ success: true, skipped: true });
 
       const bookingLink = `https://certxa.com/book/${slug}`;
@@ -27029,7 +27037,7 @@ or
 
       const [store] = await db.select().from(locations).where(eq(locations.bookingSlug, slug));
       if (!store) return res.status(404).json({ error: "Store not found" });
-      if (!(await kioskGate(req, res, store as any))) return;
+      if (!(await kioskGate(req, res, store as any, { needDevice: false }))) return;
 
       const todayStr = new Date().toISOString().split("T")[0];
 
