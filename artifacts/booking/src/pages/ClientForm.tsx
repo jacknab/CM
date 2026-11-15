@@ -90,8 +90,8 @@ export default function ClientForm() {
     finally { setBusy(false); }
   };
 
-  if (failed) return <main className="flex min-h-screen items-center justify-center bg-gray-50 px-6 text-center text-gray-700"><p>{failed}</p></main>;
-  if (!form) return <main className="flex min-h-screen items-center justify-center bg-gray-50"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></main>;
+  if (failed) return <main className="fixed inset-0 flex items-center justify-center bg-gray-50 px-6 text-center text-gray-700"><p>{failed}</p></main>;
+  if (!form) return <main className="fixed inset-0 flex items-center justify-center bg-gray-50"><Loader2 className="h-6 w-6 animate-spin text-gray-400" /></main>;
 
   const header = (
     <header className="border-b border-gray-200 bg-white px-5 py-5">
@@ -106,7 +106,7 @@ export default function ClientForm() {
   );
 
   if (form.completed || done) return (
-    <main className="min-h-screen bg-gray-50 text-gray-900">{header}
+    <main className="fixed inset-0 overflow-y-auto bg-gray-50 text-gray-900">{header}
       <div className="mx-auto max-w-2xl px-5 py-10 text-center" data-testid="form-done">
         <p className="text-lg font-semibold">Thank you{form.firstName ? `, ${form.firstName}` : ""}!</p>
         <p className="mt-2 text-gray-600">{form.business} has your {form.kind === "waiver" ? "signed form" : "answers"}. You can close this page.</p>
@@ -115,7 +115,7 @@ export default function ClientForm() {
   );
 
   return (
-    <main className="min-h-screen bg-gray-50 text-gray-900" data-testid="client-form">{header}
+    <main className="fixed inset-0 overflow-y-auto bg-gray-50 text-gray-900" data-testid="client-form">{header}
       <div className="mx-auto max-w-2xl space-y-6 px-5 py-6">
         {form.description && <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-700">{form.description}</p>}
         {form.fields.map((f, i) => {
