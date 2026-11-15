@@ -2414,8 +2414,11 @@ body *{cursor:default}`;
           kick();
           const a = spot.action;
           if (a.kind === "service" || a.kind === "menu" || a.kind === "addon") {
-            return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId, next: spot.next }
-              : a.kind === "addon" ? { kind: "addon", addonId: a.addonId, next: spot.next } : { kind: "menu", menuId: a.menuId });
+            // With the footer the client chooses, sees it outlined, and presses Continue, which follows the chosen
+            // spot's "Then go to…" (continueFromPicture). Without the footer the tap itself goes on (owner, 2026-11-15).
+            const next = current.footer ? undefined : spot.next;
+            return tapTile(a.kind === "service" ? { kind: "service", serviceId: a.serviceId, next }
+              : a.kind === "addon" ? { kind: "addon", addonId: a.addonId, next } : { kind: "menu", menuId: a.menuId });
           }
           if (a.fn === "continue") return continueFromPicture(current, showPictureNote);
           if (a.fn === "staff") return continueFromScreen(current, showPictureNote, "staff");

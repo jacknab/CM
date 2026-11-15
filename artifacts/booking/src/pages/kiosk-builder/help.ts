@@ -171,6 +171,8 @@ export const KIOSK_HELP: HelpTopic[] = [
       { p: "Text tab › \"Add text\" puts a text box on the screen. Type the words, then choose the size, the font, Regular, Bold or Italic, the colour, and Left, Centre or Right to line the words up in the box. Bullets: pick a design tab (Check, Dot, Star, Heart, Diamond), then a colour; every line gets one. \"No bullets\" takes them off. Drag the box to move it and its corners to size it. Text never stops a tap spot under it from working." },
       { h: "3. The footer (optional)" },
       { p: "Turn on \"Show the kiosk footer\" to put the kiosk's own bar at the bottom: Back, what the client chose, the total and Continue. It covers the bottom strip of your picture (marked on the template), so keep tap spots out of it. With the footer on you don't need your own Back and Continue spots." },
+      { h: "Tap, or tap and Continue" },
+      { p: "Without the footer, tapping a spot that has \"Then go to…\" goes there at once. With the footer, a tap only chooses (the spot gets the dashed outline and shows in the footer); the client presses Continue, which goes to that spot's \"Then go to…\" screen. Back goes to the screen before, with what was chosen still chosen." },
       { h: "Where Continue goes" },
       { p: "You don't set this; the kiosk works it out from your screens. Continue goes to the screen picked in \"Then go to…\" for what the client chose (their latest choice first, never a screen they've already been on), else the next screen of the same workflow in the Screens list (drag screens to change the order; a screen only opened from a tap spot, like a category's own page, is skipped). After the workflow's last screen it goes on to add-ons, staff and the review." },
       { h: "Warnings" },
