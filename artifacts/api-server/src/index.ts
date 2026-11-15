@@ -1510,6 +1510,9 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Memberships: renewals charged on the business's Stripe account (lib/proMemberships.ts).
   const { startMembershipRenewals } = await import("./lib/proMemberships");
   startMembershipRenewals();
+  // Expenses that repeat monthly, and low-stock alerts (routes/proExpenses.ts).
+  const { startExpensesAndStock } = await import("./routes/proExpenses");
+  startExpensesAndStock();
 
   // Start scheduled campaign dispatcher (checks every 5 minutes for due campaigns)
   const { startCampaignScheduler } = await import("./services/campaign-scheduler");

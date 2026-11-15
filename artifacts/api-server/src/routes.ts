@@ -4405,6 +4405,9 @@ export async function registerRoutes(
   // Checkout extras: products on a visit, and what a gift card already paid (routes/proCheckout.ts).
   const { default: proCheckoutRouter } = await import("./routes/proCheckout.js");
   app.use(proCheckoutRouter);
+  // Expenses (receipts, monthly repeats, CSV for taxes) and low-stock alerts (routes/proExpenses.ts).
+  const { default: proExpensesRouter } = await import("./routes/proExpenses.js");
+  app.use(proExpensesRouter);
   // The Solo billing page's card on file (change / remove).
   const { default: soloCardRouter } = await import("./routes/soloCard.js");
   app.use(soloCardRouter);
