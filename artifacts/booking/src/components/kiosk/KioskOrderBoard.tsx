@@ -8,8 +8,12 @@
  */
 import { useEffect, useMemo, useState } from "react";
 
-export interface BoardService { id: number; name: string; price: number; duration: number; imageUrl?: string | null }
-export interface BoardGroup { key: string; label: string; imageUrl?: string | null; svcs: BoardService[] }
+export interface BoardService { id: number; name: string; price: number; duration: number; imageUrl?: string | null;
+  /** The coloured label on the photo ("Acrylic Full Set"), set on the service in Catalog. */
+  badge?: { text: string; color: string } | null }
+export interface BoardGroup { key: string; label: string; imageUrl?: string | null; svcs: BoardService[];
+  /** A line under the category's name, set on the category in Catalog › Categories. */
+  description?: string | null }
 export interface BoardColors { primary: string; bg: string; surface: string; text: string; muted: string; border: string; selected: string; tint: string }
 export interface BoardOrderLine { key: string; name: string; price: number | null; imageUrl?: string | null; onRemove: () => void }
 
@@ -91,6 +95,9 @@ export function KioskOrderBoard(p: {
           <h2 data-testid="board-title" style={{ margin: 0, fontSize: 52, fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.01em", fontFamily: heading }}>
             {results ? p.labels.results(query.trim()) : group?.label}
           </h2>
+          {!results && group?.description && (
+            <p data-testid="board-description" style={{ margin: "10px 0 0", fontSize: 24, lineHeight: 1.3, color: c.muted }}>{group.description}</p>
+          )}
         </div>
         <button type="button" {...press(() => setTyping(true))} data-testid="board-search"
           style={{ flexShrink: 0, width: 340, height: 64, borderRadius: 32, border: `2.5px solid ${c.text}`, background: c.surface, color: query ? c.text : c.muted,
@@ -132,6 +139,11 @@ export function KioskOrderBoard(p: {
                   background: c.surface, color: c.text, border: `4px solid ${on ? c.primary : "transparent"}`,
                   boxShadow: on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
                 <Thumb url={s.imageUrl} name={s.name} w="100%" h={210} radius={0} colors={c} letterSize={72} />
+                {s.badge && (
+                  <span data-testid="board-svc-badge" style={{ position: "absolute", top: 12, left: 12, maxWidth: "calc(100% - 70px)", padding: "6px 16px", borderRadius: 999,
+                    background: s.badge.color, color: "#fff", border: "2.5px solid #fff", boxShadow: "0 3px 10px rgba(0,0,0,.18)",
+                    fontSize: 18, fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.badge.text}</span>
+                )}
                 <div style={{ padding: "14px 16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
                   <span data-testid="board-svc-name" style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15 }}>{s.name}</span>
                   {p.showPrice && <span style={{ fontSize: 30, fontWeight: 900, lineHeight: 1 }}>{money(s.price)}</span>}

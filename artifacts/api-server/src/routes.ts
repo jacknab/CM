@@ -25741,6 +25741,9 @@ or
         illustrationCategoryId: services.illustrationCategoryId,
         illustrationImageUrl: serviceIllustrationCategories.imageUrl,
         categoryId: services.categoryId,
+        // The Order Board's label on the photo (migration 0363).
+        kioskBadge: services.kioskBadge,
+        kioskBadgeColor: services.kioskBadgeColor,
       }).from(services)
         .leftJoin(serviceIllustrationCategories, eq(services.illustrationCategoryId, serviceIllustrationCategories.id))
         .where(and(eq(services.storeId, store.id), eq(services.isActive, true), eq(services.hiddenFromPublic, false)))
@@ -25748,7 +25751,7 @@ or
 
       // Drop services that belong to a hidden category (matched by id or by
       // name), same rule the public booking catalogue uses.
-      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, imageUrl: serviceCategories.imageUrl, hiddenFromPublic: serviceCategories.hiddenFromPublic, sortOrder: serviceCategories.sortOrder })
+      const kioskCats = await db.select({ id: serviceCategories.id, name: serviceCategories.name, imageUrl: serviceCategories.imageUrl, hiddenFromPublic: serviceCategories.hiddenFromPublic, sortOrder: serviceCategories.sortOrder, description: serviceCategories.description })
         .from(serviceCategories)
         .where(eq(serviceCategories.storeId, store.id));
       // The image the owner set on the catalog category itself (Catalog → Categories).
@@ -25926,7 +25929,7 @@ or
         // The catalog's own categories (name, photo, order) for that screen's cards — client-visible ones only.
         categories: kioskCats.filter((c) => !c.hiddenFromPublic)
           .sort((a, b) => (a.sortOrder ?? 9999) - (b.sortOrder ?? 9999) || a.id - b.id)
-          .map((c) => ({ id: c.id, name: c.name, imageUrl: c.imageUrl ?? null })),
+          .map((c) => ({ id: c.id, name: c.name, imageUrl: c.imageUrl ?? null, description: c.description ?? null })),
         registerId: resolvedRegisterId,
         registerName: resolvedRegisterName,
       });

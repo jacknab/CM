@@ -252,7 +252,8 @@ export function useUpdateCategory() {
   const { selectedStore } = useSelectedStore();
 
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: number; name?: string; imageUrl?: string | null | undefined; color?: string | null | undefined; hiddenFromPublic?: boolean }) => {
+    mutationFn: async ({ id, ...updates }: { id: number; name?: string; imageUrl?: string | null | undefined; color?: string | null | undefined; hiddenFromPublic?: boolean;
+      /** The line under the category's name on the kiosk's Order Board. */ description?: string | null }) => {
       const url = buildUrl(api.serviceCategories.update.path, { id });
       const res = await fetch(url, {
         method: "PATCH",

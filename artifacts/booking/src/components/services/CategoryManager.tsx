@@ -85,6 +85,8 @@ export function CategoryManager() {
   const [editName, setEditName] = useState("");
   const [editColor, setEditColor] = useState<string | null>(null);
   const [editHidden, setEditHidden] = useState(false);
+  // A line under the category's name on the kiosk's Order Board (2026-11-15).
+  const [editDescription, setEditDescription] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryColor, setNewCategoryColor] = useState<string | null>(null);
   const [newCategoryImageUrl, setNewCategoryImageUrl] = useState<string | null>(null);
@@ -155,12 +157,14 @@ export function CategoryManager() {
     setEditColor(cat.color ?? null);
     setEditImageUrl(cat.imageUrl || null);
     setEditHidden(cat.hiddenFromPublic || false);
+    setEditDescription(cat.description || "");
   };
 
   const saveEdit = () => {
     if (!editingId || !editName.trim()) return;
     updateCategory(
-      { id: editingId, name: editName.trim(), imageUrl: editImageUrl || undefined, color: editColor ?? undefined, hiddenFromPublic: editHidden },
+      { id: editingId, name: editName.trim(), imageUrl: editImageUrl || undefined, color: editColor ?? undefined, hiddenFromPublic: editHidden,
+        description: editDescription.trim() || null },
       {
         onSuccess: () => {
           toast({ title: "Category updated" });
@@ -357,6 +361,15 @@ export function CategoryManager() {
                           autoFocus
                           data-testid={`input-edit-category-${cat.id}`}
                         />
+                        <Input
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          maxLength={160}
+                          className="h-9 mt-2"
+                          placeholder="Description on the kiosk (optional)"
+                          onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                          data-testid={`input-edit-category-description-${cat.id}`}
+                        />
                       </TableCell>
                       {/* Colour picker cell */}
                       <TableCell>
@@ -396,6 +409,7 @@ export function CategoryManager() {
                           {cat.hiddenFromPublic && <EyeOff className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                           {cat.displayName || cat.name}
                         </div>
+                        {cat.description && <p className="text-xs font-normal text-muted-foreground mt-0.5" data-testid={`text-category-description-${cat.id}`}>{cat.description}</p>}
                       </TableCell>
                       {/* Colour swatch cell */}
                       <TableCell>

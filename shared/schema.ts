@@ -340,6 +340,8 @@ export const serviceCategories = pgTable("service_categories", {
   sortOrder: integer("sort_order").default(0),
   color: text("color"), // pastel key: lavender | periwinkle | peach | teal | lemon | sky | mint
   hiddenFromPublic: boolean("hidden_from_public").default(false),
+  /** A line under the category's name on the kiosk's Order Board (migration 0363). */
+  description: text("description"),
 });
 
 export const services = pgTable("services", {
@@ -372,6 +374,9 @@ export const services = pgTable("services", {
   // Clients choose how many on the booking website (migration 0314).
   allowQuantity: boolean("allow_quantity").notNull().default(false),
   maxQuantity: integer("max_quantity").notNull().default(10),
+  /** A coloured label on the service's photo on the kiosk's Order Board, e.g. "Acrylic Full Set" (migration 0363). */
+  kioskBadge: text("kiosk_badge"),
+  kioskBadgeColor: text("kiosk_badge_color"),
 });
 
 export const serviceOptions = pgTable("service_options", {
@@ -1593,10 +1598,14 @@ export const googleReviewResponsesRelations = relations(googleReviewResponses, (
 // === SCHEMAS ===
 
 export const insertLocationSchema = createInsertSchema(locations).omit({ id: true });
-export const insertServiceCategorySchema = createInsertSchema(serviceCategories).omit({ id: true });
+export const insertServiceCategorySchema = createInsertSchema(serviceCategories).omit({ id: true }).extend({
+  description: z.string().trim().max(160).nullable().optional(),
+});
 export const insertServiceSchema = createInsertSchema(services).omit({ id: true }).extend({
   // Solo plan house calls: done at the professional's place, at the client's, or either.
   offeredAt: z.enum(["place", "client", "any"]).optional(),
+  kioskBadge: z.string().trim().max(30).nullable().optional(),
+  kioskBadgeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 });
 export const insertServiceOptionSchema = createInsertSchema(serviceOptions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAddonSchema = createInsertSchema(addons).omit({ id: true });

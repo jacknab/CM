@@ -67,7 +67,7 @@ interface NailConfig {
 }
 
 interface ServiceOptionItem  { id: number; name: string; description?: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number; imageUrl?: string | null; }
-interface ServiceItem        { id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
+interface ServiceItem        { /** The Order Board's coloured label on the photo (Catalog › service). */ kioskBadge?: string | null; kioskBadgeColor?: string | null; id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
 
 interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[];
   /** A Kiosk Extra (Kiosk Builder): only on the business's own screens, never in the add-ons step; pick-one within its group. */
@@ -83,7 +83,7 @@ interface SmartInfo {
   addonIds: number[];
 }
 interface StoreConfig        { name: string; phone: string; address: string; }
-interface KioskConfig        { kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean; }
+interface KioskConfig        { /** Catalog category → its line under the name on the Order Board (by name). */ categoryDescriptions?: Record<string, string>; kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean; }
 interface TicketData         { token: string; clientName: string; appointmentId: number | null; ticketNumber?: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null;
   /** Checked in through the POS tablet over the salon hub with no internet: no server ticket (and no QR) yet. */
   offline?: boolean; }
@@ -538,7 +538,8 @@ function KioskCheckInScreens() {
     setAllAddons(d.addons || []);
     setBusyStaffIds(d.busyStaffIds || []);
     setStaffServiceIds(d.staffServiceIds || {});
-    setKioskConfig({ kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true });
+    setKioskConfig({ categoryDescriptions: Object.fromEntries((Array.isArray(d.categories) ? d.categories : []).filter((c: any) => c?.description).map((c: any) => [String(c.name), String(c.description)])),
+      kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true });
     setSalonTimeZone(d.timezone);
     // Whether a check-in slip prints (front desk setup → Printing).
     if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
@@ -2243,8 +2244,10 @@ body *{cursor:default}`;
   // ── ORDER BOARD (Order Board theme) ─────────────────────────────────────────
   if (screen === "board") {
     const catImgs = kioskConfig?.categoryImages ?? {};
-    const groups = categoryGroups().map((g) => ({ key: g.key, label: g.label, imageUrl: catImgs[g.label] ?? catImgs[g.key] ?? null,
-      svcs: g.svcs.map((sv) => ({ id: sv.id, name: sv.name, price: sv.price, duration: sv.duration, imageUrl: sv.imageUrl ?? null })) }));
+    const descs = kioskConfig?.categoryDescriptions ?? {};
+    const groups = categoryGroups().map((g) => ({ key: g.key, label: g.label, imageUrl: catImgs[g.label] ?? catImgs[g.key] ?? null, description: descs[g.label] ?? null,
+      svcs: g.svcs.map((sv) => ({ id: sv.id, name: sv.name, price: sv.price, duration: sv.duration, imageUrl: sv.imageUrl ?? null,
+        badge: sv.kioskBadge ? { text: sv.kioskBadge, color: sv.kioskBadgeColor || PRIMARY } : null })) }));
     const limitText = layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
       : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10));
     const strip = (label: string) => label.replace(/^[←‹<]\s*/, "").replace(/\s*[→›>]$/, "");
