@@ -1224,6 +1224,7 @@ function KioskCheckInScreens() {
       const answer = await hubKioskCheckin({
         clientId: clientInfo?.id ?? null, clientName, phone,
         serviceIds: selectedServices.map((s) => s.id), addonIds: selectedAddons.map((a) => a.id),
+        addonForServiceIds: selectedAddons.map((a) => a.forServiceId ?? null),
         nail: { sizeId: nailSize?.nailVocabId ?? null, shapeId: nailShape?.nailVocabId ?? null, effectId: nailEffect?.nailVocabId ?? null },
         staffId: staffIdToSend,
       });

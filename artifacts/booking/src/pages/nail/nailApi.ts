@@ -533,12 +533,14 @@ export interface TicketOfflineContext {
   staff: TicketRecord["staff"];
   total: number;
   duration: number;
-  /** Further services of the same visit; each is saved as its own ticket. */
-  extras?: { id: number; name: string; price: number; duration: number }[];
+  /** Further services of the same visit (a line on this ticket, or their own ticket), each with its own add-ons. */
+  extras?: { id: number; name: string; price: number; duration: number; addons?: { id: number; name: string; price: number; duration: number }[] }[];
 }
 
 type NewTicketBody = TicketBody & {
   clientId: number; staffId?: number | null; checkinId?: number | null; leaveUnassigned?: boolean; autoAssign?: boolean; extraServiceIds?: number[];
+  /** Add-ons that go with a further service, by its id (a kiosk check-in): under its line, or on its own ticket. */
+  extraAddonIds?: Record<number, number[]>;
   /** A Catalog package as the ticket. Online the server makes its lines from the catalog; `packageLines` are the
    *  same lines made on this tablet (its further services and its price line), used only when the ticket is saved offline. */
   packageId?: number | null;
@@ -592,14 +594,17 @@ export async function createTicket(
       else ownTickets.push(extra);
     }
     const serviceLines = onTicket.map((e) => ({ label: e.name, price: e.price, serviceId: e.id, duration: e.duration }));
+    // A further service's add-ons: with it — under its line on this ticket, or on its own ticket.
+    const lineAddons = onTicket.flatMap((e) => (e.addons ?? []).map((a) => ({ ...a, forServiceId: e.id })));
+    const sumOf = (list: { price: number; duration: number }[], k: "price" | "duration") => list.reduce((n, a) => n + (Number(a[k]) || 0), 0);
     const rec = await nailOffline.createTicket({
       storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: body.checkinId ?? null,
-      service: { id: body.serviceId, ...offline.service }, addons: offline.addons,
+      service: { id: body.serviceId, ...offline.service }, addons: [...offline.addons, ...lineAddons],
       nail: toNailBody(body.pick), nailLines: offline.nailLines, nailPriceAdjustment: offline.nailPriceAdjustment,
       // A package's own lines first: its further services and its price line, all with this ticket's technician.
       customLines: [...packageLines, ...serviceLines, ...body.customLines], staff, assignedOffline,
-      total: offline.total + [...packageLines, ...serviceLines].reduce((n, l) => n + l.price, 0),
-      duration: offline.duration + [...packageLines, ...serviceLines].reduce((n, l) => n + (l.serviceId ? Number(l.duration) || 0 : 0), 0),
+      total: offline.total + [...packageLines, ...serviceLines].reduce((n, l) => n + l.price, 0) + sumOf(lineAddons, "price"),
+      duration: offline.duration + [...packageLines, ...serviceLines].reduce((n, l) => n + (l.serviceId ? Number(l.duration) || 0 : 0), 0) + sumOf(lineAddons, "duration"),
     }, key);
     for (const extra of ownTickets) {
       // Saved with nobody on it, as online: the client is still with the first technician. Staff assign it when
@@ -607,8 +612,10 @@ export async function createTicket(
       const extraStaff: TicketRecord["staff"] = null;
       await nailOffline.createTicket({
         storeId: offline.storeId, clientId: body.clientId, clientName: offline.client.name, phone: offline.client.phone, walkinId: null,
-        service: extra, addons: [], nail: toNailBody(EMPTY_PICK), nailLines: [], nailPriceAdjustment: 0,
-        customLines: [], staff: extraStaff, assignedOffline: !!extraStaff, total: extra.price, duration: extra.duration,
+        service: { id: extra.id, name: extra.name, price: extra.price, duration: extra.duration }, addons: extra.addons ?? [],
+        nail: toNailBody(EMPTY_PICK), nailLines: [], nailPriceAdjustment: 0,
+        customLines: [], staff: extraStaff, assignedOffline: !!extraStaff,
+        total: extra.price + sumOf(extra.addons ?? [], "price"), duration: extra.duration + sumOf(extra.addons ?? [], "duration"),
       }, newIdempotencyKey("ticket.create"));
     }
     return { appointmentId: rec.id, ticketNumber: rec.ticketNumber ?? 0, staffId: rec.staff?.id ?? null, staffName: rec.staff?.name ?? null, status: "confirmed",
@@ -746,6 +753,7 @@ const createTicketOnServer = (body: NewTicketBody, key: string) =>
       checkinId: body.checkinId ?? null,
       // The visit's further services (on this ticket, or their own when its technician can't do them) and a package.
       ...(body.extraServiceIds?.length ? { extraServiceIds: body.extraServiceIds } : {}),
+      ...(body.extraAddonIds && Object.keys(body.extraAddonIds).length ? { extraAddonIds: body.extraAddonIds } : {}),
       ...(body.packageId ? { packageId: body.packageId } : {}),
     }),
   });

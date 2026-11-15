@@ -30,7 +30,10 @@ export interface WalkinRecord {
   /** When the server confirmed it. From then on the server's board decides whether it is still waiting. */
   syncedAt?: string;
 }
-export interface TicketLine { id: number; name: string; price: number; duration: number }
+export interface TicketLine { id: number; name: string; price: number; duration: number;
+  /** An add-on for another service of the visit on this ticket (a kiosk check-in, 2026-11-15): it goes under that
+   *  service's line on the server. Absent: the ticket's own service. */
+  forServiceId?: number }
 export interface TicketRecord {
   kind: "ticket"; id: number; storeId: number;
   clientId: number; clientName: string; phone: string | null; walkinId: number | null;
@@ -642,8 +645,13 @@ export class NailOffline {
               checkinId = w?.realId ?? null;
             }
           }
+          // Add-ons of the ticket's own service, and those of its further services (by the service's id).
+          const own = rec.addons.filter((a) => a.forServiceId == null || a.forServiceId === rec.service.id);
+          const extraAddonIds: Record<number, number[]> = {};
+          for (const a of rec.addons) if (a.forServiceId != null && a.forServiceId !== rec.service.id) (extraAddonIds[a.forServiceId] ??= []).push(a.id);
           const body = (cid: number | null) => ({
-            clientId, serviceId: rec.service.id, addonIds: rec.addons.map((a) => a.id), nail: rec.nail, customLines: rec.customLines,
+            clientId, serviceId: rec.service.id, addonIds: own.map((a) => a.id), nail: rec.nail, customLines: rec.customLines,
+            ...(Object.keys(extraAddonIds).length ? { extraAddonIds } : {}),
             staffId: rec.staff?.id ?? null, autoAssign: rec.staff == null, leaveUnassigned: false, checkinId: cid,
             // The number given on this device: the server keeps it when no other tablet has used it.
             ...(rec.ticketNumber ? { ticketNumber: rec.ticketNumber } : {}),

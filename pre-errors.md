@@ -4,13 +4,6 @@ Bugs/type-errors Claude noticed while working on an unrelated task, in files it 
 
 Convention: newest entries at the top. Include date found, file:line, the exact error, and enough context for someone to pick it up cold.
 
-## 2026-11-15 — Kiosk offline check-in puts every add-on under the first service; calendar counts add-on time twice
-
-- **Where:** (1) `artifacts/booking/src/pages/KioskCheckIn.tsx` `doCheckIn` offline branch (`hubKioskCheckin({ … addonIds })`) and the hub's kiosk check-in on the POS tablet. (2) `artifacts/booking/src/pages/Calendar.tsx:3622-3625` (`getRemainingMin`: `apt.duration + addonsDur`).
-- **Symptom:** (1) With no internet, the kiosk checks in over the salon hub with plain `addonIds`, so on a two-service visit the second service's add-ons and Kiosk Extras land on the first service (online check-ins send `forServiceId` since 0d2f861d and are correct). (2) Every booking path saves `appointments.duration` already including add-on minutes (routes.ts setAppointmentAddons callers, the kiosk), but the calendar's remaining-time math adds the add-ons' minutes again, so a ticket with add-ons shows more time left than it has.
-- **Context:** found while checking that kiosk check-ins build the right POS tickets (owner, 11-15). (1) needs the hub protocol (lib/nail-offline / tablet hub) to carry the add-on → service link.
-- **Why not fixed now:** (1) touches the offline hub protocol on the tablets (app side + server), its own task; (2) is in the calendar, unrelated to the kiosk change; verify no other view relies on the doubled number first.
-
 ## 2026-11-13 — Kiosk: settings that do nothing, and a staff picker that may cut off technicians
 
 - **Where:** `artifacts/booking/src/pages/KioskCheckIn.tsx:2627-2628` (stylist screen); `artifacts/booking/src/pages/KioskSettings.tsx:376` (hidden "Category Card Images" section) and the Welcome headline / sub-text / loyalty promo fields; `KioskCheckIn.tsx:1025-1200` (retired dual-screen POS overlay, unreachable).

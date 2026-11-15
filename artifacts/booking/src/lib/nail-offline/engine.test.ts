@@ -160,6 +160,18 @@ describe("offline walk-in on /nail", () => {
 });
 
 describe("synchronising when the connection returns", () => {
+  it("sends a further service's add-ons with that service (a kiosk check-in through the hub, 2026-11-15)", async () => {
+    const server = fakeServer();
+    const engine = new NailOffline(memoryKV());
+    const client = await engine.createClient(2, "Mai Tran", "(602) 555-0101");
+    await engine.createTicket({ ...ticketInput(client.id, null),
+      customLines: [{ label: "Spa Pedicure", price: 55, serviceId: 12, duration: 65 }],
+      addons: [{ id: 5, name: "French Tips", price: 10, duration: 10 }, { id: 7, name: "Sugar scrub", price: 0, duration: 0, forServiceId: 12 }, { id: 8, name: "Gel", price: 10, duration: 10, forServiceId: 12 }] });
+    const bodies: any[] = [];
+    await engine.sync({ ...server.transport, send: (method: any, url: any, body: any, key?: any) => { if (url === "/api/nail/tickets") bodies.push(body); return server.transport.send(method, url, body, key); } } as any);
+    expect(bodies[0]).toMatchObject({ serviceId: 11, addonIds: [5], extraAddonIds: { 12: [7, 8] } });
+  });
+
   it("sends client, walk-in and ticket in that order and links them by their real ids", async () => {
     const server = fakeServer();
     const engine = new NailOffline(memoryKV());

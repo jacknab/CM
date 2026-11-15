@@ -745,7 +745,14 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       // The same ticket the online kiosk makes: services, add-ons and nail options, to the technician asked for
       // (when they are in and do the service) or the next in turn.
       const extras = req.serviceIds.slice(1).map((id) => svcs.find((x) => x.id === id)).filter(Boolean) as any[];
-      const chosenAddons = req.addonIds.map((id) => addons.find((x) => x.id === id)).filter(Boolean) as any[];
+      // Each add-on with the service it was picked for (the kiosk says which); without one, the first service.
+      const forOf = (i: number) => (req.addonForServiceIds?.length === req.addonIds.length ? req.addonForServiceIds[i] : null);
+      const picked = req.addonIds.map((id, i) => ({ a: addons.find((x) => x.id === id), forId: forOf(i) }))
+        .filter((x): x is { a: any; forId: number | null } => !!x.a)
+        .map((x) => ({ ...x, forId: x.forId != null && extras.some((e) => e.id === x.forId) ? x.forId : null }));
+      const chosenAddons = picked.filter((x) => x.forId == null).map((x) => x.a);
+      const addonLine = (x: any) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0 });
+      const extraAddons = (serviceId: number) => picked.filter((x) => x.forId === serviceId).map((x) => x.a);
       const pick: NailPick = { size: req.nail.sizeId, shape: req.nail.shapeId, application: null, effect: req.nail.effectId };
       const nail = nailAdjustment(await fetchNailConfig(first.id).catch(() => null), pick);
       const price = (Number(first.price) || 0) + chosenAddons.reduce((sum, x) => sum + (Number(x.price) || 0), 0) + nail.price;
@@ -754,6 +761,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
       const make = (staff: TurnTech | undefined) => createTicket({
         clientId: client.id, serviceId: first.id, addonIds: chosenAddons.map((x) => x.id), pick, customLines: [],
         staffId: staff?.id ?? null, autoAssign: !staff, ...(extras.length > 0 && { extraServiceIds: extras.map((x) => x.id) }),
+        ...(extras.some((e) => extraAddons(e.id).length) && { extraAddonIds: Object.fromEntries(extras.map((e) => [e.id, extraAddons(e.id).map((x) => x.id)])) }),
       }, {
         storeId, client: { name: client.name, phone: client.phone },
         service: { name: first.name, price: Number(first.price) || 0, duration: Number(first.duration) || 0 },
@@ -761,7 +769,7 @@ function BarberScreen({ storeId, storeName, storeAddress, storeCityStateZip, sto
         nailLines: nail.lines.map((l) => ({ label: l.label, price: l.price })), nailPriceAdjustment: nail.price,
         staff: staff ? { id: staff.id, name: staff.name, color: staff.color ?? null } : null,
         total: price, duration,
-        extras: extras.map((x) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0 })),
+        extras: extras.map((x) => ({ id: x.id, name: x.name, price: Number(x.price) || 0, duration: Number(x.duration) || 0, addons: extraAddons(x.id).map(addonLine) })),
       });
       let made;
       try { made = await make(wanted); }

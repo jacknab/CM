@@ -20045,6 +20045,10 @@ or
         // Further services of the same visit: on this ticket when its technician can do them, otherwise each on
         // its own linked ticket (nailTickets.createNailTicketGroup).
         extraServiceIds: z.array(z.number().int()).max(8).optional(),
+        // Add-ons that go with one of the visit's further services, by that service's id (a kiosk check-in, also
+        // when it reaches the server through the salon hub or a tablet's offline queue): under that service's line,
+        // or on its own ticket. 2026-11-15.
+        extraAddonIds: z.record(z.string().regex(/^\d+$/), z.array(z.number().int()).max(30)).optional(),
         // A Catalog package rung up as the ticket: its services, add-ons and price come from the catalog.
         packageId: z.number().int().positive().nullable().optional(),
         // The number a tablet gave the ticket while offline.
@@ -20054,7 +20058,8 @@ or
       }).safeParse(req.body);
       if (!body.success) return res.status(400).json({ message: "Invalid ticket" });
       const userId = (req.session as any)?.userId;
-      const { extraServiceIds = [], ...ticket } = body.data;
+      const { extraServiceIds = [], extraAddonIds: rawExtraAddonIds, ...ticket } = body.data;
+      const extraAddonIds: Record<number, number[]> = Object.fromEntries(Object.entries(rawExtraAddonIds ?? {}).map(([k, v]) => [Number(k), v]));
       // A barbershop: one client per barber at a time (the client this ticket is for — their check-in — is not a second one).
       // Held while checking and giving (nailTickets.lockBarber), so two tablets can't both pass the check.
       const oneClient = req.originalUrl?.startsWith("/api/barber/") && ticket.staffId != null ? ticket.staffId : null;
@@ -20066,6 +20071,7 @@ or
         result = await nailTickets.createNailTicketGroup(nailDeps, {
           ...ticket,
           extraServiceIds,
+          extraAddonIds,
           storeId,
           idempotencyKey: typeof req.get("x-idempotency-key") === "string" ? String(req.get("x-idempotency-key")).trim() : null,
           // /nail never starts a ticket on its own; the barbershop screen still does.

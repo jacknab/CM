@@ -3619,10 +3619,8 @@ export default function Calendar() {
 
                     // Compute remaining minutes for each ticket (negative = overdue)
                     const getRemainingMin = (apt: any) => {
-                      const addonsDur = (apt.appointmentAddons || []).reduce(
-                        (s: number, aa: any) => s + (aa.addon?.duration || 0), 0
-                      );
-                      const totalDur = (apt.duration || 0) + addonsDur;
+                      // duration already includes the add-ons' minutes (every booking path saves it that way).
+                      const totalDur = apt.duration || 0;
                       const startedAt = apt.startedAt ? new Date(apt.startedAt).getTime() : null;
                       const elapsedMin = startedAt ? Math.max(0, Math.floor((nowTick - startedAt) / 60000)) : 0;
                       return totalDur - elapsedMin;
@@ -3677,10 +3675,7 @@ export default function Calendar() {
                               const customerFirst =
                                 ((apt as any).customer?.fullName || apt.customer?.name || apt.customerName || apt.clientName || "").trim().split(/\s+/)[0] || "";
                               const isPaid = apt.status === "completed" || apt.paymentStatus === "paid";
-                              const aptAddonsDur = (apt.appointmentAddons || []).reduce(
-                                (s: number, aa: any) => s + (aa.addon?.duration || 0), 0
-                              );
-                              const totalDur = (apt.duration || 0) + aptAddonsDur;
+                              const totalDur = apt.duration || 0;
                               const startedAt = apt.startedAt ? new Date(apt.startedAt).getTime() : null;
                               const remainingMin = getRemainingMin(apt);
                               const isOverdue = remainingMin < 0;

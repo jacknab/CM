@@ -22,6 +22,8 @@ export interface KioskCheckinRequest {
   /** The services in order (the first is the visit's main one); empty from the customer screen. */
   serviceIds: number[];
   addonIds: number[];
+  /** For each of `addonIds`, the service it was picked for (null: the first one). 2026-11-15. */
+  addonForServiceIds?: Array<number | null>;
   nail: { sizeId: number | null; shapeId: number | null; effectId: number | null };
   /** The technician the client asked for. */
   staffId: number | null;
@@ -76,6 +78,7 @@ export function serveKioskOverHub(handlers: {
         clientId: idOrNull(m.clientId),
         clientName: String(m.clientName ?? "Walk-in Guest"), phone: String(m.phone ?? ""),
         serviceIds: ids(m.serviceIds), addonIds: ids(m.addonIds),
+        addonForServiceIds: (Array.isArray(m.addonForServiceIds) ? m.addonForServiceIds : []).map(idOrNull),
         nail: { sizeId: idOrNull(m.nail?.sizeId), shapeId: idOrNull(m.nail?.shapeId), effectId: idOrNull(m.nail?.effectId) },
         staffId: idOrNull(m.staffId),
       }).catch((err) => ({ success: false, error: (err as Error)?.message ?? "Check-in failed" }))

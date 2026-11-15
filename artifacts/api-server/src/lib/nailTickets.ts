@@ -779,6 +779,15 @@ export async function createNailTicketGroup(
     }
     const made = await createNailTicketLocked(deps, { ...base, preferStaffId: common });
     if (!made.ok) return made;
+    // Add-ons for a further service that came already as a line of this ticket (a tablet's offline ticket: its
+    // further services are customLines): under that line; one whose service isn't on the ticket, under its service.
+    for (const [sid, addonIds] of Object.entries(input.extraAddonIds ?? {})) {
+      const serviceId = Number(sid);
+      if (extraIds.includes(serviceId) || !addonIds.length) continue;
+      const lines = sanitizeCustomLines((await pool.query(`SELECT custom_lines FROM appointments WHERE id = $1`, [made.data.appointmentId])).rows[0]?.custom_lines, true);
+      const at = lines.findIndex((l) => l.serviceId === serviceId);
+      for (const addonId of addonIds) await addAddonToTicket(input.storeId, made.data.appointmentId, addonId, at >= 0 ? at : null);
+    }
     const visitTech = made.data.staffId;
     const names = [packageName ?? first.name];
     const others: CreatedTicketGroup["tickets"] = [];

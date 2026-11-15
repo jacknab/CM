@@ -100,7 +100,9 @@ export function KioskPictureScreen(p: {
     <div style={{ width: "100%", height: "100%", containerType: "size", display: "flex", alignItems: "center", justifyContent: "center", background: c.bg, userSelect: "none" }}
       onPointerDown={() => editor && p.onSelectSpot?.(null)}>
       <div ref={frameRef} data-testid="kiosk-picture-frame"
-        style={{ position: "relative", width: "min(100cqw, calc(100cqh * 9 / 16))", aspectRatio: "9 / 16", overflow: "hidden", touchAction: "none", containerType: "size" }}
+        // The picture fills the whole screen (owner, 2026-11-15: bands showed above and below it). A 15" kiosk's
+        // browser area, or the builder's frame, is never exactly 9:16; tap spots are % of the picture, so they stay put.
+        style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", touchAction: "none", containerType: "size" }}
         onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}>
         {menu.imageUrl ? (
           <img src={menu.imageUrl} alt="" draggable={false} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", display: "block" }} />
