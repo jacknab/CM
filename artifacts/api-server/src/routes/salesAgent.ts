@@ -410,7 +410,7 @@ Use business-specific language only after learning the business type: nail salon
 - Holding: when something takes a moment to look up, the system may ask you to say a short holding phrase. Say just that — a few natural words, different each time ("one sec…", "bear with me, pulling that up", "okay, just a moment") — and never name tools or systems.
 - Spelling and numbers: read e-mails, codes and numbers back in small chunks ("k-e-v… at gmail") and check they're right.
 - Silence: the system may ask "Are you still there?" for you. If the caller comes back, carry on naturally from where you were.
-- A caller who asks for a live person, a real person, a human, a manager, a supervisor, someone else, or to be transferred (owner, 2026-11-15): stay warm and keep helping — never end the call or say goodbye because of it, never say "I won't bother you any further", and don't bring up AI. Answer like the person who handles this, in your own words and differently each time, for example: "I can take care of that right here — what's going on?", "I'm the one who handles that, so let's sort it out together. What do you need?", "Happy to help with that — tell me what's happening.", "Sure, I can help you with this. What can I do for you?", "You've got the right person for that — what's up?" Then help with what they need. Only if they ask for a person again after that: give the team's e-mail, support@certxa.com, say you're still happy to help in the meantime, ask once "Is there anything else I can help you with?" and wait for their answer.
+- A caller who asks for a manager, a supervisor, a live/real person, a human, or to be transferred (owner, 2026-11-15): stay calm and warm, never end the call or say goodbye because of it, and don't bring up AI. Tell them, in your own words and differently each time, that the managers don't take transferred calls, but you can open a ticket that goes straight to them and they'll follow up. For example: "Our managers don't take calls transferred to them, but I can put in a ticket that goes right to them, and they'll follow up with you.", "Managers aren't on the phones, but I can send this straight to them in a ticket so they reach out to you.", "I can't transfer you to a manager, but I can get a ticket to them right now and they'll get back to you." If they want that: ask what it's about and the best number (the one they're calling from is fine) or e-mail, open the ticket (Tom: open_manager_ticket; Marel: open_ticket), and read back the ticket number only if it was opened. Then ask once, "Is there anything else I can help you with?", wait for their answer, and keep helping if they need more.
 - Wrapping up: before you say goodbye, give a short spoken recap of what was actually done on this call and what happens next (only things the system confirmed — never something that failed or wasn't done), e.g. "So, I've sent the reset e-mail to the address ending in gmail, and your trial now runs to December fourth." Then a warm, normal goodbye. Don't drag it out, and don't ask "is there anything else" more than once.`;
   const roleIntroduction = maril
     ? `You are Marel, Certxa's Account Services representative${marilContext?.transferred ? ", handling a caller Tom transferred to you" : ""}.`
@@ -667,6 +667,21 @@ const TOOLS = [
         notes: { type: "string", description: "The salon name/city and anything the caller said about the request." },
       },
       required: [],
+    },
+  },
+  {
+    type: "function",
+    name: "open_manager_ticket",
+    description: "When the caller asks for a manager, a supervisor, or a real/live person: after they agree, open a ticket that Certxa's managers receive and follow up on. Include what they need and the best way to reach them. Read the ticket number back only if this succeeds.",
+    parameters: {
+      type: "object",
+      properties: {
+        description: { type: "string", description: "What the caller needs, in their words, plus anything already tried on this call." },
+        callerName: { type: "string" },
+        callbackPhone: { type: "string", description: "Only if they want a different number than the one they are calling from." },
+        email: { type: "string", description: "Only if they gave one." },
+      },
+      required: ["description"],
     },
   },
   {
@@ -1269,6 +1284,21 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
       if (leadId && identityVerified) await refreshVerifiedAccountStage(leadId);
       return { success: true, message: "Saved." };
     }
+    if (name === "open_manager_ticket") {
+      // A caller who wants a manager or a real person (owner, 2026-11-15): managers don't take transferred calls; they
+      // get this ticket in the support queue and follow up.
+      try {
+        const phone = args.callbackPhone ? (tenDigit(args.callbackPhone) ?? String(args.callbackPhone)) : callerPhone;
+        const description = [String(args.description ?? "").trim(), args.email ? `E-mail: ${String(args.email).trim()}` : "", phone ? `Call back: ${phone}` : ""]
+          .filter(Boolean).join("\n");
+        const number = await openTicket(null, { subject: "Manager follow-up requested on a phone call", description, priority: "high", callerName: args.callerName ? String(args.callerName) : undefined, callerPhone: phone });
+        return { success: true, ticket: number, message: `Ticket ${number} is open; a manager will follow up.` };
+      } catch (error: any) {
+        console.error(`${LOG} could not open manager ticket:`, error?.message ?? error);
+        return { success: false, message: "The ticket could not be opened. Give the caller support@certxa.com instead." };
+      }
+    }
+
     if (name === "send_trial_link") {
       if (trialSent) return { success: true, message: "Already texted on this call." };
       const to = args.phone ? (tenDigit(args.phone) ?? args.phone) : callerPhone;
