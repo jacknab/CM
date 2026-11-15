@@ -36,12 +36,19 @@ router.get("/api/pro/appointments/:id/checkout", isAuthenticated, async (req, re
   if (!aid.success) return res.status(400).json({ error: "Invalid booking" });
   try {
     const storeId = await store(req, res); if (!storeId) return;
-    const appt = (await pool.query(`SELECT id FROM appointments WHERE id = $1 AND store_id = $2`, [aid.data, storeId])).rows[0];
+    const appt = (await pool.query(`SELECT id, customer_id FROM appointments WHERE id = $1 AND store_id = $2`, [aid.data, storeId])).rows[0];
     if (!appt) return res.status(404).json({ error: "Booking not found" });
     const gift = (await pool.query(
       `SELECT COALESCE(SUM(t.amount), 0) AS amount, MAX(g.code) AS code FROM gift_card_transactions t JOIN gift_cards g ON g.id = t.gift_card_id
         WHERE t.appointment_id = $1 AND t.store_id = $2 AND t.type = 'redemption'`, [aid.data, storeId])).rows[0];
-    return res.json({ products: await lines(aid.data), giftCard: { redeemedCents: Math.round(Number(gift.amount) * 100), code: gift.code ?? null } });
+    // Referral credit (routes/proReferrals.ts): what was spent on this booking, and what the client has left.
+    const credit = appt.customer_id ? (await pool.query(
+      `SELECT COALESCE(SUM(amount_cents), 0)::int AS balance, COALESCE(-SUM(amount_cents) FILTER (WHERE appointment_id = $3 AND reason = 'spent'), 0)::int AS used
+         FROM client_credits WHERE store_id = $1 AND customer_id = $2`, [storeId, appt.customer_id, aid.data])).rows[0] : { balance: 0, used: 0 };
+    return res.json({
+      products: await lines(aid.data), giftCard: { redeemedCents: Math.round(Number(gift.amount) * 100), code: gift.code ?? null },
+      credit: { usedCents: Number(credit.used), balanceCents: Number(credit.balance) },
+    });
   } catch (error) { return unexpected(res, error); }
 });
 

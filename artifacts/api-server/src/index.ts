@@ -1513,6 +1513,9 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Expenses that repeat monthly, and low-stock alerts (routes/proExpenses.ts).
   const { startExpensesAndStock } = await import("./routes/proExpenses");
   startExpensesAndStock();
+  // Referral rewards once a referred client's first visit is paid (routes/proReferrals.ts).
+  const { startReferralRewards } = await import("./routes/proReferrals");
+  startReferralRewards();
 
   // Start scheduled campaign dispatcher (checks every 5 minutes for due campaigns)
   const { startCampaignScheduler } = await import("./services/campaign-scheduler");

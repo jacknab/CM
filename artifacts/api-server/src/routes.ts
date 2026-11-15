@@ -4408,6 +4408,9 @@ export async function registerRoutes(
   // Expenses (receipts, monthly repeats, CSV for taxes) and low-stock alerts (routes/proExpenses.ts).
   const { default: proExpensesRouter } = await import("./routes/proExpenses.js");
   app.use(proExpensesRouter);
+  // Client referrals and credit (routes/proReferrals.ts).
+  const { default: proReferralsRouter } = await import("./routes/proReferrals.js");
+  app.use(proReferralsRouter);
   // The Solo billing page's card on file (change / remove).
   const { default: soloCardRouter } = await import("./routes/soloCard.js");
   app.use(soloCardRouter);
