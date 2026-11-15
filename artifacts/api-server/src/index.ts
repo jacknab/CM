@@ -1504,6 +1504,9 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Website gift cards and packages paid but not delivered (the page closed): checked and delivered.
   const { startSiteOrderSweep } = await import("./routes/siteShop");
   startSiteOrderSweep();
+  // Client forms and waivers: links sent by themselves when a client books (lib/proForms.ts).
+  const { startProFormsSweep } = await import("./lib/proForms");
+  startProFormsSweep();
 
   // Start scheduled campaign dispatcher (checks every 5 minutes for due campaigns)
   const { startCampaignScheduler } = await import("./services/campaign-scheduler");

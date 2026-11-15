@@ -31,7 +31,7 @@ const PLATFORM_TO_OWNER = new Set([
 export const NOTIFICATIONS = new Set([
   "booking_confirmation", "booking_request", "reschedule_notice", "reminder",
   "sms_cancel_confirm", "sms_cancel_noop", "chatbot_confirm", "chatbot_cancel", "chatbot_reschedule", "dialer_confirm", "dialer_cancel",
-  "booking_payment_required", "booking_payment_reminder", "pos_receipt", "pos_receipt_link",
+  "booking_payment_required", "booking_payment_reminder", "pos_receipt", "pos_receipt_link", "intake_form",
   "kiosk_called", "nail_ready", "queue_travel_alert",
   "line_joined", "line_leave_now", "line_your_turn", "line_moved_back", "line_removed", "line_up",
 ]);

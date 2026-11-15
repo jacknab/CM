@@ -101,7 +101,7 @@ export const KNOWN_APP_PREFIXES = new Set([
   "chat", "checkin-kiosk", "chkeditor", "claim", "client", "client-lookup", "clients",
   "commission-report", "commissions", "complete-booking", "contact",
   "contractor-onboarding", "customers", "dashboard", "data-transfer",
-  "elite-api-docs", "elite-details", "faq", "features", "features-settings", "forgot-password",
+  "elite-api-docs", "elite-details", "f", "faq", "features", "features-settings", "forgot-password",
   "frontdesk", "gift-cards", "google-business", "help", "how-it-works", "intake-forms",
   "intelligence", "isTeam", "isadmin", "kiosk", "kiosk-builder", "kiosk-settings",
   "language-settings", "loyalty", "mail-settings", "manage", "marketing",

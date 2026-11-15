@@ -4397,6 +4397,9 @@ export async function registerRoutes(
   const { default: soloCreditsRouter } = await import("./routes/soloCredits.js");
   app.use(soloCreditsRouter);
   // The Solo billing page's card on file (change / remove).
+  // Client forms and waivers: the app's Forms and the client's private page certxa.com/f/<code> (routes/proForms.ts).
+  const { default: proFormsRouter } = await import("./routes/proForms.js");
+  app.use(proFormsRouter);
   const { default: soloCardRouter } = await import("./routes/soloCard.js");
   app.use(soloCardRouter);
   // Website messages: clients write from the pro's website, the pro answers in the app (routes/proMessages.ts).
@@ -22778,12 +22781,14 @@ or
     }
   });
 
-  app.post("/api/intake-forms/:id/respond", async (req, res) => {
+  // Answers entered by the business itself. It was open to anyone for any form id with nothing calling it (found
+  // 2026-11-15); clients now fill in forms through their private link (routes/proForms.ts).
+  app.post("/api/intake-forms/:id/respond", isAuthenticated, async (req, res) => {
     try {
       const formId = parseRouteId(req.params.id);
       const { customerId, appointmentId, customerName, responses } = req.body;
       const [form] = await db.select().from(intakeForms).where(eq(intakeForms.id, formId));
-      if (!form) return res.status(404).json({ message: "Form not found" });
+      if (!form || form.storeId !== (await resolveSessionStoreId(req))) return res.status(404).json({ message: "Form not found" });
 
       const [response] = await db.insert(intakeFormResponses).values({
         formId, storeId: form.storeId,
