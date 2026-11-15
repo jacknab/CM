@@ -53,6 +53,14 @@ async function ownerRow(where: string, params: unknown[]): Promise<(VerifiedOwne
   return rows.map((r: any) => ({ userId: r.id, firstName: r.first_name, email: r.email, phone: r.phone, accountType: r.account_type, storeId: Number(r.store_id), businessName: r.name }));
 }
 
+/** The owner of a business, for someone signed in to it (the website live chat, lib/liveChatAi.ts). */
+export async function ownerByStoreId(storeId: number): Promise<VerifiedOwner | null> {
+  const [owner] = await ownerRow(`u.id = (SELECT user_id FROM locations WHERE id = $1)`, [storeId]);
+  if (!owner) return null;
+  const { phone: _phone, ...rest } = owner;
+  return { ...rest, storeId };
+}
+
 /**
  * The account this caller's number belongs to (caller-ID verification): the owner's mobile on file, else a number the
  * owner proved before with a texted code (verified_caller_numbers, migration 0348). Only one match counts.

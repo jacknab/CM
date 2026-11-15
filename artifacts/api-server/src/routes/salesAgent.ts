@@ -315,6 +315,47 @@ export async function buildShavezInstructions(
   return buildAgentInstructions(SHAVEZ_SALES_AGENT, callerPhone, memoryCandidate, accountSupportHandoff);
 }
 
+/** Who an AI chat on certxa.com is with (routes/liveChat.ts, lib/liveChatAi.ts): Marel's verified owner and Tom's hand-over note. */
+export type ChatAgentContext = { owner: VerifiedOwner | null; transferred: boolean; tomNote: TomTransferNote | null; humansOnline: boolean };
+
+/**
+ * Tom and Marel on the website live chat (owner, 2026-11-15): their phone instructions and knowledge, with the phone-only
+ * parts overridden for text, and only the tools that make sense in a chat.
+ */
+export async function buildChatAgentSetup(agent: "tom" | "marel", ctx: ChatAgentContext): Promise<{ instructions: string; tools: any[] }> {
+  const marel = agent === "marel";
+  // A chat can wait a moment for the live plans and prices (a call can't), so they're never "still loading" here.
+  if (!liveSalesFactsCache) await refreshLiveSalesFacts().catch(() => undefined);
+  const built = await buildAgentInstructions(
+    marel ? SHAVEZ_SALES_AGENT : TOM_SALES_AGENT, null, false, marel, null,
+    marel ? { transferred: ctx.transferred, owner: ctx.owner, tomNote: ctx.tomNote } : null,
+  );
+  const person = ctx.humansOnline
+    ? `Someone from the Certxa team is on chat right now: if the visitor asks for a person, a manager or a human, say you'll bring a teammate in and call ask_for_person.`
+    : `Nobody from the Certxa team is on chat right now: if the visitor asks for a person, a manager or a human, offer a ticket the team follows up on by e-mail (${marel ? "open_ticket" : "open_manager_ticket"}), and give the ticket number only if it was opened.`;
+  const chat = `THIS IS A TEXT CHAT, NOT A PHONE CALL — these rules override anything above about phones, voice or calls:
+- You're answering the live chat on the Certxa website (certxa.com). Wherever the notes above say caller, call, phone line or hang up, read visitor, chat, chat window and end of chat.
+- Write, don't speak: short, friendly messages (one to four sentences), plain text, no markdown, no headings, no bullet symbols. Spell the brand "Certxa"; ignore every pronunciation alias. No holding phrases or fillers.
+- One question at a time; answer what they asked first.
+- Links can be written straight into the chat. The free-trial sign-up is https://certxa.com/auth?mode=register&ref=chat — give it when they want to try Certxa (there's nothing to text).
+- There is no caller ID and no stored caller memory in chat: never use verify_caller_identity or mention past calls.${marel ? `
+- Verification: ${ctx.owner ? `the visitor is signed in to Certxa as the owner of ${ctx.owner.businessName}${ctx.owner.firstName ? ` (${ctx.owner.firstName})` : ""}; treat them as verified for that account.` : "the visitor is not signed in: verify with find_account, send_verification_code (a 6-digit code texted to the owner's mobile on file) and check_verification_code with the code they type, exactly as on the phone."}
+- There are no follow-up texts in chat.` : `
+- A Certxa-prepared salon page (claiming it or taking it down) is done by phone: give (888) 814-7623.
+- Account, billing, sign-in or subscription questions from an existing customer: say Marel from Account Services will take it from here and call transfer_to_account_services.`}
+- ${person}
+- Never say you're an AI unless asked directly; then answer honestly in one short line.`;
+  const keepTom = new Set(["save_lead", "transfer_to_account_services", "open_manager_ticket"]);
+  const askForPerson = { type: "function", name: "ask_for_person", description: "Bring a person from the Certxa team into this chat, when the visitor asks for one and someone is on chat.", parameters: { type: "object", properties: { reason: { type: "string", description: "One short line for the teammate: what the visitor needs." } }, required: ["reason"] } };
+  const tools = marel
+    ? MARIL_TOOLS.filter((t) => t.name !== "end_call" && t.name !== "schedule_follow_up_text")
+    : TOOLS.filter((t) => keepTom.has(t.name));
+  return {
+    instructions: `${built.voice}\n\n${built.backend}\n\n${chat}`,
+    tools: ctx.humansOnline ? [...tools, askForPerson] : tools,
+  };
+}
+
 /** What Tom knows at the start of a call about a Certxa-prepared salon page (lib/salonClaim.ts). */
 type ClaimCallContext =
   | ({ mode: "callback" } & ClaimCallbackContext)
