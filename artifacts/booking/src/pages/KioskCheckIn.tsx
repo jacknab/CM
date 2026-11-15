@@ -7,7 +7,6 @@ import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
 import { KioskMenuScreen } from "../components/kiosk/KioskMenuScreen";
 import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
-import { QRCodeCanvas } from "qrcode.react";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
   kioskFlow, nextKioskStep, normalizeKioskLayout, previousKioskStep, sameGroup, spotPriceText, type KioskMenu, type KioskNext,
@@ -1337,7 +1336,6 @@ body *{cursor:default}`;
     return url ? `${BG} url("${url}") center / cover no-repeat` : BG;
   };
   const clientFirst = fmtName(clientInfo?.name?.split(" ")[0] ?? newClientName.split(" ")[0]) || "there";
-  const ticketUrl   = ticket ? `${window.location.origin}/kiosk/${slug}/ticket/${ticket.token}` : "";
   const selTotal    = selectedServices.reduce((s, x) => s + x.price, 0);
   const selDur      = selectedServices.reduce((s, x) => s + x.duration, 0);
   const showPrice   = kioskConfig?.showServicePrice !== false;
@@ -3270,8 +3268,8 @@ body *{cursor:default}`;
   if (screen === "ticket" && ticket) return (
     <div className="fixed inset-0 flex select-none" onContextMenu={e => e.preventDefault()}
       style={{ ...NO_SELECT, background: screenBg("ticket") }}>
-      <div className="w-[55%] flex flex-col items-center justify-center px-12 gap-5"
-        style={{ borderRight: `1.5px solid ${BORDER}` }}>
+      {/* One centred column (owner, 2026-11-15: the QR code column is gone). */}
+      <div className="w-full flex flex-col items-center justify-center px-12 gap-5">
         <div className="w-24 h-24 rounded-full flex items-center justify-center text-5xl shadow-2xl"
           style={{ background: `linear-gradient(135deg, ${PRIMARY}, ${ACCENT})`, boxShadow: SHADOW_LG }}>✓</div>
         <div className="text-center">
@@ -3364,7 +3362,7 @@ body *{cursor:default}`;
               )}
             </div>
           )}
-          {ticket.appointmentId && (
+          {(ticket.appointmentId || ticket.ticketNumber != null) && (
             <div className="px-6 py-3 flex justify-between items-center"
               style={{ background: PRIMARY_S, borderTop: `1.5px solid ${BORDER}` }}>
               <span className="text-sm uppercase tracking-widest font-semibold" style={{ color: SUBTLE }}>{t.bookingHash}</span>
@@ -3377,23 +3375,6 @@ body *{cursor:default}`;
         <GhostBtn onPress={resetToIdle}>{t.newCheckin}</GhostBtn>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center gap-6">
-        <p className="text-sm uppercase tracking-widest font-semibold" style={{ color: SUBTLE }}>{t.staffScanQr}</p>
-        {ticket.offline ? (
-          <p className="font-mono font-black" style={{ color: TEXT, fontSize: 120, lineHeight: 1 }}>
-            {ticket.ticketNumber != null ? String(ticket.ticketNumber).padStart(3, "0") : "—"}
-          </p>
-        ) : (
-          <>
-            <div className="p-5 rounded-3xl shadow-2xl" style={{ background: "#fff" }}>
-              <QRCodeCanvas value={ticketUrl} size={280} level="M" includeMargin={false} />
-            </div>
-            <p className="text-xs font-mono" style={{ color: SUBTLE }}>
-              {ticket.ticketNumber != null ? String(ticket.ticketNumber).padStart(3, "0") : (ticket.appointmentId ?? ticket.token.substring(0, 10))}
-            </p>
-          </>
-        )}
-      </div>
     </div>
   );
 
