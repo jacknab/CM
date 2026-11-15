@@ -44,6 +44,7 @@ import { archiveRecordingNow, localRecordingPath } from "../lib/callRecordingArc
 import { reviewReasons } from "../lib/salesCallReview";
 import { callbackGreetingInstruction, lastCallForPrompt, marelLastCall, tomNoteForPrompt, tomTransferNote, transferGreetingInstruction, type MarelLastCall, type TomTransferNote } from "../lib/marelLastCall";
 import { isSilentUlaw, marilHoldMusicFrames, MARIL_OPENER_TEXTS, warmMarilOpeners, type MarilOpenerKind } from "../lib/marilOpener";
+import { callerHelloChunks, isCallerHelloEcho, warmCallerHello } from "../lib/callerHello";
 import { isExistingCustomerAccountSupportRequest, mayTransferToAccountServices, SHAVEZ_ACCOUNT_SUPPORT_GREETING, shavezHandoffTwiML, TOM_ACCOUNT_SUPPORT_HANDOFF } from "../lib/salesAgentTransfer";
 import {
   finalizeAfterInsert,
@@ -814,10 +815,13 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
   const pendingActions = new Set<Promise<unknown>>();
   let callerText = "";
   let tomText = "";
+  /** The caller "Hello?" only the AI heard (lib/callerHello.ts) — its transcript line is dropped. */
+  let helloEchoPending = false;
 
   const flush = (who: "caller" | "tom") => {
     const rawText = (who === "caller" ? callerText : tomText).trim();
-    const text = who === "tom" ? canonicalizeSpokenBrandForText(rawText) : rawText;
+    let text = who === "tom" ? canonicalizeSpokenBrandForText(rawText) : rawText;
+    if (who === "caller" && helloEchoPending && text) { helloEchoPending = false; if (isCallerHelloEcho(text)) text = ""; }
     if (text) transcript.push({ role: who, text, at: new Date().toISOString() });
     if (who === "caller") callerText = ""; else tomText = "";
   };
@@ -1550,6 +1554,13 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
               : tomOpeningInstructions(CERTXA_SPOKEN_ALIAS, connectionAcknowledged)
           : `Speak first now. Say exactly: "${pickAgentGreeting(agentProfile)}" Use the pronunciation guidance in your instructions. The caller has already selected sales in the phone menu; don't ask what they are calling about again. If they immediately ask a question, answer it naturally instead of insisting on a name. Then listen.`,
           }));
+          // GPT-Live only started talking once the caller spoke (owner, 2026-11-15): a "Hello?" only the AI hears starts
+          // the greeting now. Not on Tom's outbound call-back, where the salon answers and voicemail must be detected.
+          const hello = claimContext?.mode === "callback" ? null : callerHelloChunks();
+          if (hello) {
+            helloEchoPending = true;
+            for (const audio of hello) openAi.send(JSON.stringify({ type: "session.input_audio.append", audio }));
+          }
         };
         const holdLeft = holdUntil === Number.MAX_SAFE_INTEGER ? 0 : holdUntil - Date.now() - 1_500;
         if (holdLeft > 0) setTimeout(speakFirst, holdLeft); else speakFirst();
@@ -2251,6 +2262,7 @@ export function setupSalesAgentRoutes(httpServer: HttpServer, app: Express): voi
 
   setupIvrRoutes(app); // the phone menu in front of Tom and Marel (routes/ivr.ts)
   void warmMarilOpeners();
+  void warmCallerHello();
   if (readSalesAgentBackgroundAudioConfig().enabled) void createSalesAgentBackgroundAudioCursor().catch(() => undefined); // decode before the first call
   console.log(`${LOG} ready — Tom POST ${TOM_SALES_AGENT.webhookPath} WSS ${TOM_SALES_AGENT.streamBase}; Shavez POST ${SHAVEZ_SALES_AGENT.webhookPath} WSS ${SHAVEZ_SALES_AGENT.streamBase}`);
 }

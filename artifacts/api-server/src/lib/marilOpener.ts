@@ -69,19 +69,22 @@ function cacheFile(text: string): string {
   return path.join(DIR, `maril-${key}.ulaw`);
 }
 
-async function render(text: string): Promise<Buffer> {
+/** One line from OpenAI's speech API as trimmed 8 kHz μ-law (also used for the caller "Hello?" in lib/callerHello.ts). */
+export async function renderSpeechUlaw(text: string, voice: string, style: string, minBytes = 8000): Promise<Buffer> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY is missing");
   const r = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "gpt-4o-mini-tts", voice: VOICE, input: text, instructions: STYLE, response_format: "pcm" }),
+    body: JSON.stringify({ model: "gpt-4o-mini-tts", voice, input: text, instructions: style, response_format: "pcm" }),
   });
   if (!r.ok) throw new Error(`speech HTTP ${r.status}`);
   const ulaw = trimSilence(pcm24kToUlaw8k(Buffer.from(await r.arrayBuffer())));
-  if (ulaw.length < 8000) throw new Error("speech too short");
+  if (ulaw.length < minBytes) throw new Error("speech too short");
   return ulaw;
 }
+
+const render = (text: string) => renderSpeechUlaw(text, VOICE, STYLE);
 
 /** Load (or make once) both openers. Never awaited on a call; a call without one just waits for Marel as before. */
 export async function warmMarilOpeners(): Promise<void> {

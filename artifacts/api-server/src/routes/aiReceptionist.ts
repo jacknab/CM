@@ -119,6 +119,7 @@ import {
 import { getSalonOperationsOverview, summarizeSalonOperations } from "../lib/salonOperationsOverview";
 import { getStaffSchedules, summarizeSchedules } from "../lib/staffScheduleLookup";
 import { issueStreamPass, redeemStreamPass, passFromPath } from "../lib/streamPass";
+import { callerHelloChunks, isCallerHelloEcho, warmCallerHello } from "../lib/callerHello";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -3522,9 +3523,12 @@ function createCallSession(twilioWs: WebSocket) {
   // heuristically: a buffer flushes to the call log the moment the OTHER
   // direction starts producing deltas (i.e. the speaker has changed).
   let pendingCallerTranscript = "";
+  /** The caller "Hello?" only Autumn heard (lib/callerHello.ts) — its transcript line is dropped. */
+  let helloEchoPending = false;
   let pendingAutumnTranscript = "";
   function flushTranscript(role: "caller" | "autumn"): void {
-    const text = role === "caller" ? pendingCallerTranscript : pendingAutumnTranscript;
+    let text = role === "caller" ? pendingCallerTranscript : pendingAutumnTranscript;
+    if (role === "caller" && helloEchoPending && text.trim()) { helloEchoPending = false; if (isCallerHelloEcho(text)) text = ""; }
     if (text.trim()) {
       callTranscriptTurns.push({ role, text: text.trim(), ts: new Date().toISOString() });
       callFileLogger.transcript(role, text.trim());
@@ -3632,6 +3636,13 @@ function createCallSession(twilioWs: WebSocket) {
           delegation_id: null,
           content: pendingGreetingInstruction,
         }));
+        // GPT-Live only started talking once the caller spoke (owner, 2026-11-15): a "Hello?" only Autumn hears
+        // starts her greeting now (lib/callerHello.ts). The caller never hears it; its transcript line is dropped.
+        const hello = callerHelloChunks();
+        if (hello) {
+          helloEchoPending = true;
+          for (const audio of hello) openAiWs.send(JSON.stringify({ type: "session.input_audio.append", audio }));
+        }
       }
       return;
     }
@@ -4691,6 +4702,7 @@ export function setupAiReceptionistRoutes(httpServer: HttpServer, app: Express):
   void warmAutumnBackgroundAudio().catch((error) =>
     console.error("[Autumn ambience] Startup preparation failed; calls will continue without ambience:", error),
   );
+  void warmCallerHello();
   const apiKeyPresent =
     !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY || !!process.env.OPENAI_API_KEY;
   const apiKeySource = process.env.AI_INTEGRATIONS_OPENAI_API_KEY
