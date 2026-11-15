@@ -27,7 +27,7 @@ import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
-import { ScreensEditor, nextScreenName, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensEditor, nextScreenName, withCategoryScreens, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
 import type { HelpTopicId } from "@/pages/kiosk-builder/help";
@@ -479,6 +479,21 @@ export default function KioskBuilder() {
       onMove={(sid, workflowId, beforeId) => update((d) => withScreenMoved(d, sid, workflowId, beforeId))}
       onNewWorkflow={() => { let wid = ""; update((d) => { const r = withNewWorkflow(d); wid = r.id; return r.layout; }); return wid; }}
       onRenameWorkflow={(wid, name) => update((d) => ({ ...d, workflows: d.workflows.map((w) => (w.id === wid ? { ...w, name } : w)) }))}
+      onCategoryScreens={builder !== "picture" ? undefined : async () => {
+        // The catalog as the kiosk sees it (loaded here if the screen editor hasn't yet).
+        let cat = catalog;
+        if (!cat && slug) {
+          const d = await api<any>(`/api/public/kiosk/${slug}/config?preview=config-${id}`).catch((e) => { toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }); return null; });
+          if (d) { cat = { services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }; setCatalog(cat); }
+        }
+        if (!cat) return;
+        if (!cat.services.length) { toast({ title: "No services to make screens for", description: "Add services in Catalog first." }); return; }
+        let first: string | null = null;
+        update((d) => { const r = withCategoryScreens(d, cat!.services, cat!.categories); first = r.first; return r.layout; });
+        if (!first) { toast({ title: "No room for more screens", description: "Delete some screens first.", variant: "destructive" }); return; }
+        setScreenId(first); openOwnScreens();
+        toast({ title: "Screens made from your categories", description: "Upload each screen's picture, drag the tap spots onto it, and delete the ones you don't want." });
+      }}
       onDeleteWorkflow={(wid) => { if (draft.menus.some((m) => m.id === screenId && m.workflowId === wid)) setScreenId(null); update((d) => withoutWorkflow(d, wid)); }} />
   );
   const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");

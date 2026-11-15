@@ -1,5 +1,7 @@
 /**
- * Kiosk Builder › the left Screens panel (owner, 2026-11-13: "exactly like" the /nail grid editor's Grids panel).
+ * Kiosk Builder › the left Screens panel (owner, 2026-11-13: "exactly like" the /nail grid editor's Grids panel),
+ * in two tabs (2026-11-15): Screens (screens not in a workflow) and Workflows. Picture builder: "Screens from my
+ * categories" on the Workflows tab.
  * Screens not in a workflow first (the first screen, "What are you here for?"), then each workflow (owner,
  * 2026-11-15: Manicure, Pedicure, Fake nails…) as its own sub-menu holding its screens and its own "New screen".
  * A click opens a screen; a workflow's name opens or closes it and shows its name box. "New screen" makes one with
@@ -26,6 +28,8 @@ export function ScreensPanel(props: {
   onNewWorkflow: () => string;
   onRenameWorkflow: (id: string, name: string) => void;
   onDeleteWorkflow: (id: string) => void;
+  /** Picture builder: one screen per catalog category with a tap spot per service (absent: not offered). */
+  onCategoryScreens?: () => Promise<void>;
   /** Bumped when a new screen is made: the name box takes the focus. */
   focusName: number;
 }) {
@@ -37,6 +41,10 @@ export function ScreensPanel(props: {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(() => new Set(draft.workflows.map((w) => w.id)));
   const flow = draft.workflows.find((w) => w.id === flowId) ?? null;
+  // The tab: a screen in a workflow is shown on the Workflows tab.
+  const [tab, setTab] = useState<"screens" | "workflows">(active?.workflowId ? "workflows" : "screens");
+  useEffect(() => { if (active) setTab(active.workflowId ? "workflows" : "screens"); }, [active?.id, active?.workflowId]);
+  const [making, setMaking] = useState(false);
   // The open screen's workflow is always open.
   useEffect(() => {
     if (active?.workflowId && !open.has(active.workflowId)) setOpen((o) => new Set(o).add(active.workflowId!));
@@ -93,11 +101,20 @@ export function ScreensPanel(props: {
   return (
     <div className="kx-screens-wrap">
       <aside className="kx-screens" data-testid="screens-panel">
+        <div className="kx-tabs" role="tablist">
+          {([["screens", "Screens"], ["workflows", "Workflows"]] as const).map(([k, name]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} data-testid={`screens-panel-tab-${k}`}
+              onClick={() => { setTab(k); setFlowId(null); }}>{name}</button>
+          ))}
+        </div>
+        {tab === "screens" && (<>
         <p className="kx-label">Screens</p>
         {loose.map((m, i) => screenRow(m, loose, i, false))}
         {newScreenButton(null, false)}
+        </>)}
 
-        <p className="kx-label kx-label-gap">Workflows</p>
+        {tab === "workflows" && (<>
+        <p className="kx-label">Workflows</p>
         {draft.workflows.map((w) => {
           const list = draft.menus.filter((m) => m.workflowId === w.id);
           const isOpen = open.has(w.id);
@@ -132,6 +149,13 @@ export function ScreensPanel(props: {
           }}>
           <Plus size={16} /> New workflow
         </button>
+        {props.onCategoryScreens && (
+          <button type="button" className="kx-add kx-add-wrap" disabled={making || draft.menus.length >= KIOSK_MENU_LIMITS.menus} data-testid="screens-panel-category-screens"
+            onClick={async () => { setMaking(true); try { await props.onCategoryScreens!(); } finally { setMaking(false); } }}>
+            <Plus size={16} /> {making ? "Making screens…" : "Screens from my categories"}
+          </button>
+        )}
+        </>)}
 
         {flow ? (
           <div className="kx-meta">
@@ -152,6 +176,12 @@ export function ScreensPanel(props: {
             <p className="kx-label">Screen name</p>
             <input ref={nameRef} value={active.name} maxLength={KIOSK_MENU_LIMITS.name} data-testid="screens-panel-name"
               onChange={(e) => props.onRename(active.id, e.target.value)} />
+            <p className="kx-label kx-label-gap">Workflow</p>
+            <select value={active.workflowId ?? ""} data-testid="screens-panel-move"
+              onChange={(e) => props.onMove(active.id, e.target.value || null, null)}>
+              <option value="">Not in a workflow</option>
+              {draft.workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
             <button type="button" className="kx-danger" data-testid="screens-panel-delete"
               onClick={() => { if (window.confirm(`Delete "${active.name || "this screen"}"? Buttons and tap spots that open it are removed too.`)) props.onDelete(active.id); }}>
               <Trash2 size={15} /> Delete screen

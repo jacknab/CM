@@ -133,7 +133,8 @@ export function KioskPictureScreen(p: {
                 boxShadow: editor ? "0 0 0 1px rgba(255,255,255,.8)" : chosen ? `0 0 0 4px #fff, 0 0 0 8px ${c.primary}, 0 6px 18px rgba(0,0,0,.25)` : undefined,
               }}>
               {editor && label && (
-                <span style={{ position: "absolute", left: 4, top: 4, maxWidth: "calc(100% - 8px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                // The name along the bottom of the spot (owner, 2026-11-15), where it doesn't cover what the spot is over.
+                <span style={{ position: "absolute", left: "50%", bottom: 4, transform: "translateX(-50%)", maxWidth: "calc(100% - 8px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   background: "rgba(15,23,42,.85)", color: "#fff", fontSize: 11, lineHeight: "16px", padding: "0 6px", borderRadius: 4, pointerEvents: "none" }}>{label}</span>
               )}
               {!editor && chosen && (

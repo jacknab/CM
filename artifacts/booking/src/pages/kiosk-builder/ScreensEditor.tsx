@@ -15,7 +15,7 @@ import { KioskMenuScreen, servicePicture, type MenuColors, type MenuService } fr
 import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
 import { ExtraForm, priceText, type KioskExtrasStore } from "./extras";
 import {
-  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
+  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_WORKFLOW_LIMITS, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
   type KioskLayout, type KioskMenu, type KioskNext, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
 } from "@shared/kiosk/layout";
 
@@ -197,7 +197,8 @@ function relayout(m: KioskMenu, style: KioskMenu["style"], cols: number, rows: n
 }
 
 /** Screens from the catalog: a start screen with one button per category, and a screen of services for each. */
-export function screensFromCatalog(services: CatalogService[], categories: CatalogCategory[]): { menus: KioskMenu[]; start: string } {
+/** The catalog's services by category, in the catalog's order (services with no category last, by their category name). */
+export function catalogGroups(services: CatalogService[], categories: CatalogCategory[]): Array<{ name: string; imageUrl: string | null; services: CatalogService[] }> {
   const groups: Array<{ name: string; imageUrl: string | null; services: CatalogService[] }> = [];
   for (const c of categories) {
     const svcs = services.filter((s) => s.categoryId === c.id);
@@ -210,6 +211,49 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
     if (!g) { g = { name, imageUrl: null, services: [] }; groups.push(g); }
     g.services.push(s);
   }
+  return groups;
+}
+
+/**
+ * Picture builder (owner, 2026-11-15): one picture screen per catalog category, in a workflow of the category's
+ * name (an existing workflow of that name is used), with a tap spot for each of its services laid out in rows.
+ * The owner uploads the picture, drags each spot onto its part of it and deletes the ones they don't want.
+ * Returns the first new screen's id (null: nothing made).
+ */
+export function withCategoryScreens(d: KioskLayout, services: CatalogService[], categories: CatalogCategory[]): { layout: KioskLayout; first: string | null } {
+  let next: KioskLayout = { ...d, workflows: [...d.workflows], menus: [...d.menus] };
+  let first: string | null = null;
+  for (const g of catalogGroups(services, categories)) {
+    if (next.menus.length >= KIOSK_MENU_LIMITS.menus) break;
+    let flow = next.workflows.find((w) => w.name.trim().toLowerCase() === g.name.trim().toLowerCase());
+    if (!flow && next.workflows.length < KIOSK_WORKFLOW_LIMITS.workflows) {
+      flow = { id: newId("flow"), name: g.name.slice(0, KIOSK_WORKFLOW_LIMITS.name) };
+      next.workflows.push(flow);
+    }
+    // Rows of spots between a heading area (top 14%) and the footer strip (bottom 10%): two across, three when long.
+    const list = g.services.slice(0, KIOSK_MENU_LIMITS.spots);
+    const cols = list.length > 12 ? 3 : 2;
+    const rows = Math.max(1, Math.ceil(list.length / cols));
+    const gap = 1.5, top = 14, height = 76;
+    const h = Math.max(KIOSK_SPOT_MIN.h, Math.min(14, (height - gap * (rows - 1)) / rows));
+    const w = (100 - 8 - gap * (cols - 1)) / cols;
+    const round = (n: number) => Math.round(n * 100) / 100;
+    const spots: KioskSpot[] = list.map((sv, i) => ({
+      id: newId("spot"),
+      x: round(4 + (i % cols) * (w + gap)), y: round(Math.min(100 - h, top + Math.floor(i / cols) * (h + gap))), w: round(w), h: round(h),
+      action: { kind: "service", serviceId: sv.id },
+    }));
+    const m: KioskMenu = { id: newId("screen"), kind: "picture", name: g.name.slice(0, KIOSK_MENU_LIMITS.name), title: {}, style: "grid", cols: 3, rows: 4,
+      tiles: [], imageUrl: null, spots, footer: false, choose: "many", mustChoose: false, workflowId: flow?.id ?? null };
+    next = { ...next, menus: placeInWorkflow(next.menus, m, null) };
+    first = first ?? m.id;
+  }
+  if (first) next = { ...next, startMenuId: next.startMenuId ?? first, menuMode: "screens" };
+  return { layout: next, first };
+}
+
+export function screensFromCatalog(services: CatalogService[], categories: CatalogCategory[]): { menus: KioskMenu[]; start: string } {
+  const groups = catalogGroups(services, categories);
   const serviceScreen = (name: string, svcs: CatalogService[]): KioskMenu => ({
     id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId: null,
     tiles: svcs.slice(0, 12 * KIOSK_MENU_LIMITS.pages).map((s) => ({ id: newId("btn"), kind: "service", serviceId: s.id })),

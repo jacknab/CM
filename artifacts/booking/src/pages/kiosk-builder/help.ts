@@ -102,6 +102,8 @@ export const KIOSK_HELP: HelpTopic[] = [
         "Click a button or tap spot to change it; its settings open on the right.",
         "\"On this screen, clients can choose\": One (a new pick replaces the old one) or More than one. Tick \"They must choose something here\" so clients can't move on without a pick.",
         "\"Clients start on\" sets the first screen.",
+        "The panel on the left has two tabs: Screens (screens not in a workflow, like your first screen) and Workflows. A screen's \"Workflow\" box moves it into a workflow or out of one.",
+        "Picture builder: \"Screens from my categories\" (Workflows tab) makes a screen for each category of your catalog, in a workflow of the same name, with a tap spot for every service in it. Each spot shows the service's name along its bottom. Upload the screen's picture, drag each spot onto its place, and delete the ones you don't want.",
         "Workflows keep each service path's screens together, like Manicure, Pedicure and Fake nails. \"New workflow\" makes one; click its name to open it and rename it. Each workflow has its own \"New screen\", so two workflows can each have a \"Length\" screen with different choices. Screens not in a workflow (like your first \"What are you here for?\" screen) sit at the top. Drag a screen onto a workflow's name to move it there.",
         "The Screens panel on the left lists your screens: click one to open it, \"New screen\" makes one with a temporary name (Screen 3) that you can type over or change any time, \"Delete screen\" removes the open one. Drag a screen up or down to change the order; on picture screens Continue goes to the next one in this order.",
         "Live preview lets you tap through it like a client.",
