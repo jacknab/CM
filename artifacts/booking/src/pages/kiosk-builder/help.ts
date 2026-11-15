@@ -162,6 +162,8 @@ export const KIOSK_HELP: HelpTopic[] = [
         "For a service, add-on or extra, choose \"Then go to…\" (at the top of the tap spot's settings): one of your screens (or \"+ A new screen\"), the next step, choosing staff, the review, or nowhere so they can pick more. Going from screen to screen this way builds a guided ticket: shape, then length, then design.",
       ] },
       { tip: "Example: a nail-shape spot with \"Then go to… Choosing staff\" takes the client straight on as soon as they tap their shape." },
+      { h: "Your own text" },
+      { p: "\"Add text\" (under the tap spots) puts a text box on the screen. Type the words, then choose the size, the font, Regular, Bold or Italic, and the colour. Drag the box to move it and its corners to size it; the words stay centred in it. Text never stops a tap spot under it from working." },
       { h: "3. The footer (optional)" },
       { p: "Turn on \"Show the kiosk footer\" to put the kiosk's own bar at the bottom: Back, what the client chose, the total and Continue. It covers the bottom strip of your picture (marked on the template), so keep tap spots out of it. With the footer on you don't need your own Back and Continue spots." },
       { h: "Where Continue goes" },

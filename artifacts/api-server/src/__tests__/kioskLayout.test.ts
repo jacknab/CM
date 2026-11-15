@@ -314,3 +314,25 @@ describe("workflows (owner, 2026-11-15)", () => {
     expect(normalizeKioskLayout({ ...raw, workflows: many }, "nail").workflows).toHaveLength(20);
   });
 });
+
+describe("text boxes on picture screens (owner, 2026-11-15)", () => {
+  const screen = (texts: unknown, kind = "picture") => normalizeKioskLayout({ builder: kind === "picture" ? "picture" : "easy", menus: [{ id: "s", name: "S", kind, texts }] }, "nail").menus[0];
+  it("keeps size, font, style and colour, and clamps what's out of range", () => {
+    const [a, b] = screen([
+      { id: "t1", x: 10, y: 5, w: 80, h: 8, text: { en: "Choose your shape", es: "Elige tu forma" }, size: 72, font: "playfair", style: "italic", color: "#AA00CC" },
+      { id: "t2", x: 95, y: 99, w: 30, h: 10, text: { en: "x".repeat(300) }, size: 999, font: "comic-sans", style: "underline", color: "red" },
+      { id: "t1", text: { en: "duplicate id" } },
+    ]).texts;
+    expect(a).toEqual({ id: "t1", x: 10, y: 5, w: 80, h: 8, text: { en: "Choose your shape", es: "Elige tu forma" }, size: 72, font: "playfair", style: "italic", color: "#aa00cc" });
+    expect(b).toMatchObject({ x: 70, y: 90, size: 240, font: "dm-sans", style: "regular", color: "#111827" });
+    expect(b.text.en).toHaveLength(200);
+  });
+  it("button screens and old designs have none", () => {
+    expect(screen([{ id: "t1", text: { en: "Hi" } }], "buttons").texts).toEqual([]);
+    expect(screen(undefined).texts).toEqual([]);
+  });
+  it("refuses more than 30 on a screen", () => {
+    const many = Array.from({ length: 31 }, (_, i) => ({ id: `t${i}`, text: { en: "a" } }));
+    expect(validateKioskLayout({ builder: "picture", menus: [{ id: "s", name: "S", kind: "picture", texts: many }] }).join(" ")).toContain("more than 30 text boxes");
+  });
+});

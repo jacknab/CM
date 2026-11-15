@@ -129,6 +129,8 @@ export interface KioskMenu {
   choose: "one" | "many";
   /** Continue, Finish and "Then…" wait until something on this screen is chosen. */
   mustChoose: boolean;
+  /** Picture screens: the owner's own text, placed on the screen (owner, 2026-11-15). */
+  texts: KioskTextBox[];
   /** The workflow this screen belongs to (Manicure, Pedicure…); null: not in one, like the first screen. */
   workflowId: string | null;
 }
@@ -151,6 +153,40 @@ export type KioskScreenPictureKey = typeof KIOSK_SCREEN_PICTURE_KEYS[number];
 export type KioskBuilderKind = "easy" | "picture";
 /** The kind of screen each builder makes. */
 export const builderScreenKind = (b: KioskBuilderKind): KioskMenu["kind"] => (b === "picture" ? "picture" : "buttons");
+
+/**
+ * The fonts a text box can use (Google Fonts, loaded on the kiosk when a screen uses them). `css` is the CSS
+ * font-family, with a fallback for a kiosk that can't reach Google.
+ */
+export const KIOSK_TEXT_FONTS = [
+  { key: "dm-sans", name: "DM Sans", family: "DM Sans", css: "'DM Sans', sans-serif" },
+  { key: "inter", name: "Inter", family: "Inter", css: "'Inter', sans-serif" },
+  { key: "montserrat", name: "Montserrat", family: "Montserrat", css: "'Montserrat', sans-serif" },
+  { key: "poppins", name: "Poppins", family: "Poppins", css: "'Poppins', sans-serif" },
+  { key: "oswald", name: "Oswald", family: "Oswald", css: "'Oswald', sans-serif" },
+  { key: "playfair", name: "Playfair Display", family: "Playfair Display", css: "'Playfair Display', serif" },
+  { key: "cormorant", name: "Cormorant Garamond", family: "Cormorant Garamond", css: "'Cormorant Garamond', serif" },
+  { key: "lora", name: "Lora", family: "Lora", css: "'Lora', serif" },
+  { key: "great-vibes", name: "Great Vibes (script)", family: "Great Vibes", css: "'Great Vibes', cursive" },
+  { key: "dancing", name: "Dancing Script", family: "Dancing Script", css: "'Dancing Script', cursive" },
+  { key: "pacifico", name: "Pacifico", family: "Pacifico", css: "'Pacifico', cursive" },
+] as const;
+export type KioskTextFont = typeof KIOSK_TEXT_FONTS[number]["key"];
+
+/**
+ * A text box on a picture screen. x, y, w, h: % of the screen, like a tap spot. size: the text's height in pixels
+ * on the 1080-wide kiosk screen (scaled with the screen). The words are per language; a language left empty shows
+ * the English.
+ */
+export interface KioskTextBox {
+  id: string; x: number; y: number; w: number; h: number;
+  text: KioskText;
+  size: number;
+  font: KioskTextFont;
+  style: "regular" | "bold" | "italic";
+  color: string;
+}
+export const KIOSK_TEXT_LIMITS = { boxes: 30, chars: 200, size: { min: 16, max: 240 } } as const;
 
 export const KIOSK_MENU_LIMITS = { menus: 120, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40, spots: 80 } as const;
 /** The picture a picture screen is made for: the 15" kiosk, standing (9:16). */
@@ -349,6 +385,29 @@ function normalizeSpotAction(raw: unknown, menuIds: Set<string>, ownId: string):
 }
 
 /** The business's screens: unknown links and broken buttons dropped, sizes clamped, at most 10 pages each. */
+/** A picture screen's text boxes: valid ids once each, inside the screen, known font, size in range. */
+export function normalizeTextBoxes(raw: unknown): KioskTextBox[] {
+  const seen = new Set<string>();
+  const num = (v: unknown, d: number) => (Number.isFinite(Number(v)) ? Number(v) : d);
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return (Array.isArray(raw) ? raw : []).slice(0, KIOSK_TEXT_LIMITS.boxes).flatMap((t: any) => {
+    if (!isObj(t) || typeof t.id !== "string" || !MENU_ID.test(t.id) || seen.has(t.id)) return [];
+    const text: KioskText = {};
+    if (isObj(t.text)) for (const lang of KIOSK_LANG_CODES) { const v = typeof t.text[lang] === "string" ? t.text[lang].slice(0, KIOSK_TEXT_LIMITS.chars) : ""; if (v.trim()) text[lang] = v; }
+    seen.add(t.id);
+    const w = Math.min(100, Math.max(KIOSK_SPOT_MIN.w, num(t.w, 60)));
+    const h = Math.min(100, Math.max(KIOSK_SPOT_MIN.h, num(t.h, 8)));
+    return [{
+      id: t.id, x: round(Math.min(100 - w, Math.max(0, num(t.x, 20)))), y: round(Math.min(100 - h, Math.max(0, num(t.y, 10)))), w: round(w), h: round(h),
+      text,
+      size: Math.round(Math.min(KIOSK_TEXT_LIMITS.size.max, Math.max(KIOSK_TEXT_LIMITS.size.min, num(t.size, 64)))),
+      font: KIOSK_TEXT_FONTS.some((f) => f.key === t.font) ? t.font : "dm-sans",
+      style: t.style === "bold" || t.style === "italic" ? t.style : "regular",
+      color: typeof t.color === "string" && HEX.test(t.color) ? t.color.toLowerCase() : "#111827",
+    }];
+  });
+}
+
 /** The workflows: valid ids, once each, named. */
 export function normalizeWorkflows(raw: unknown): KioskWorkflow[] {
   const seen = new Set<string>();
@@ -402,6 +461,7 @@ export function normalizeMenus(raw: unknown, workflowIds: Set<string> = new Set(
       footer: kind === "picture" && m.footer === true,
       choose: m.choose === "one" ? "one" : "many",
       mustChoose: m.mustChoose === true,
+      texts: kind !== "picture" ? [] : normalizeTextBoxes(m.texts),
       workflowId: typeof m.workflowId === "string" && workflowIds.has(m.workflowId) ? m.workflowId : null,
     };
   });
@@ -504,6 +564,7 @@ export function validateKioskLayout(raw: unknown): string[] {
         if (m.kind === "picture") {
           if (m.imageUrl != null && m.imageUrl !== "" && !isKioskImageUrl(m.imageUrl)) errors.push(`"${m.name}": the picture must be an uploaded picture.`);
           if (Array.isArray(m.spots) && m.spots.length > KIOSK_MENU_LIMITS.spots) errors.push(`"${m.name}" has more than ${KIOSK_MENU_LIMITS.spots} tap spots.`);
+          if (Array.isArray(m.texts) && m.texts.length > KIOSK_TEXT_LIMITS.boxes) errors.push(`"${m.name}" has more than ${KIOSK_TEXT_LIMITS.boxes} text boxes.`);
           for (const sp of Array.isArray(m.spots) ? m.spots : []) {
             if (sp?.action?.kind === "menu" && !ids.has(sp.action.menuId)) errors.push(`"${m.name}" has a tap spot to a screen that doesn't exist.`);
           }

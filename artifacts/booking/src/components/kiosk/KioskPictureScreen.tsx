@@ -9,8 +9,9 @@
  * In the builder ("editor") the spots show their borders and names, and can be dragged and resized from their
  * corners.
  */
-import { useRef, useState } from "react";
-import { KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, type KioskMenu, type KioskSpot } from "@shared/kiosk/layout";
+import { useEffect, useRef, useState } from "react";
+import { KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, type KioskMenu, type KioskSpot, type KioskTextBox } from "@shared/kiosk/layout";
+import { kioskFontCss, loadKioskFonts } from "@/lib/kioskFonts";
 
 export interface PictureColors { primary: string; bg: string; surface?: string; text?: string; muted?: string; border?: string;
   /** The dashed outline around a chosen tap spot on a screen with the footer (theme colour "selected"). */
@@ -28,7 +29,7 @@ export interface PictureFooter {
 }
 
 type Rect = Pick<KioskSpot, "x" | "y" | "w" | "h">;
-type Drag = { id: string; mode: "move" | "nw" | "ne" | "sw" | "se"; startX: number; startY: number; start: Rect; frameW: number; frameH: number };
+type Drag = { kind: "spot" | "text"; id: string; mode: "move" | "nw" | "ne" | "sw" | "se"; startX: number; startY: number; start: Rect; frameW: number; frameH: number };
 
 const clampRect = (r: Rect): Rect => {
   const w = Math.min(100, Math.max(KIOSK_SPOT_MIN.w, r.w));
@@ -52,6 +53,12 @@ export function KioskPictureScreen(p: {
   onChangeSpot?: (id: string, rect: Rect) => void;
   spotLabel?: (spot: KioskSpot) => string;
   emptyText?: string;
+  /** The language the kiosk is showing (text boxes show theirs, else English). */
+  lang?: string;
+  // editor: text boxes (owner, 2026-11-15) — chosen, dragged and sized like tap spots
+  activeTextId?: string | null;
+  onSelectText?: (id: string | null) => void;
+  onChangeText?: (id: string, rect: Rect) => void;
   /** Drawn when menu.footer is on. In the builder it is shown but does nothing. */
   footer?: PictureFooter | null;
 }) {
@@ -59,18 +66,20 @@ export function KioskPictureScreen(p: {
   const frameRef = useRef<HTMLDivElement>(null);
   const [live, setLive] = useState<{ id: string; rect: Rect } | null>(null);
   const editor = p.mode === "editor";
+  const texts = menu.texts ?? [];
+  useEffect(() => { loadKioskFonts(texts.map((t) => t.font)); }, [texts.map((t) => t.font).join(",")]);
 
   // The drag lives in a ref: pointer events can arrive before React has drawn the last change.
   const dragRef = useRef<Drag | null>(null);
-  const startDrag = (e: React.PointerEvent, spot: KioskSpot, mode: Drag["mode"]) => {
+  const startDrag = (e: React.PointerEvent, spot: Rect & { id: string }, mode: Drag["mode"], kind: Drag["kind"] = "spot") => {
     if (!editor) return;
     e.stopPropagation();
     e.preventDefault();
     const box = frameRef.current?.getBoundingClientRect();
     if (!box) return;
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    p.onSelectSpot?.(spot.id);
-    const d: Drag = { id: spot.id, mode, startX: e.clientX, startY: e.clientY, start: { x: spot.x, y: spot.y, w: spot.w, h: spot.h }, frameW: box.width, frameH: box.height };
+    if (kind === "spot") { p.onSelectSpot?.(spot.id); p.onSelectText?.(null); } else { p.onSelectText?.(spot.id); p.onSelectSpot?.(null); }
+    const d: Drag = { kind, id: spot.id, mode, startX: e.clientX, startY: e.clientY, start: { x: spot.x, y: spot.y, w: spot.w, h: spot.h }, frameW: box.width, frameH: box.height };
     dragRef.current = d;
   };
   /** Where the spot is with the pointer at (clientX, clientY). */
@@ -94,13 +103,13 @@ export function KioskPictureScreen(p: {
     const d = dragRef.current;
     dragRef.current = null;
     // From where the pointer let go, not from the last drawn position.
-    if (d && (e.clientX !== d.startX || e.clientY !== d.startY)) p.onChangeSpot?.(d.id, rectAt(d, e.clientX, e.clientY));
+    if (d && (e.clientX !== d.startX || e.clientY !== d.startY)) (d.kind === "text" ? p.onChangeText : p.onChangeSpot)?.(d.id, rectAt(d, e.clientX, e.clientY));
     setLive(null);
   };
 
   return (
     <div style={{ width: "100%", height: "100%", containerType: "size", display: "flex", alignItems: "center", justifyContent: "center", background: c.bg, userSelect: "none" }}
-      onPointerDown={() => editor && p.onSelectSpot?.(null)}>
+      onPointerDown={() => { if (editor) { p.onSelectSpot?.(null); p.onSelectText?.(null); } }}>
       <div ref={frameRef} data-testid="kiosk-picture-frame"
         // The picture fills the whole screen (owner, 2026-11-15: bands showed above and below it). A 15" kiosk's
         // browser area, or the builder's frame, is never exactly 9:16; tap spots are % of the picture, so they stay put.
@@ -150,6 +159,34 @@ export function KioskPictureScreen(p: {
               )}
               {active && (["nw", "ne", "sw", "se"] as const).map((corner) => (
                 <span key={corner} onPointerDown={(e) => startDrag(e, spot, corner)} data-testid={`spot-handle-${corner}`}
+                  style={{ position: "absolute", width: 14, height: 14, background: "#fff", border: `2px solid ${c.primary}`, borderRadius: 3,
+                    left: corner.includes("w") ? -8 : undefined, right: corner.includes("e") ? -8 : undefined,
+                    top: corner.startsWith("n") ? -8 : undefined, bottom: corner.startsWith("s") ? -8 : undefined,
+                    cursor: corner === "nw" || corner === "se" ? "nwse-resize" : "nesw-resize" }} />
+              ))}
+            </div>
+          );
+        })}
+        {texts.map((t) => {
+          const r = live?.id === t.id ? live.rect : t;
+          const active = editor && p.activeTextId === t.id;
+          const words = (p.lang && t.text[p.lang as keyof KioskTextBox["text"]]) || t.text.en || "";
+          return (
+            <div key={t.id} data-testid={`kiosk-text-${t.id}`}
+              onPointerDown={editor ? (e) => startDrag(e, t, "move", "text") : undefined}
+              style={{
+                position: "absolute", left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%`,
+                display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center",
+                // The size is pixels on the 1080-wide kiosk: the same share of the screen at any size.
+                fontSize: `${(t.size / 1080) * 100}cqw`, lineHeight: 1.15, fontFamily: kioskFontCss(t.font),
+                fontWeight: t.style === "bold" ? 700 : 400, fontStyle: t.style === "italic" ? "italic" : "normal",
+                color: t.color, whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+                pointerEvents: editor ? "auto" : "none", cursor: editor ? "move" : undefined,
+                outline: editor ? `2px ${active ? "solid" : "dashed"} ${active ? c.primary : "rgba(37,99,235,.7)"}` : "none", outlineOffset: 0,
+              }}>
+              {words || (editor ? <span style={{ opacity: 0.5, fontSize: 14, fontFamily: "inherit" }}>Your text</span> : null)}
+              {active && (["nw", "ne", "sw", "se"] as const).map((corner) => (
+                <span key={corner} onPointerDown={(e) => startDrag(e, t, corner, "text")} data-testid={`text-handle-${corner}`}
                   style={{ position: "absolute", width: 14, height: 14, background: "#fff", border: `2px solid ${c.primary}`, borderRadius: 3,
                     left: corner.includes("w") ? -8 : undefined, right: corner.includes("e") ? -8 : undefined,
                     top: corner.startsWith("n") ? -8 : undefined, bottom: corner.startsWith("s") ? -8 : undefined,

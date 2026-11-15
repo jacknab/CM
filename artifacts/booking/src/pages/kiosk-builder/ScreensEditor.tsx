@@ -13,9 +13,10 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { KioskMenuScreen, servicePicture, type MenuColors, type MenuService } from "@/components/kiosk/KioskMenuScreen";
 import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
+import { loadKioskFonts } from "@/lib/kioskFonts";
 import { ExtraForm, priceText, type KioskExtrasStore } from "./extras";
 import {
-  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_WORKFLOW_LIMITS, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
+  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_TEXT_FONTS, KIOSK_TEXT_LIMITS, KIOSK_WORKFLOW_LIMITS, type KioskTextBox, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
   type KioskLayout, type KioskMenu, type KioskNext, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
 } from "@shared/kiosk/layout";
 
@@ -134,7 +135,7 @@ export function nextScreenName(d: KioskLayout, workflowId: string | null = null)
  * the owner's own screens. Returns the new id.
  */
 export function withNewScreen(d: KioskLayout, name: string, workflowId: string | null = null): { layout: KioskLayout; id: string } {
-  const m: KioskMenu = { id: newId("screen"), kind: builderScreenKind(d.builder), name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId };
+  const m: KioskMenu = { id: newId("screen"), kind: builderScreenKind(d.builder), name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, texts: [], workflowId };
   return { layout: { ...d, menus: placeInWorkflow(d.menus, m, null), startMenuId: d.startMenuId ?? m.id, menuMode: "screens" }, id: m.id };
 }
 
@@ -251,7 +252,7 @@ export function withCategoryScreens(d: KioskLayout, services: CatalogService[], 
       action: { kind: "service", serviceId: sv.id },
     }));
     const m: KioskMenu = { id: newId("screen"), kind: "picture", name: g.name.slice(0, KIOSK_MENU_LIMITS.name), title: {}, style: "grid", cols: 3, rows: 4,
-      tiles: [], imageUrl: null, spots, footer: false, choose: "many", mustChoose: false, workflowId: flow?.id ?? null };
+      tiles: [], imageUrl: null, spots, footer: false, choose: "many", mustChoose: false, texts: [], workflowId: flow?.id ?? null };
     next = { ...next, menus: placeInWorkflow(next.menus, m, null) };
     first = first ?? m.id;
   }
@@ -262,7 +263,7 @@ export function withCategoryScreens(d: KioskLayout, services: CatalogService[], 
 export function screensFromCatalog(services: CatalogService[], categories: CatalogCategory[]): { menus: KioskMenu[]; start: string } {
   const groups = catalogGroups(services, categories);
   const serviceScreen = (name: string, svcs: CatalogService[]): KioskMenu => ({
-    id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId: null,
+    id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, texts: [], workflowId: null,
     tiles: svcs.slice(0, 12 * KIOSK_MENU_LIMITS.pages).map((s) => ({ id: newId("btn"), kind: "service", serviceId: s.id })),
   });
   if (groups.length <= 1) {
@@ -273,10 +274,31 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
   const cols = subs.length <= 4 ? 2 : 3;
   const home: KioskMenu = {
     id: newId("screen"), kind: "buttons", name: "Start", title: {}, style: "grid", cols, rows: Math.min(6, Math.max(2, Math.ceil(subs.length / cols))),
-    imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId: null,
+    imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, texts: [], workflowId: null,
     tiles: subs.map(({ g, m }) => ({ id: newId("btn"), kind: "menu", menuId: m.id, ...(g.imageUrl ? { imageUrl: g.imageUrl } : {}) })),
   };
   return { menus: [home, ...subs.map((x) => x.m)], start: home.id };
+}
+
+/**
+ * A text size typed in: what is typed shows as typed, and is applied (within the limits) as soon as it is a size in
+ * range, or on leaving the box / Enter (so typing "96" never passes through 9 → 16).
+ */
+function SizeInput({ value, onCommit }: { value: number; onCommit: (n: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => { setDraft(String(value)); }, [value]);
+  const { min, max } = KIOSK_TEXT_LIMITS.size;
+  const commit = () => {
+    const n = Math.round(Number(draft));
+    const v = Number.isFinite(n) && draft.trim() ? Math.min(max, Math.max(min, n)) : value;
+    setDraft(String(v));
+    if (v !== value) onCommit(v);
+  };
+  return (
+    <Input type="number" min={min} max={max} value={draft} className="w-16 h-8 px-2 text-sm" data-testid="text-size"
+      onChange={(e) => { setDraft(e.target.value); const n = Number(e.target.value); if (Number.isInteger(n) && n >= min && n <= max) onCommit(n); }}
+      onBlur={commit} onKeyDown={(e) => { if (e.key === "Enter") commit(); }} />
+  );
 }
 
 export function ScreensEditor(props: {
@@ -322,6 +344,8 @@ export function ScreensEditor(props: {
   const [search, setSearch] = useState("");
   const [uploading, setUploading] = useState(false);
   const [spotId, setSpotId] = useState<string | null>(null);
+  // The chosen text box (owner, 2026-11-15): one thing is chosen at a time, a tap spot or a text box.
+  const [textId, setTextId] = useState<string | null>(null);
   const [spotTab, setSpotTab] = useState<"service" | "addon" | "function" | "menu">("service");
   const [pictureWarning, setPictureWarning] = useState<string | null>(null);
   const canvasBox = useRef<HTMLDivElement>(null);
@@ -351,7 +375,7 @@ export function ScreensEditor(props: {
   if (own.text) palette.text = own.text;
 
   useEffect(() => { if (!menu && draft.menus[0]) setMenuId(draft.menus[0].id); }, [menu, draft.menus]);
-  useEffect(() => { setPage(0); setExtraPages(0); setSlot(null); setSpotId(null); setPictureWarning(null); }, [menuId]);
+  useEffect(() => { setPage(0); setExtraPages(0); setSlot(null); setSpotId(null); setTextId(null); setPictureWarning(null); }, [menuId]);
   useEffect(() => {
     if (slot != null || spotId) selectionRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [slot, spotId]);
@@ -421,6 +445,24 @@ export function ScreensEditor(props: {
     changeSpots((list) => [...list, sp]);
     setSpotId(sp.id); setSpotTab("service");
   };
+  // ── Text boxes ──
+  const changeTexts = (change: (list: KioskTextBox[]) => KioskTextBox[]) => menu && changeMenu(menu.id, (m) => ({ ...m, texts: change(m.texts ?? []) }));
+  const textBox = menu?.kind === "picture" ? (menu.texts ?? []).find((t) => t.id === textId) ?? null : null;
+  const patchText = (change: Partial<KioskTextBox>) => textBox && changeTexts((list) => list.map((t) => (t.id === textBox.id ? { ...t, ...change } : t)));
+  const addText = () => {
+    if (!menu || (menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes) return;
+    const t: KioskTextBox = { id: newId("text"), x: 10, y: 8, w: 80, h: 8, text: { en: "Your text" }, size: 72, font: "dm-sans", style: "regular", color: palette.text };
+    changeTexts((list) => [...list, t]);
+    setTextId(t.id); setSpotId(null);
+  };
+  const nudgeText = (dx: number, dy: number, grow: boolean) => textBox && changeTexts((list) => list.map((x) => {
+    if (x.id !== textBox.id) return x;
+    const w = grow ? Math.min(100 - x.x, Math.max(KIOSK_SPOT_MIN.w, x.w + dx)) : x.w;
+    const h = grow ? Math.min(100 - x.y, Math.max(KIOSK_SPOT_MIN.h, x.h + dy)) : x.h;
+    return { ...x, w, h, x: grow ? x.x : Math.min(100 - w, Math.max(0, x.x + dx)), y: grow ? x.y : Math.min(100 - h, Math.max(0, x.y + dy)) };
+  }));
+  // The font list shows each font in itself.
+  useEffect(() => { if (textBox) loadKioskFonts(KIOSK_TEXT_FONTS.map((f) => f.key)); }, [!!textBox]);
   const setSpotAction = (action: KioskSpotAction) => spot && changeSpots((list) => list.map((x) => (x.id === spot.id ? { ...x, action } : x)));
   const nudge = (dx: number, dy: number, grow: boolean) => spot && changeSpots((list) => list.map((x) => {
     if (x.id !== spot.id) return x;
@@ -563,6 +605,58 @@ export function ScreensEditor(props: {
     <div className="space-y-4">
       {/* The chosen tap spot or button: edited here, at the top of the panel. */}
       <div ref={selectionRef} className="empty:hidden">
+      {props.view === "edit" && menu && menu.kind === "picture" && textBox && (
+        <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-text-panel">
+          <p className="text-sm font-semibold text-slate-800">Text</p>
+          <textarea value={textBox.text.en ?? ""} maxLength={KIOSK_TEXT_LIMITS.chars} rows={2} data-testid="text-words"
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-800"
+            onChange={(e) => patchText({ text: { ...textBox.text, en: e.target.value } })} />
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-slate-500">
+              Size
+              <div className="mt-1 flex items-center gap-2">
+                <input type="range" min={KIOSK_TEXT_LIMITS.size.min} max={KIOSK_TEXT_LIMITS.size.max} value={textBox.size} className="flex-1"
+                  onChange={(e) => patchText({ size: Number(e.target.value) })} />
+                <SizeInput key={textBox.id} value={textBox.size} onCommit={(size) => patchText({ size })} />
+              </div>
+            </label>
+            <label className="block text-xs text-slate-500">
+              Colour
+              <div className="mt-1 flex items-center gap-2">
+                <input type="color" value={textBox.color} aria-label="Text colour" data-testid="text-color" className="w-9 h-9 rounded border border-slate-200 bg-white p-0.5"
+                  onChange={(e) => patchText({ color: e.target.value })} />
+                <span className="text-xs text-slate-500">{textBox.color}</span>
+              </div>
+            </label>
+          </div>
+          <label className="block text-xs text-slate-500">
+            Font
+            <select value={textBox.font} data-testid="text-font" className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
+              style={{ fontFamily: KIOSK_TEXT_FONTS.find((f) => f.key === textBox.font)?.css }}
+              onChange={(e) => patchText({ font: e.target.value as KioskTextBox["font"] })}>
+              {KIOSK_TEXT_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.css }}>{f.name}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-3 gap-1 rounded-md border border-slate-200 p-0.5" role="radiogroup" aria-label="Text style">
+            {([["regular", "Regular"], ["bold", "Bold"], ["italic", "Italic"]] as const).map(([k, name]) => (
+              <button key={k} type="button" role="radio" aria-checked={textBox.style === k} data-testid={`text-style-${k}`}
+                onClick={() => patchText({ style: k })}
+                className={`h-8 text-sm rounded ${textBox.style === k ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                style={{ fontWeight: k === "bold" ? 700 : 400, fontStyle: k === "italic" ? "italic" : "normal" }}>{name}</button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">Drag the box to move it and its corners to size it; the words stay in the middle of the box. Arrow keys nudge it.</p>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => {
+              if ((menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes) return;
+              const copy: KioskTextBox = { ...textBox, id: newId("text"), y: Math.min(100 - textBox.h, textBox.y + textBox.h + 1) };
+              changeTexts((list) => [...list, copy]); setTextId(copy.id);
+            }}>Duplicate</Button>
+            <Button variant="outline" size="sm" onClick={() => { changeTexts((list) => list.filter((x) => x.id !== textBox.id)); setTextId(null); }} data-testid="text-delete">Delete</Button>
+            <Button variant="ghost" size="sm" onClick={() => setTextId(null)}>Done</Button>
+          </div>
+        </div>
+      )}
       {props.view === "edit" && menu && menu.kind === "picture" && spot && (
         <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-spot-panel">
           <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
@@ -844,6 +938,21 @@ export function ScreensEditor(props: {
                 ))}
               </div>
             </div>
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-800">Text</p>
+                <Button size="sm" variant="outline" disabled={(menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes} onClick={addText} data-testid="picture-add-text">Add text</Button>
+              </div>
+              <p className="text-xs text-slate-500">Your own words on the screen, in the size, font, style and colour you choose.</p>
+              <div className="space-y-1">
+                {(menu.texts ?? []).map((t) => (
+                  <button key={t.id} type="button" onClick={() => { setTextId(t.id); setSpotId(null); }} data-testid="text-row"
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${t.id === textId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                    {t.text.en?.trim() || "Empty text"}
+                  </button>
+                ))}
+              </div>
+            </div>
             {pictureProblems(menu).map((msg) => <p key={msg} className="text-xs text-amber-700" data-testid="picture-problem">{msg}</p>)}
           </section>
         )}
@@ -937,6 +1046,13 @@ export function ScreensEditor(props: {
             <p className="text-sm text-slate-600">15" kiosk · your picture fills the whole screen</p>
             <div ref={canvasBox} className="flex-1 min-h-0 w-full flex justify-center outline-none" tabIndex={0} data-testid="picture-canvas-box"
               onKeyDown={(e) => {
+                if (textBox && !spot) {
+                  const st = e.shiftKey ? 2 : 0.5;
+                  const mv: Record<string, [number, number]> = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] };
+                  if (mv[e.key]) { e.preventDefault(); nudgeText(mv[e.key][0], mv[e.key][1], e.altKey); }
+                  if (e.key === "Delete") { e.preventDefault(); changeTexts((list) => list.filter((x) => x.id !== textBox.id)); setTextId(null); }
+                  return;
+                }
                 if (!spot) return;
                 const step = e.shiftKey ? 2 : 0.5;
                 const map: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
@@ -947,6 +1063,8 @@ export function ScreensEditor(props: {
                 <KioskPictureScreen menu={menu} mode="editor" colors={{ primary: palette.primary, bg: palette.bg, surface: palette.surface, text: palette.text, muted: palette.muted, border: palette.border }}
                   footer={{ backLabel: "← Back", continueLabel: "Continue →", summary: "What the client chose", total: draft.services.showPrice ? "$0" : null }}
                   activeSpotId={spotId} onSelectSpot={(id) => { setSpotId(id); if (id) canvasBox.current?.focus(); }}
+                  activeTextId={textId} onSelectText={(id) => { setTextId(id); if (id) canvasBox.current?.focus(); }}
+                  onChangeText={(id, rect) => changeTexts((list) => list.map((x) => (x.id === id ? { ...x, ...rect } : x)))}
                   onChangeSpot={(id, rect) => changeSpots((list) => list.map((x) => (x.id === id ? { ...x, ...rect } : x)))}
                   spotLabel={spotName} emptyText="Upload your picture (1080 × 1920). Download the template to start." />
               </div>
