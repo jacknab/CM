@@ -24,6 +24,11 @@
     "type": "image/jpeg",
     "local": true
   },
+  "team/thanh-lam": {
+    "file": "team__thanh-lam",
+    "type": "image/webp",
+    "local": true
+  },
   "team/toby-benjamin": {
     "file": "team__toby-benjamin",
     "type": "image/webp",

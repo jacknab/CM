@@ -63,6 +63,7 @@ const jsonLd = {
 
 /** Team card photos by team member id (about.json). */
 const TEAM_PHOTOS: Record<string, string> = {
+  t1: '/airo-assets/images/team/thanh-lam',
   t2: '/airo-assets/images/team/toby-benjamin',
   t3: '/airo-assets/images/team/june-lea',
   t4: '/airo-assets/images/team/jim-sobet',

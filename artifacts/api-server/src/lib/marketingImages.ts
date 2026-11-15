@@ -54,6 +54,7 @@ export const MARKETING_IMAGES: MarketingImageDefinition[] = [
   image("pages/autumn/device-mockup", "Autumn — device mockup", ["Features"], 447, 558, "contain"),
   image("pages/autumn/software-screenshot", "Autumn — software screenshot", ["Autumn"], 1024, 576),
   image("team/thanh-lam-founder", "Founder portrait", ["About"], 1145, 1374),
+  image("team/thanh-lam", "Thanh Lam team card portrait", ["About"], 600, 734),
   image("team/toby-benjamin", "Toby Benjamin portrait", ["About"], 600, 734),
   image("team/june-lea", "June Lea portrait", ["About"], 600, 734),
   image("team/jim-sobet", "Jim Sobet portrait", ["About"], 600, 734),
