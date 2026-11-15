@@ -318,10 +318,10 @@ export function mixTwilioOutboundFrame(
   return output;
 }
 
-/** Tom and Marel's voice level (owner, 2026-11-15: "a little" louder). 1 = as the model sends it. */
+/** Tom and Marel's voice level (owner, 2026-11-15: "a little" louder, then "just a little louder" → 1.8). 1 = as the model sends it. */
 export function salesAgentVoiceGain(): number {
-  const g = Number(process.env.SALES_AGENT_VOICE_GAIN ?? "1.5");
-  return Number.isFinite(g) ? Math.max(0.5, Math.min(3, g)) : 1.5;
+  const g = Number(process.env.SALES_AGENT_VOICE_GAIN ?? "1.8");
+  return Number.isFinite(g) ? Math.max(0.5, Math.min(3, g)) : 1.8;
 }
 
 /** Louder μ-law audio, for frames sent without the background mixed in. */
