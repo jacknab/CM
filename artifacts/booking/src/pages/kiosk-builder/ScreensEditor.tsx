@@ -777,7 +777,20 @@ export function ScreensEditor(props: {
         <div ref={selectionRef} className="empty:hidden">
       {props.view === "edit" && menu && menu.kind === "picture" && spot && (
         <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-spot-panel">
-          <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
+          {/* Name and actions first (owner, 2026-11-15: Duplicate was out of sight below the services list). */}
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-800 min-w-0 truncate">Tap spot: {spotName(spot)}</p>
+            <div className="flex gap-1.5 shrink-0">
+              <Button variant="outline" size="sm" disabled={menu.spots.length >= KIOSK_MENU_LIMITS.spots} data-testid="spot-duplicate"
+                title="A copy of this tap spot, with the same action, a little lower and to the right" onClick={() => {
+                  // Same action, "Then go to…" and size; a new id; set off a little so it's seen on top of the first.
+                  const copy: KioskSpot = { ...structuredClone(spot), id: newId("spot"), x: Math.min(100 - spot.w, spot.x + 3), y: Math.min(100 - spot.h, spot.y + 3) };
+                  changeSpots((list) => [...list, copy]); setSpotId(copy.id);
+                }}>Duplicate</Button>
+              <Button variant="outline" size="sm" onClick={() => { changeSpots((list) => list.filter((x) => x.id !== spot.id)); setSpotId(null); }} data-testid="spot-delete">Delete</Button>
+              <Button variant="ghost" size="sm" onClick={() => setSpotId(null)}>Done</Button>
+            </div>
+          </div>
           {/* Where it leads, first: the long pick lists below would push it out of sight. */}
           {(spot.action.kind === "service" || spot.action.kind === "addon") && thenField(spot.next,
             (n) => changeSpots((list) => list.map((x) => (x.id === spot.id ? (n ? { ...x, next: n } : (({ next: _drop, ...rest }) => rest)(x)) : x))))}
@@ -877,15 +890,6 @@ export function ScreensEditor(props: {
                 onClick={() => { const id = addScreen(); setSpotAction({ kind: "menu", menuId: id }); }}>New screen for this spot</Button>
             </div>
           )}
-          <div className="flex gap-2 pt-1">
-            <Button variant="outline" size="sm" onClick={() => {
-              if (menu.spots.length >= KIOSK_MENU_LIMITS.spots) return;
-              const copy: KioskSpot = { ...spot, id: newId("spot"), x: Math.min(100 - spot.w, spot.x + 3), y: Math.min(100 - spot.h, spot.y + 3) };
-              changeSpots((list) => [...list, copy]); setSpotId(copy.id);
-            }}>Duplicate</Button>
-            <Button variant="outline" size="sm" onClick={() => { changeSpots((list) => list.filter((x) => x.id !== spot.id)); setSpotId(null); }} data-testid="spot-delete">Delete</Button>
-            <Button variant="ghost" size="sm" onClick={() => setSpotId(null)}>Done</Button>
-          </div>
         </div>
       )}
         </div>
