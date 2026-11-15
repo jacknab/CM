@@ -304,17 +304,39 @@ export function mixTwilioOutboundFrame(
   aiUlaw: Buffer | null,
   cursor: AutumnBackgroundAudioCursor,
   ambienceGain = 1,
+  voiceGain = 1,
 ): Buffer {
   const outputLength = aiUlaw?.length || TWILIO_AUDIO_FRAME_SAMPLES;
   const output = Buffer.allocUnsafe(outputLength);
 
   for (let i = 0; i < outputLength; i++) {
-    const aiPcm = aiUlaw && i < aiUlaw.length ? muLawToLinear16(aiUlaw[i]) : 0;
+    const aiPcm = aiUlaw && i < aiUlaw.length ? muLawToLinear16(aiUlaw[i]) * voiceGain : 0;
     const ambiencePcm = nextAmbienceSample(cursor) * cursor.volume * Math.max(0, ambienceGain);
-    const mixed = Math.max(-32768, Math.min(32767, Math.round(aiPcm + ambiencePcm)));
+    const mixed = voiceGain === 1 ? Math.max(-32768, Math.min(32767, Math.round(aiPcm + ambiencePcm))) : softLimit(aiPcm + ambiencePcm);
     output[i] = linear16ToMuLaw(mixed);
   }
   return output;
+}
+
+/** Tom and Marel's voice level (owner, 2026-11-15: "a little" louder). 1 = as the model sends it. */
+export function salesAgentVoiceGain(): number {
+  const g = Number(process.env.SALES_AGENT_VOICE_GAIN ?? "1.5");
+  return Number.isFinite(g) ? Math.max(0.5, Math.min(3, g)) : 1.5;
+}
+
+/** Louder μ-law audio, for frames sent without the background mixed in. */
+export function boostUlaw(ulaw: Buffer, gain: number): Buffer {
+  if (gain === 1) return ulaw;
+  const out = Buffer.allocUnsafe(ulaw.length);
+  for (let i = 0; i < ulaw.length; i++) out[i] = linear16ToMuLaw(softLimit(muLawToLinear16(ulaw[i]) * gain));
+  return out;
+}
+
+/** Peaks above ~73% of full scale are rounded off instead of clipped, so a louder voice doesn't crackle. */
+function softLimit(x: number): number {
+  const T = 24000, room = 32767 - T, a = Math.abs(x);
+  const y = a <= T ? a : T + room * Math.tanh((a - T) / room);
+  return Math.round(x < 0 ? -y : y);
 }
 
 function nextAmbienceSample(cursor: AutumnBackgroundAudioCursor): number {

@@ -37,7 +37,7 @@ import { TrialService } from "../services/trial-service";
 import { toE164US } from "../lib/phoneUtils";
 import { TOM_SALES_AGENT, SHAVEZ_SALES_AGENT, agentKnowledgeForPrompt, pickAgentGreeting, salesAgentFactCheckProductGuidance, salesAgentProductFitGuidance, type SalesAgentProfile } from "../lib/salesAgentProfiles";
 import { salesAgentConnectionOpening, tomOpeningInstructions, TOM_SALES_DISCOVERY } from "../lib/salesAgentOpening";
-import { createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
+import { boostUlaw, createSalesAgentBackgroundAudioCursor, mixTwilioOutboundFrame, readSalesAgentBackgroundAudioConfig, salesAgentVoiceGain, type AutumnBackgroundAudioCursor } from "../lib/autumnBackgroundAudio";
 import { scheduleFollowUp } from "../lib/agentFollowUps";
 import { setupIvrRoutes } from "./ivr";
 import { archiveRecordingNow, localRecordingPath } from "../lib/callRecordingArchive";
@@ -827,6 +827,7 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
     if (id) await pool.query(`UPDATE sales_call_logs SET sms_events = $2::jsonb WHERE id = $1`, [id, JSON.stringify(smsEvents)]);
   }
 
+  const voiceGain = salesAgentVoiceGain();
   const sendNextAudioFrame = () => {
     const frame = outQueue.shift();
     // The background plays all call long (not under Marel's hold music), quieter while she or Tom talks.
@@ -839,7 +840,9 @@ function runSalesCall(twilioWs: WebSocket, agentProfile: SalesAgentProfile = TOM
       return;
     }
     if (streamSid && twilioWs.readyState === WebSocket.OPEN) {
-      const payload = bed ? mixTwilioOutboundFrame(frame ? Buffer.from(frame, "base64") : null, bed, frame ? 0.25 : 1).toString("base64") : frame!;
+      const payload = bed
+        ? mixTwilioOutboundFrame(frame ? Buffer.from(frame, "base64") : null, bed, frame ? 0.25 : 1, voiceGain).toString("base64")
+        : boostUlaw(Buffer.from(frame!, "base64"), voiceGain).toString("base64");
       if (frame) lastAiFrameAt = Date.now();
       twilioWs.send(JSON.stringify({ event: "media", streamSid, media: { payload } }));
       if (frame && agentProfile.id === "tom" && !firstAssistantAudioSentAt) {
