@@ -173,8 +173,8 @@ export function KioskPictureScreen(p: {
               })()}
               {editor && label && (
                 // The name along the bottom of the spot (owner, 2026-11-15), where it doesn't cover what the spot is over.
-                // With the price shown the name goes to the top edge, so it never covers the price.
-                <span style={{ position: "absolute", left: "50%", ...(spot.price?.show ? { top: 4 } : { bottom: 4 }), transform: "translateX(-50%)", maxWidth: "calc(100% - 8px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                // Always along the bottom (owner, 2026-11-15); a shown price is drawn over it (zIndex) so it is never hidden.
+                <span style={{ position: "absolute", left: "50%", bottom: 4, transform: "translateX(-50%)", maxWidth: "calc(100% - 8px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   background: "rgba(15,23,42,.85)", color: "#fff", fontSize: 11, lineHeight: "16px", padding: "0 6px", borderRadius: 4, pointerEvents: "none" }}>{label}</span>
               )}
               {!editor && chosen && (
