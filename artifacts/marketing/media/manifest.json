@@ -29,6 +29,11 @@
     "type": "image/webp",
     "local": true
   },
+  "team/june-lea": {
+    "file": "team__june-lea",
+    "type": "image/webp",
+    "local": true
+  },
   "pages/autumn/device-mockup": {
     "file": "pages__autumn__device-mockup",
     "type": "image/png"

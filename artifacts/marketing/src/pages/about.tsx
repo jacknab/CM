@@ -44,12 +44,20 @@ const jsonLd = {
       jobTitle: 'SaaS Developer',
       worksFor: { '@id': `${SITE}/#organization` },
     },
+    {
+      '@type': 'Person',
+      '@id': `${SITE}/#june-lea`,
+      name: 'June Lea',
+      jobTitle: 'Head of Marketing',
+      worksFor: { '@id': `${SITE}/#organization` },
+    },
   ],
 };
 
 /** Team card photos by team member id (about.json). */
 const TEAM_PHOTOS: Record<string, string> = {
   t2: '/airo-assets/images/team/toby-benjamin',
+  t3: '/airo-assets/images/team/june-lea',
 };
 
 const fadeUp = {
@@ -149,7 +157,7 @@ export default function AboutPage() {
               <motion.div variants={fadeUp} className="text-center max-w-xl mx-auto">
                 <h2 className="text-3xl md:text-4xl font-bold text-foreground" style={{ fontFamily: 'var(--font-heading)' }}>Meet the team</h2>
               </motion.div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto w-full">
                 {about.team.map((member) => (
                   <motion.div key={member.id} variants={fadeUp}
                     className="bg-card border border-border rounded-2xl p-6 flex flex-col gap-4 hover:-translate-y-1 transition-transform duration-300">
