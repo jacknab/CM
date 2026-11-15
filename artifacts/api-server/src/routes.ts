@@ -14741,33 +14741,42 @@ or
         await apiManager.revokeTokens();
       }
 
-      // Delete all draft/published responses for this store's reviews
-      await db
-        .delete(googleReviewResponses)
-        .where(eq(googleReviewResponses.storeId, storeId));
+      // All or nothing, so a failure never leaves half the data removed.
+      await db.transaction(async (tx) => {
+        // The auto-reply queue points at both responses and reviews, so it goes first
+        // (store 2's disconnect failed on that foreign key, 2026-11-15).
+        await tx
+          .delete(googleReviewResponseQueue)
+          .where(eq(googleReviewResponseQueue.storeId, storeId));
 
-      // Delete all synced reviews for this store
-      await db
-        .delete(googleReviews)
-        .where(eq(googleReviews.storeId, storeId));
+        // Delete all draft/published responses for this store's reviews
+        await tx
+          .delete(googleReviewResponses)
+          .where(eq(googleReviewResponses.storeId, storeId));
 
-      // Delete the profile itself
-      await db
-        .delete(googleBusinessProfiles)
-        .where(eq(googleBusinessProfiles.storeId, storeId));
+        // Delete all synced reviews for this store
+        await tx
+          .delete(googleReviews)
+          .where(eq(googleReviews.storeId, storeId));
 
-      // Clear OAuth tokens from googleBusinessAccounts (data-retention compliance:
-      // tokens must not persist after the user has revoked access)
-      await db
-        .update(googleBusinessAccounts)
-        .set({
-          accessToken:  null,
-          refreshToken: null,
-          tokenExpiry:  null,
-          scopes:       null,
-          updatedAt:    new Date(),
-        })
-        .where(eq(googleBusinessAccounts.storeId, storeId));
+        // Delete the profile itself
+        await tx
+          .delete(googleBusinessProfiles)
+          .where(eq(googleBusinessProfiles.storeId, storeId));
+
+        // Clear OAuth tokens from googleBusinessAccounts (data-retention compliance:
+        // tokens must not persist after the user has revoked access)
+        await tx
+          .update(googleBusinessAccounts)
+          .set({
+            accessToken:  null,
+            refreshToken: null,
+            tokenExpiry:  null,
+            scopes:       null,
+            updatedAt:    new Date(),
+          })
+          .where(eq(googleBusinessAccounts.storeId, storeId));
+      });
 
       console.log(`Google Business Profile disconnected for store ${storeId}`);
       return res.json({ message: "Google Business Profile disconnected and all data removed" });
@@ -15493,6 +15502,12 @@ or
           console.warn("Could not delete reply from Google:", googleError);
         }
       }
+
+      // A queued auto-reply may still point at this reply; unlink it so the delete isn't blocked.
+      await db
+        .update(googleReviewResponseQueue)
+        .set({ googleReviewResponseId: null })
+        .where(eq(googleReviewResponseQueue.googleReviewResponseId, responseId));
 
       await db
         .delete(googleReviewResponses)
