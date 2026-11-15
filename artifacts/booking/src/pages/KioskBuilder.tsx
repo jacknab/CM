@@ -547,14 +547,23 @@ export default function KioskBuilder() {
       onDeleteWorkflow={(wid) => { if (draft.menus.some((m) => m.id === screenId && m.workflowId === wid)) setScreenId(null); update((d) => withoutWorkflow(d, wid)); }} />
   );
   const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");
-  // Easy builder › Categories: the category cards, or the owner's own button screens (the kiosk uses what's chosen).
+  // Easy builder › Categories: the category cards, the order board (Order Board theme, 2026-11-15) or the owner's own
+  // button screens — the kiosk uses what's chosen.
+  const pickMode: "cards" | "board" | "own" = usingOwn ? "own" : draft.servicesView === "board" ? "board" : "cards";
   const howField = (
     <Field id="how" focus={focus} title="How clients pick a service">
-      <div className="grid grid-cols-2 gap-2">
-        {([[false, "Category cards", "Made from your catalog by itself. Nothing to design."], [true, "My own screens", "Design the screens yourself, like a POS grid."]] as const).map(([own, name, about]) => (
-          <button key={name} type="button" data-testid={`pick-${own ? "own" : "cards"}`}
-            onClick={() => { setOwnScreens(own); update((d) => ({ ...d, menuMode: own && d.startMenuId ? "screens" : "catalog" })); }}
-            className={`text-left rounded-xl border p-3 ${usingOwn === own ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+      <div className="grid grid-cols-3 gap-2">
+        {([
+          ["cards", "Category cards", "Made from your catalog by itself. Nothing to design."],
+          ["board", "Order board", "One screen: category buttons, their services, and the client's order on the right."],
+          ["own", "My own screens", "Design the screens yourself, like a POS grid."],
+        ] as const).map(([k, name, about]) => (
+          <button key={k} type="button" data-testid={`pick-${k}`}
+            onClick={() => {
+              setOwnScreens(k === "own");
+              update((d) => ({ ...d, menuMode: k === "own" && d.startMenuId ? "screens" : "catalog", servicesView: k === "board" ? "board" : "cards" }));
+            }}
+            className={`text-left rounded-xl border p-3 ${pickMode === k ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
             <p className="text-sm font-medium text-slate-800">{name}</p>
             <p className="text-xs text-slate-500">{about}</p>
           </button>

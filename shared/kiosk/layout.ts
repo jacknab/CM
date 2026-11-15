@@ -287,6 +287,12 @@ export interface KioskLayout {
    * Every screen in `menus` is of this builder's kind.
    */
   builder: KioskBuilderKind;
+  /**
+   * How clients pick services when the kiosk uses the catalog (not own screens) (owner, 2026-11-15):
+   * "cards" — the category cards, then that category's service list; "board" — one order board: category buttons
+   * top left, the category's services below, the client's order (with remove, total, Continue) on the right.
+   */
+  servicesView: "cards" | "board";
   /** A picture behind each of these kiosk screens' content (uploaded, 1080 × 1920); absent: the background colour. */
   screenPictures: Partial<Record<KioskScreenPictureKey, string>>;
   /** The owner's workflows, in the builder's order (KioskWorkflow). */
@@ -317,6 +323,7 @@ export const KIOSK_DEFAULTS: Omit<KioskLayout, "preset"> = {
   menuMode: "catalog",
   startMenuId: null,
   builder: "easy",
+  servicesView: "cards",
   screenPictures: {},
   workflows: [],
   menus: [],
@@ -571,6 +578,7 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
       return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, builder, workflows, menus };
     })(),
     requiredGroups: normalizeGroupNames(r.requiredGroups),
+    servicesView: r.servicesView === "board" ? "board" : "cards",
     screenPictures: Object.fromEntries(KIOSK_SCREEN_PICTURE_KEYS.flatMap((k) => (isKioskImageUrl(r.screenPictures?.[k]) ? [[k, r.screenPictures[k]]] : []))),
   };
 }

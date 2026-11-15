@@ -6,6 +6,7 @@ import { printNativeCheckinTicket, slipServiceNames } from "../lib/native-checki
 import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
 import { KioskMenuScreen } from "../components/kiosk/KioskMenuScreen";
+import { KioskOrderBoard } from "@/components/kiosk/KioskOrderBoard";
 import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
@@ -37,7 +38,7 @@ import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 import { keepSocketAlive } from "@/lib/ws-keepalive";
 type Screen =
   | "idle" | "phone" | "loading" | "welcome"
-  | "name_entry" | "service_type" | "services" | "service_options" | "menu"
+  | "name_entry" | "service_type" | "services" | "service_options" | "menu" | "board"
   | "nail_size" | "nail_shape" | "nail_effects"
   | "addons" | "stylist" | "review" | "ticket"
   | "appointment_confirmed" | "error" | "wait_confirm" | "fully_booked"
@@ -737,6 +738,8 @@ function KioskCheckInScreens() {
     const l = layoutRef.current;
     // The business's own screens take the place of the category cards and the service list.
     if (l.menuMode === "screens" && l.startMenuId) { setMenuStack([l.startMenuId]); setMenuPage(0); return "menu"; }
+    // The order board (Order Board theme) takes the place of the category cards and the service list.
+    if (l.servicesView === "board") return "board";
     return then === "service_type" && !kioskFlow(l).includes("category") ? "services" : then;
   };
 
@@ -1087,6 +1090,7 @@ function KioskCheckInScreens() {
     }
     if (id === "provider") return setScreen("stylist");
     if (id === "review") return setScreen("review");
+    if ((id === "category" || id === "services") && layout.menuMode !== "screens" && layout.servicesView === "board") return setScreen("board");
     if (id === "category") return setScreen("service_type");
     if (id === "services") return setScreen(layout.menuMode === "screens" && menuStack.length ? "menu" : layout.menuMode === "screens" ? firstStepScreen("services") : "services");
     backToStart();
@@ -1257,7 +1261,7 @@ function KioskCheckInScreens() {
       case "welcome": return resetToIdle();
       case "phone": return setScreen("phone");
       case "category": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); return setScreen(firstStepScreen("service_type"));
-      case "services": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); setSvcPage(0); return setScreen(layout.menuMode === "screens" ? firstStepScreen("services") : "services");
+      case "services": if (!newClientName) setNewClientName("Alex"); setFilteredServices(null); setSvcPage(0); return setScreen(layout.menuMode === "screens" || layout.servicesView === "board" ? firstStepScreen("services") : "services");
       case "addons": withSample(); return enterStep("addons", selectedServices[0] ?? sample, null);
       case "provider": withSample(); return setScreen("stylist");
       case "review": withSample(); return setScreen("review");
@@ -2236,6 +2240,45 @@ body *{cursor:default}`;
   }
 
   // ── SERVICE TYPE PICKER ─────────────────────────────────────────────────────
+  // ── ORDER BOARD (Order Board theme) ─────────────────────────────────────────
+  if (screen === "board") {
+    const catImgs = kioskConfig?.categoryImages ?? {};
+    const groups = categoryGroups().map((g) => ({ key: g.key, label: g.label, imageUrl: catImgs[g.label] ?? catImgs[g.key] ?? null,
+      svcs: g.svcs.map((sv) => ({ id: sv.id, name: sv.name, price: sv.price, duration: sv.duration, imageUrl: sv.imageUrl ?? null })) }));
+    const limitText = layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
+      : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10));
+    const strip = (label: string) => label.replace(/^[←‹<]\s*/, "").replace(/\s*[→›>]$/, "");
+    return (
+      <KioskOrderBoard
+        heading={t.whatBringsYouIn(clientFirst)}
+        groups={groups}
+        selectedIds={selectedServices.map((sv) => sv.id)}
+        onToggle={(b) => {
+          kick();
+          const svc = allServices.find((x) => x.id === b.id);
+          if (!svc) return;
+          // A service with options picks its option first, as on the service list.
+          if ((svc.optionCount ?? (serviceOptionsMap[svc.id]?.length ?? 0)) > 0 && !selectedServices.some((x) => x.id === svc.id)) {
+            setParentServiceForOptions(svc); setSelectedOption(null); setScreen("service_options"); return;
+          }
+          toggleSvc(svc);
+        }}
+        order={[
+          ...selectedServices.map((sv) => ({ key: `s${sv.id}`, name: sv.name, price: sv.price, imageUrl: sv.imageUrl ?? null, onRemove: () => toggleSvc(sv) })),
+          ...selectedAddons.map((ad, i) => ({ key: `a${ad.id}-${i}`, name: `+ ${ad.name}`, price: ad.price, imageUrl: ad.imageUrl ?? null,
+            onRemove: () => setSelectedAddons((cur) => cur.filter((_, j) => j !== i)) })),
+        ]}
+        showPrice={showPrice} showDuration={showDuration}
+        colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, selected: layout.theme.colors.selected ?? PRIMARY_S, tint: TINT }}
+        labels={{ back: strip(t.backBtn), continue: strip(t.continueBtn), myOrder: t.myOrder, orderEmpty: t.orderEmpty, total: t.orderTotal, remove: t.removeItem, forClient: t.orderFor(clientFirst) }}
+        onBack={() => { kick(); backToStart(); }}
+        onContinue={() => { kick(); void afterServiceChosen(); }}
+        note={svcLimitNote ? limitText : null}
+        serif={NAIL_LOOK}
+      />
+    );
+  }
+
   if (screen === "service_type") {
     // One card per real service category in the store's catalogue (in the
     // order categories first appear in the service list). Each card filters the

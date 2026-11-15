@@ -15,6 +15,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { KIOSK_THEMES } from "@shared/kiosk/themes";
 
 interface ConfigRow { id: number; name: string; source: "saved" | "imported"; builder: "easy" | "picture"; live: boolean; updatedAt: string }
 
@@ -46,10 +47,11 @@ export default function KioskConfigsHome() {
   const load = () => api<{ configs: ConfigRow[] }>("/api/kiosk-builder/configs").then((d) => setConfigs(d.configs)).catch((e) => setError(e.message));
   useEffect(() => { void load(); }, []);
 
-  const create = async (builder: "easy" | "picture") => {
+  /** A new configuration with a builder, or from a theme (2026-11-15). */
+  const create = async (how: { builder: "easy" | "picture" } | { theme: string }) => {
     setCreating(true);
     try {
-      const { config } = await api<{ config: ConfigRow }>("/api/kiosk-builder/configs", { method: "POST", body: JSON.stringify({ name, builder }) });
+      const { config } = await api<{ config: ConfigRow }>("/api/kiosk-builder/configs", { method: "POST", body: JSON.stringify({ name, ...how }) });
       navigate(`/kiosk-builder/${config.id}`);
     } catch (e: any) {
       toast({ title: "Couldn't make it", description: e.message, variant: "destructive" });
@@ -155,7 +157,7 @@ export default function KioskConfigsHome() {
             <div className="space-y-3">
               <div className="grid sm:grid-cols-2 gap-3">
                 {(["easy", "picture"] as const).map((b) => (
-                  <button key={b} type="button" disabled={creating} onClick={() => void create(b)} data-testid={`config-new-${b}`}
+                  <button key={b} type="button" disabled={creating} onClick={() => void create({ builder: b })} data-testid={`config-new-${b}`}
                     className="text-left rounded-2xl border-2 border-slate-200 hover:border-slate-900 p-5 space-y-2 disabled:opacity-60">
                     <p className="text-lg font-semibold text-slate-900">{BUILDERS[b].name}</p>
                     <p className="text-sm text-slate-600">{BUILDERS[b].about}</p>
@@ -163,6 +165,20 @@ export default function KioskConfigsHome() {
                 ))}
               </div>
               <p className="text-xs text-slate-500">A configuration keeps its builder. To try the other one, make another configuration.</p>
+              {/* Themes (owner, 2026-11-15): a configuration already set up with a look and layout; still editable. */}
+              <div className="pt-1 space-y-2">
+                <p className="text-sm font-semibold text-slate-900">Or start from a theme</p>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {KIOSK_THEMES.map((th) => (
+                    <button key={th.key} type="button" disabled={creating} onClick={() => void create({ theme: th.key })} data-testid={`config-new-theme-${th.key}`}
+                      className="text-left rounded-2xl border-2 border-slate-200 hover:border-slate-900 p-5 space-y-2 disabled:opacity-60">
+                      <p className="text-lg font-semibold text-slate-900">{th.name}</p>
+                      <p className="text-sm text-slate-600">{th.about}</p>
+                      <p className="text-xs text-slate-500">{BUILDERS[th.builder].name}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex justify-between">
                 <Button variant="ghost" onClick={() => setStep(1)} disabled={creating}>Back</Button>
                 {creating && <span className="inline-flex items-center gap-2 text-sm text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Making it…</span>}

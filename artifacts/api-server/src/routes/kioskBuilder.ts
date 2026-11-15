@@ -23,6 +23,7 @@
  * Needs the store-settings permission (owners and managers by default). The kiosk itself reads the published
  * layout from /api/public/kiosk/:slug/config.
  */
+import { kioskTheme } from "@shared/kiosk/themes";
 import { Router, type Request, type Response } from "express";
 import { isAuthenticated } from "../auth";
 import { requirePermission } from "../middleware/permissions";
@@ -183,8 +184,12 @@ router.post("/api/kiosk-builder/configs", ...guard, async (req: Request, res: Re
     const name = cleanConfigName(req.body?.name);
     if (!name) return res.status(400).json({ error: "Give the configuration a name." });
     const builder = req.body?.builder;
-    // A new configuration: named, then made with one builder (owner, 2026-11-13). Without a builder: a copy of the draft.
-    const config = builder === "easy" || builder === "picture"
+    const theme = typeof req.body?.theme === "string" ? req.body.theme : null;
+    // A new configuration: named, then made with one builder (owner, 2026-11-13) or from a theme (2026-11-15).
+    // Without either: a copy of the draft.
+    const config = theme && kioskTheme(theme)
+      ? await newKioskConfig(ctx, name, kioskTheme(theme)!.builder, userIdOf(req), theme)
+      : builder === "easy" || builder === "picture"
       ? await newKioskConfig(ctx, name, builder, userIdOf(req))
       : await createKioskConfig(ctx, name, (await draftKioskLayout(ctx)).layout, "saved", userIdOf(req));
     if (!config) return res.status(409).json({ error: tooMany });

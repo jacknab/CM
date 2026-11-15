@@ -143,6 +143,12 @@ export interface KioskStrings {
   chooseFromGroup: (group: string) => string;
   /** A screen set to "must choose" (Kiosk Builder) and nothing on it chosen yet. */
   chooseOneHere: string;
+  /** The order board (Order Board theme): its order panel. */
+  myOrder: string;
+  orderEmpty: string;
+  orderTotal: string;
+  removeItem: string;
+  orderFor: (name: string) => string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -290,6 +296,11 @@ const en: KioskStrings = {
   addonNotForService: "That add-on doesn't go with the service you chose.",
   chooseFromGroup: (g) => `Please choose your ${g.toLowerCase()}.`,
   chooseOneHere: "Please choose one to continue.",
+  myOrder: "My order",
+  orderEmpty: "Tap a service to add it here.",
+  orderTotal: "Total",
+  removeItem: "Remove",
+  orderFor: (n: string) => `Check-in for ${n}`,
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -429,6 +440,11 @@ const es: KioskStrings = {
   addonNotForService: "Ese extra no está disponible con el servicio que elegiste.",
   chooseFromGroup: (g) => `Elige una opción: ${g}`,
   chooseOneHere: "Elige una opción para continuar.",
+  myOrder: "Mi pedido",
+  orderEmpty: "Toca un servicio para añadirlo aquí.",
+  orderTotal: "Total",
+  removeItem: "Quitar",
+  orderFor: (n: string) => `Registro de ${n}`,
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -568,6 +584,11 @@ const vi: KioskStrings = {
   addonNotForService: "Dịch vụ thêm này không áp dụng cho dịch vụ bạn đã chọn.",
   chooseFromGroup: (g) => `Vui lòng chọn: ${g}`,
   chooseOneHere: "Vui lòng chọn một mục để tiếp tục.",
+  myOrder: "Dịch vụ đã chọn",
+  orderEmpty: "Chạm vào một dịch vụ để thêm vào đây.",
+  orderTotal: "Tổng",
+  removeItem: "Bỏ",
+  orderFor: (n: string) => `Đăng ký cho ${n}`,
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -707,6 +728,11 @@ const zh: KioskStrings = {
   addonNotForService: "此附加项不适用于您选择的服务。",
   chooseFromGroup: (g) => `请选择：${g}`,
   chooseOneHere: "请先选择一项再继续。",
+  myOrder: "我的服务",
+  orderEmpty: "点选服务即可加入这里。",
+  orderTotal: "合计",
+  removeItem: "移除",
+  orderFor: (n: string) => `${n} 的签到`,
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -846,6 +872,11 @@ const ko: KioskStrings = {
   addonNotForService: "선택하신 서비스에는 이 추가 옵션을 이용할 수 없습니다.",
   chooseFromGroup: (g) => `선택해 주세요: ${g}`,
   chooseOneHere: "계속하려면 하나를 선택해 주세요.",
+  myOrder: "내 주문",
+  orderEmpty: "서비스를 누르면 여기에 추가됩니다.",
+  orderTotal: "합계",
+  removeItem: "삭제",
+  orderFor: (n: string) => `${n}님 체크인`,
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",

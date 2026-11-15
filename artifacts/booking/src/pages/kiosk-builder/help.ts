@@ -24,6 +24,7 @@ export const KIOSK_HELP: HelpTopic[] = [
     id: "start", group: "Getting started", title: "Start here",
     blocks: [
       { p: "A kiosk configuration is one design of your check-in kiosk. You make it with one of two builders:" },
+      { p: "Or start from a theme on the same step: Order Board puts the categories, their services and the client's order (with the total and Continue) on one screen. In the Easy builder you can switch any configuration to it: Categories tab › How clients pick a service › Order board." },
       { list: [
         "Easy builder: Certxa draws the screens from your services. You choose what shows and change the words and colours.",
         "Picture builder: you design the screens as pictures and place tap spots on them.",

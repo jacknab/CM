@@ -9,6 +9,7 @@
  * as the next number; going back to an old version copies it into the draft, to be published again.
  */
 
+import { kioskTheme } from "@shared/kiosk/themes";
 import { pool } from "../db";
 import { businessTypeOf } from "@shared/kiosk/businessTypes";
 import { normalizeKioskLayout, type KioskLayout } from "@shared/kiosk/layout";
@@ -192,9 +193,12 @@ export async function createKioskConfig(ctx: StoreKioskContext, name: string, ra
  * A new configuration made with one builder (owner, 2026-11-13: name it, choose the builder, then build): the
  * business type's preset, with that builder and the category cards until screens are made.
  */
-export async function newKioskConfig(ctx: StoreKioskContext, name: string, builder: "easy" | "picture", userId: number | null): Promise<KioskConfigRow | null> {
+export async function newKioskConfig(ctx: StoreKioskContext, name: string, builder: "easy" | "picture", userId: number | null, themeKey?: string | null): Promise<KioskConfigRow | null> {
   const base = defaultKioskLayout(ctx.category, ctx.legacy);
-  return createKioskConfig(ctx, name, { ...base, builder, menus: [], startMenuId: null, menuMode: "catalog" }, "saved", userId);
+  const start: KioskLayout = { ...base, builder, menus: [], startMenuId: null, menuMode: "catalog" };
+  // A theme (Kiosk Builder › Themes, 2026-11-15): Certxa's starting design for the business with the theme on top.
+  const theme = kioskTheme(themeKey);
+  return createKioskConfig(ctx, name, theme ? theme.apply({ ...start, builder: theme.builder }) : start, "saved", userId);
 }
 
 /** Saves a configuration's design. Its builder never changes (the builder is chosen when it's made). null: not this store's. */

@@ -368,3 +368,18 @@ describe("text box bullets (owner, 2026-11-15)", () => {
     expect(box(undefined).bullet).toBeUndefined();
   });
 });
+
+describe("the order board and themes (owner, 2026-11-15)", () => {
+  it("servicesView is cards unless set to board", () => {
+    expect(normalizeKioskLayout({}, "nail").servicesView).toBe("cards");
+    expect(normalizeKioskLayout({ servicesView: "board" }, "nail").servicesView).toBe("board");
+    expect(normalizeKioskLayout({ servicesView: "grid" }, "nail").servicesView).toBe("cards");
+  });
+  it("the Order Board theme makes an Easy design on the board with its colours", async () => {
+    const { KIOSK_THEMES } = await import("@shared/kiosk/themes");
+    const t = KIOSK_THEMES.find((x) => x.key === "order-board")!;
+    const l = normalizeKioskLayout(t.apply(normalizeKioskLayout({ menuMode: "screens" }, "nail")), "nail");
+    expect(l).toMatchObject({ builder: "easy", menuMode: "catalog", servicesView: "board" });
+    expect(l.theme.colors.selected).toBe("#ffc93c");
+  });
+});
