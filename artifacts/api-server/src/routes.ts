@@ -6670,7 +6670,9 @@ If you have any questions, please contact your administrator.
       // a card the server already captured has total_paid set.
       if (input.status === "completed" && existingAppointment.status !== "completed"
           && (input as any).totalPaid === undefined && (existingAppointment as any).totalPaid == null
-          && nailTickets.isNailSalonCategory((await storage.getStore(existingAppointment.storeId!) as any)?.category)) {
+          && nailTickets.isNailSalonCategory((await storage.getStore(existingAppointment.storeId!) as any)?.category)
+          // Certxa Pro accounts have no front desk: MARK AS COMPLETED finishes the visit unpaid (owner, 2026-11-15).
+          && !(await pool.query(`SELECT 1 FROM locations l JOIN users u ON u.id = l.user_id WHERE l.id = $1 AND u.account_type = 'certxa_pro'`, [existingAppointment.storeId])).rowCount) {
         return res.status(409).json({ code: "PAYMENT_REQUIRED", message: "Take payment at checkout to finish this ticket." });
       }
       // Cancelling a ticket a technician already worked on (owner, 2026-10-29): allowed — the salon decides — but only with
@@ -6739,7 +6741,8 @@ If you have any questions, please contact your administrator.
       // Remember pre-update status so we can guard against double side-effects
       // when the capture endpoint already marked the appointment completed and
       // the web client sends a follow-up PATCH (e.g. certxa_native_payment_complete).
-      const wasAlreadyCompleted = existingAppointment.status === "completed";
+      // A visit completed without a payment (Certxa Pro MARK AS COMPLETED) and paid later is not "already completed".
+      const wasAlreadyCompleted = existingAppointment.status === "completed" && (existingAppointment as any).totalPaid != null;
 
       // Verify the appointment belongs to the requesting user's store
       const sessionStoreId = await resolveSessionStoreId(req);

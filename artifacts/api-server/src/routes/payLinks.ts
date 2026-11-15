@@ -28,16 +28,16 @@ async function connectedAccount(storeId: number): Promise<string | null> {
 }
 
 /** What the booking comes to (service, add-ons, extra services, travel fee), less a deposit already paid, in cents. */
-async function bookingDueCents(appointmentId: number, storeId: number): Promise<{ cents: number; what: string; status: string; customerId: number | null } | null> {
+async function bookingDueCents(appointmentId: number, storeId: number): Promise<{ cents: number; what: string; status: string; paid: boolean; customerId: number | null } | null> {
   const r = (await pool.query(
-    `SELECT a.status, a.customer_id, a.custom_lines, COALESCE(a.travel_fee, 0) AS travel, COALESCE(a.deposit_collected, 0) AS deposit,
+    `SELECT a.status, a.customer_id, a.total_paid IS NOT NULL AS paid, a.custom_lines, COALESCE(a.travel_fee, 0) AS travel, COALESCE(a.deposit_collected, 0) AS deposit,
             s.name AS service, COALESCE(s.price, 0) AS price,
             (SELECT COALESCE(SUM(ad.price), 0) FROM appointment_addons aa JOIN addons ad ON ad.id = aa.addon_id WHERE aa.appointment_id = a.id) AS addons
        FROM appointments a LEFT JOIN services s ON s.id = a.service_id WHERE a.id = $1 AND a.store_id = $2`, [appointmentId, storeId])).rows[0];
   if (!r) return null;
   const lines = Array.isArray(r.custom_lines) ? r.custom_lines : [];
   const total = Number(r.price) + Number(r.addons) + Number(r.travel) + lines.reduce((n: number, l: any) => n + (Number(l?.price) || 0), 0) - Number(r.deposit);
-  return { cents: Math.round(total * 100), what: r.service || "Your appointment", status: r.status, customerId: r.customer_id != null ? Number(r.customer_id) : null };
+  return { cents: Math.round(total * 100), what: r.service || "Your appointment", status: r.status, paid: !!r.paid, customerId: r.customer_id != null ? Number(r.customer_id) : null };
 }
 
 router.post("/api/appointments/:id/pay-link", isAuthenticated, async (req: Request, res: Response) => {
@@ -49,7 +49,8 @@ router.post("/api/appointments/:id/pay-link", isAuthenticated, async (req: Reque
     if (!(await connectedAccount(storeId))) return res.status(409).json({ error: "Set up card payments first." });
     const due = await bookingDueCents(appointmentId, storeId);
     if (!due) return res.status(404).json({ error: "Booking not found" });
-    if (["completed", "cancelled", "no_show"].includes(due.status)) return res.status(409).json({ error: "This booking can't be paid now." });
+    // A visit marked completed without a payment (Certxa Pro MARK AS COMPLETED, 2026-11-15) can still be paid.
+    if (["cancelled", "no_show"].includes(due.status) || (due.status === "completed" && due.paid)) return res.status(409).json({ error: "This booking can't be paid now." });
     if (due.cents < 50) return res.status(409).json({ error: "There's nothing to pay on this booking." });
     // One open link per booking, kept up to date with the booking's amount.
     let link = (await pool.query(`SELECT * FROM pay_links WHERE appointment_id = $1 AND store_id = $2 AND status = 'open' ORDER BY id DESC LIMIT 1`, [appointmentId, storeId])).rows[0];
@@ -141,7 +142,7 @@ router.post("/api/public/pay/:token/confirm", publicLimiter, async (req: Request
     // The booking is paid, like a checkout: sale, commission, loyalty, and the review text (storage.updateAppointment).
     if (done.rowCount && link.appointment_id) {
       const appt = await storage.getAppointment(link.appointment_id);
-      if (appt && appt.status !== "completed") {
+      if (appt && (appt.status !== "completed" || (appt as any).totalPaid == null)) {
         const paid = (pi.amount / 100).toFixed(2);
         await storage.updateAppointment(link.appointment_id, {
           status: "completed", paymentMethod: "card", totalPaid: paid, serviceRevenue: paid, productRevenue: "0.00", stripePaymentIntentId: pi.id,

@@ -1625,7 +1625,8 @@ export async function finalizeCapturedTerminalPayment(
       }).where(and(
         eq(appointments.id, apptId),
         eq(appointments.storeId, storeId),
-        sql`${appointments.status} NOT IN ('completed', 'cancelled')`,
+        // Completed without a payment (Certxa Pro MARK AS COMPLETED, 2026-11-15) still takes the card payment.
+        sql`${appointments.status} <> 'cancelled' AND NOT (${appointments.status} = 'completed' AND ${appointments.totalPaid} IS NOT NULL)`,
       )).returning();
 
       if (!completedApt) {
