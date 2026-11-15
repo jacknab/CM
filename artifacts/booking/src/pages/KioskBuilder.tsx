@@ -27,6 +27,7 @@ import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
+import "@/pages/kiosk-builder/kxDark.css";
 import { ScreensEditor, nextScreenName, withCategoryScreens, withScreenCopied, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
@@ -629,7 +630,8 @@ export default function KioskBuilder() {
             <div className="flex-1 min-h-0 flex">
               {screensPanel}
               <div className="flex-1 min-w-0 flex">{center}</div>
-              <div className="w-[420px] shrink-0 overflow-y-auto border-l border-slate-200 bg-slate-50" data-testid="screen-panel">
+              {/* Wider and dark like the Screens panel (owner, 2026-11-15); kxDark.css restyles the settings inside. */}
+              <div className="kx-dark w-[520px] shrink-0 overflow-y-auto" data-testid="screen-panel">
                 <div className="px-5 pt-4 pb-2">
                   <h2 className="text-lg font-semibold text-slate-900">{styleOpen ? "Colours & style" : `${screen.name} screen`}</h2>
                   <p className="text-sm text-slate-500">{styleOpen ? "The look of every screen." : screen.about}</p>
@@ -679,9 +681,9 @@ export default function KioskBuilder() {
             return (
               <ScreensEditor draft={draft} update={update} services={catalog.services} categories={catalog.categories} addons={catalog.addons} storeName={catalog.storeName} uploadImage={uploadImage}
                 renderPreview={(extra) => renderPreview(extra, false)} view={screensView} onView={setScreensView} extras={extrasStore} onHelp={openHelp}
-                menuId={screenId} onMenuId={setScreenId}
+                menuId={screenId} onMenuId={setScreenId} screenTop={top}
                 previewScreen={(menuId: string) => { pendingScreenRef.current = menuId; postToPreview({ type: "kiosk-preview-goto", target: "screen", menuId }); }}>
-                {({ panel, canvas }) => layout(canvas ?? renderPreview(undefined, false), <>{top}{panel}</>)}
+                {({ panel, canvas }) => layout(canvas ?? renderPreview(undefined, false), panel)}
               </ScreensEditor>
             );
           }

@@ -338,6 +338,8 @@ export function ScreensEditor(props: {
   onMenuId?: (id: string | null) => void;
   /** Opens the built-in guide on a topic (./help.ts). */
   onHelp?: (topic: "builders" | "easy" | "picture" | "recipe-shapes") => void;
+  /** Settings from the page shown on the Screen tab (how clients pick a service, how many services). */
+  screenTop?: React.ReactNode;
   /** Where the page puts the two parts: the settings panel, and the canvas (null: show the live preview). */
   children: (parts: { panel: React.ReactNode; canvas: React.ReactNode | null }) => React.ReactNode;
 }) {
@@ -362,6 +364,8 @@ export function ScreensEditor(props: {
   const [spotId, setSpotId] = useState<string | null>(null);
   // The chosen text box (owner, 2026-11-15): one thing is chosen at a time, a tap spot or a text box.
   const [textId, setTextId] = useState<string | null>(null);
+  // The right panel's tab (owner, 2026-11-15): Screen, then Tap spots and Text (picture screens) or Buttons.
+  const [panelTab, setPanelTab] = useState<"screen" | "spots" | "text" | "buttons">("screen");
   const [spotTab, setSpotTab] = useState<"service" | "addon" | "function" | "menu">("service");
   const [pictureWarning, setPictureWarning] = useState<string | null>(null);
   const canvasBox = useRef<HTMLDivElement>(null);
@@ -392,6 +396,10 @@ export function ScreensEditor(props: {
 
   useEffect(() => { if (!menu && draft.menus[0]) setMenuId(draft.menus[0].id); }, [menu, draft.menus]);
   useEffect(() => { setPage(0); setExtraPages(0); setSlot(null); setSpotId(null); setTextId(null); setPictureWarning(null); }, [menuId]);
+  // Choosing something on the screen opens its tab.
+  useEffect(() => { if (spotId) setPanelTab("spots"); }, [spotId]);
+  useEffect(() => { if (textId) setPanelTab("text"); }, [textId]);
+  useEffect(() => { if (slot != null) setPanelTab("buttons"); }, [slot]);
   useEffect(() => {
     if (slot != null || spotId) selectionRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [slot, spotId]);
@@ -527,6 +535,7 @@ export function ScreensEditor(props: {
   if (!draft.menus.length) {
     return <>{props.children({ canvas: null, panel: (
       <div className="space-y-4">
+        {props.screenTop}
         {draft.builder === "easy" ? (
           <>
             <p className="text-sm text-slate-600">
@@ -619,60 +628,153 @@ export function ScreensEditor(props: {
   };
   const panel = (
     <div className="space-y-4">
-      {/* The chosen tap spot or button: edited here, at the top of the panel. */}
-      <div ref={selectionRef} className="empty:hidden">
-      {props.view === "edit" && menu && menu.kind === "picture" && textBox && (
-        <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-text-panel">
-          <p className="text-sm font-semibold text-slate-800">Text</p>
-          <textarea value={textBox.text.en ?? ""} maxLength={KIOSK_TEXT_LIMITS.chars} rows={2} data-testid="text-words"
-            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-800"
-            onChange={(e) => patchText({ text: { ...textBox.text, en: e.target.value } })} />
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs text-slate-500">
-              Size
-              <div className="mt-1 flex items-center gap-2">
-                <input type="range" min={KIOSK_TEXT_LIMITS.size.min} max={KIOSK_TEXT_LIMITS.size.max} value={textBox.size} className="flex-1"
-                  onChange={(e) => patchText({ size: Number(e.target.value) })} />
-                <SizeInput key={textBox.id} value={textBox.size} onCommit={(size) => patchText({ size })} />
-              </div>
-            </label>
-            <label className="block text-xs text-slate-500">
-              Colour
-              <div className="mt-1 flex items-center gap-2">
-                <input type="color" value={textBox.color} aria-label="Text colour" data-testid="text-color" className="w-9 h-9 rounded border border-slate-200 bg-white p-0.5"
-                  onChange={(e) => patchText({ color: e.target.value })} />
-                <span className="text-xs text-slate-500">{textBox.color}</span>
-              </div>
-            </label>
-          </div>
-          <label className="block text-xs text-slate-500">
-            Font
-            <select value={textBox.font} data-testid="text-font" className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
-              style={{ fontFamily: KIOSK_TEXT_FONTS.find((f) => f.key === textBox.font)?.css }}
-              onChange={(e) => patchText({ font: e.target.value as KioskTextBox["font"] })}>
-              {KIOSK_TEXT_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.css }}>{f.name}</option>)}
-            </select>
-          </label>
-          <div className="grid grid-cols-3 gap-1 rounded-md border border-slate-200 p-0.5" role="radiogroup" aria-label="Text style">
-            {([["regular", "Regular"], ["bold", "Bold"], ["italic", "Italic"]] as const).map(([k, name]) => (
-              <button key={k} type="button" role="radio" aria-checked={textBox.style === k} data-testid={`text-style-${k}`}
-                onClick={() => patchText({ style: k })}
-                className={`h-8 text-sm rounded ${textBox.style === k ? "bg-slate-900 text-white" : "text-slate-600"}`}
-                style={{ fontWeight: k === "bold" ? 700 : 400, fontStyle: k === "italic" ? "italic" : "normal" }}>{name}</button>
-            ))}
-          </div>
-          <p className="text-xs text-slate-500">Drag the box to move it and its corners to size it; the words stay in the middle of the box. Arrow keys nudge it.</p>
-          <div className="flex gap-2 pt-1">
-            <Button variant="outline" size="sm" onClick={() => {
-              if ((menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes) return;
-              const copy: KioskTextBox = { ...textBox, id: newId("text"), y: Math.min(100 - textBox.h, textBox.y + textBox.h + 1) };
-              changeTexts((list) => [...list, copy]); setTextId(copy.id);
-            }}>Duplicate</Button>
-            <Button variant="outline" size="sm" onClick={() => { changeTexts((list) => list.filter((x) => x.id !== textBox.id)); setTextId(null); }} data-testid="text-delete">Delete</Button>
-            <Button variant="ghost" size="sm" onClick={() => setTextId(null)}>Done</Button>
-          </div>
+      {menu && (
+        <div className="kx-panel-tabs" role="tablist" data-testid="panel-tabs">
+          {(menu.kind === "picture"
+            ? [["screen", "Screen"], ["spots", `Tap spots (${menu.spots.length})`], ["text", `Text (${(menu.texts ?? []).length})`]]
+            : [["screen", "Screen"], ["buttons", `Buttons (${menu.tiles.filter(Boolean).length})`]]
+          ).map(([k, name]) => (
+            <button key={k} type="button" role="tab" aria-selected={panelTab === k} className={panelTab === k ? "active" : ""} data-testid={`panel-tab-${k}`}
+              onClick={() => setPanelTab(k as typeof panelTab)}>{name}</button>
+          ))}
         </div>
       )}
+      {(panelTab === "screen" || !menu) && (<>
+        {props.screenTop}
+        {menu && (
+          <section className="bg-white border-2 border-slate-300 rounded-2xl p-4 space-y-3" data-testid="choose-card">
+            <p className="text-sm font-semibold text-slate-900">{menu.name.trim() ? `On "${menu.name}", clients can choose` : "On this screen, clients can choose"}</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([["one", "One", "Tapping another replaces it. Like a nail shape."], ["many", "More than one", "Each tap adds or removes."]] as const).map(([k, name, about]) => (
+                <button key={k} type="button" data-testid={`choose-${k}`} onClick={() => changeMenu(menu.id, (m) => ({ ...m, choose: k }))}
+                  className={`text-left rounded-xl border p-3 ${menu.choose === k ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <p className="text-sm font-medium text-slate-800">{name}</p>
+                  <p className="text-xs text-slate-500">{about}</p>
+                </button>
+              ))}
+            </div>
+            <label className="flex items-start gap-2 text-sm text-slate-700">
+              <input type="checkbox" className="mt-0.5" checked={menu.mustChoose} data-testid="must-choose"
+                onChange={(e) => changeMenu(menu.id, (m) => ({ ...m, mustChoose: e.target.checked }))} />
+              <span>They must choose something here before moving on</span>
+            </label>
+            <p className="text-xs text-slate-500">Where they go after choosing is set on each button or tap spot ("Then…"). How many services in all: {draft.builder === "picture" ? "\"How many services\" above" : "Services tab"}.</p>
+          </section>
+        )}
+        {menu && menu.kind === "picture" && (
+          <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3" data-testid="picture-settings">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-800">Your picture</p>
+              <p className="text-xs text-slate-500">
+                Design the whole screen as one picture, {KIOSK_PICTURE.width} × {KIOSK_PICTURE.height} px. Start from the template so it fits the 15" kiosk exactly.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={downloadTemplate} data-testid="picture-template">Download template</Button>
+                <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-8 cursor-pointer bg-white hover:bg-slate-50">
+                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                  {menu.imageUrl ? "Replace picture" : "Upload picture"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading} data-testid="picture-upload"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadPicture(f); e.target.value = ""; }} />
+                </label>
+              </div>
+              {pictureWarning && <p className="text-xs text-amber-700">{pictureWarning}</p>}
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-800">Show the kiosk footer</p>
+                <p className="text-xs text-slate-500">Back, what the client chose, the total and Continue, over the bottom {KIOSK_PICTURE_FOOTER_PCT}% of your picture (the strip marked on the template).</p>
+              </div>
+              <Switch checked={menu.footer} aria-label="Show the kiosk footer" data-testid="picture-footer"
+                onCheckedChange={(v) => changeMenu(menu.id, (m) => ({ ...m, footer: v }))} />
+            </div>
+            {pictureProblems(menu).map((msg) => <p key={msg} className="text-xs text-amber-700" data-testid="picture-problem">{msg}</p>)}
+          </section>
+        )}
+        {menu && menu.kind !== "picture" && (
+          <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+            <label className="block text-xs text-slate-500">
+              Heading on the screen
+              <Input className="mt-1" value={menu.title.en ?? ""} maxLength={60} placeholder="Hi {name}! What brings you in today?"
+                onChange={(e) => changeMenu(menu.id, (m) => ({ ...m, title: { ...m.title, en: e.target.value } }))} />
+              <span className="block mt-1">Empty: the kiosk's own greeting, in every language. {"{name}"} is the client's first name.</span>
+            </label>
+            <div>
+              <p className="text-xs text-slate-500 mb-1.5">
+                Layout{props.onHelp && <> · <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("easy")}>How layouts work</button></>}
+              </p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {LAYOUTS.map((l) => (
+                  <button key={l.key} type="button" data-testid={`screens-layout-${l.key}`}
+                    onClick={() => { changeMenu(menu.id, (m) => relayout(m, l.style, l.cols, m.style === "single" ? 3 : m.rows)); setPage(0); setExtraPages(0); setSlot(null); }}
+                    className={`rounded-lg border p-1.5 flex flex-col items-center gap-1 ${layoutKey === l.key ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200"}`}>
+                    <span className="w-6 h-10 rounded-sm border border-slate-300 p-0.5 grid gap-px"
+                      style={{ gridTemplateColumns: `repeat(${l.cols}, 1fr)`, gridTemplateRows: l.style === "single" ? "1fr" : "repeat(3, 1fr)" }}>
+                      {Array.from({ length: l.style === "single" ? 1 : l.cols * 3 }, (_, i) => (
+                        <span key={i} className="bg-slate-300 rounded-[1px]" style={l.style === "single" ? { margin: "3px 1px" } : undefined} />
+                      ))}
+                    </span>
+                    <span className="text-[10px] leading-tight text-slate-600 text-center">{l.name}</span>
+                  </button>
+                ))}
+              </div>
+              {menu.style === "grid" && (
+                <label className="flex items-center justify-between mt-2 text-sm text-slate-700">
+                  Rows on a page
+                  <select className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm" value={menu.rows} data-testid="screens-rows"
+                    onChange={(e) => { changeMenu(menu.id, (m) => relayout(m, "grid", m.cols, Number(e.target.value))); setPage(0); setExtraPages(0); setSlot(null); }}>
+                    {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+              )}
+              <p className="text-xs text-slate-500 mt-1.5">
+                {per} {per === 1 ? "button" : "buttons"} a page. The buttons always fill the 15" screen; more go on the next page.
+              </p>
+            </div>
+            {categoryChoices.length > 0 && (
+              <label className="block text-xs text-slate-500">
+                Fill empty slots with a category's services
+                <select className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value=""
+                  onChange={(e) => fillFromCategory(e.target.value)} data-testid="screens-fill-category">
+                  <option value="">Choose a category…</option>
+                  {categoryChoices.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
+                </select>
+              </label>
+            )}
+          </section>
+        )}
+        <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
+          <label className="block text-xs text-slate-500">
+            Clients start on
+            <select className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
+              value={draft.startMenuId ?? ""} onChange={(e) => update((d) => ({ ...d, startMenuId: e.target.value || null }))}>
+              {draft.menus.map((m) => <option key={m.id} value={m.id}>{screenLabel(m)}</option>)}
+            </select>
+          </label>
+        </section>
+        {draft.builder === "easy" && (
+          <Button variant="outline" size="sm" disabled={!services.length || draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={buildFromCatalog}>Add screens from my catalog</Button>
+        )}
+      </>)}
+      {menu?.kind === "picture" && panelTab === "spots" && (<>
+            <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3" data-testid="spots-list">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-800">Tap spots</p>
+                <Button size="sm" variant="outline" disabled={menu.spots.length >= KIOSK_MENU_LIMITS.spots} onClick={() => addSpot()} data-testid="picture-add-spot">Add tap spot</Button>
+              </div>
+              <p className="text-xs text-slate-500">
+                A tap spot is an invisible button. Place it over a part of your picture and choose what it does.{" "}
+                {props.onHelp && <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("picture")}>Show me how</button>}
+              </p>
+              <div className="space-y-1">
+                {menu.spots.map((sp) => (
+                  <button key={sp.id} type="button" onClick={() => setSpotId(sp.id)}
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${sp.id === spotId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                    {spotName(sp)}
+                  </button>
+                ))}
+              </div>
+            </section>
+        <div ref={selectionRef} className="empty:hidden">
       {props.view === "edit" && menu && menu.kind === "picture" && spot && (
         <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-spot-panel">
           <p className="text-sm font-semibold text-slate-800">Tap spot: {spotName(spot)}</p>
@@ -786,7 +888,83 @@ export function ScreensEditor(props: {
           </div>
         </div>
       )}
-      {props.view === "edit" && menu && menu.kind !== "picture" && slot != null && (
+        </div>
+      </>)}
+      {menu?.kind === "picture" && panelTab === "text" && (<>
+            <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3" data-testid="texts-list">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-slate-800">Text</p>
+                <Button size="sm" variant="outline" disabled={(menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes} onClick={addText} data-testid="picture-add-text">Add text</Button>
+              </div>
+              <p className="text-xs text-slate-500">Your own words on the screen, in the size, font, style and colour you choose.</p>
+              <div className="space-y-1">
+                {(menu.texts ?? []).map((t) => (
+                  <button key={t.id} type="button" onClick={() => { setTextId(t.id); setSpotId(null); }} data-testid="text-row"
+                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${t.id === textId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
+                    {t.text.en?.trim() || "Empty text"}
+                  </button>
+                ))}
+              </div>
+            </section>
+        <div className="empty:hidden">
+      {props.view === "edit" && menu && menu.kind === "picture" && textBox && (
+        <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="picture-text-panel">
+          <p className="text-sm font-semibold text-slate-800">Text</p>
+          <textarea value={textBox.text.en ?? ""} maxLength={KIOSK_TEXT_LIMITS.chars} rows={2} data-testid="text-words"
+            className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-800"
+            onChange={(e) => patchText({ text: { ...textBox.text, en: e.target.value } })} />
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-xs text-slate-500">
+              Size
+              <div className="mt-1 flex items-center gap-2">
+                <input type="range" min={KIOSK_TEXT_LIMITS.size.min} max={KIOSK_TEXT_LIMITS.size.max} value={textBox.size} className="flex-1"
+                  onChange={(e) => patchText({ size: Number(e.target.value) })} />
+                <SizeInput key={textBox.id} value={textBox.size} onCommit={(size) => patchText({ size })} />
+              </div>
+            </label>
+            <label className="block text-xs text-slate-500">
+              Colour
+              <div className="mt-1 flex items-center gap-2">
+                <input type="color" value={textBox.color} aria-label="Text colour" data-testid="text-color" className="w-9 h-9 rounded border border-slate-200 bg-white p-0.5"
+                  onChange={(e) => patchText({ color: e.target.value })} />
+                <span className="text-xs text-slate-500">{textBox.color}</span>
+              </div>
+            </label>
+          </div>
+          <label className="block text-xs text-slate-500">
+            Font
+            <select value={textBox.font} data-testid="text-font" className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
+              style={{ fontFamily: KIOSK_TEXT_FONTS.find((f) => f.key === textBox.font)?.css }}
+              onChange={(e) => patchText({ font: e.target.value as KioskTextBox["font"] })}>
+              {KIOSK_TEXT_FONTS.map((f) => <option key={f.key} value={f.key} style={{ fontFamily: f.css }}>{f.name}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-3 gap-1 rounded-md border border-slate-200 p-0.5" role="radiogroup" aria-label="Text style">
+            {([["regular", "Regular"], ["bold", "Bold"], ["italic", "Italic"]] as const).map(([k, name]) => (
+              <button key={k} type="button" role="radio" aria-checked={textBox.style === k} data-testid={`text-style-${k}`}
+                onClick={() => patchText({ style: k })}
+                className={`h-8 text-sm rounded ${textBox.style === k ? "bg-slate-900 text-white" : "text-slate-600"}`}
+                style={{ fontWeight: k === "bold" ? 700 : 400, fontStyle: k === "italic" ? "italic" : "normal" }}>{name}</button>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">Drag the box to move it and its corners to size it; the words stay in the middle of the box. Arrow keys nudge it.</p>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" onClick={() => {
+              if ((menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes) return;
+              const copy: KioskTextBox = { ...textBox, id: newId("text"), y: Math.min(100 - textBox.h, textBox.y + textBox.h + 1) };
+              changeTexts((list) => [...list, copy]); setTextId(copy.id);
+            }}>Duplicate</Button>
+            <Button variant="outline" size="sm" onClick={() => { changeTexts((list) => list.filter((x) => x.id !== textBox.id)); setTextId(null); }} data-testid="text-delete">Delete</Button>
+            <Button variant="ghost" size="sm" onClick={() => setTextId(null)}>Done</Button>
+          </div>
+        </div>
+      )}
+        </div>
+      </>)}
+      {menu && menu.kind !== "picture" && panelTab === "buttons" && (<>
+        {slot == null && <p className="text-sm text-slate-500 px-1" data-testid="buttons-hint">Tap a slot on the screen to add a button, or a button to change it.</p>}
+        <div ref={selectionRef} className="empty:hidden">
+      {props.view === "edit" && slot != null && (
         <div className="bg-white border-2 border-slate-900 rounded-2xl p-4 space-y-3" data-testid="screens-slot-panel">
           {tile ? (
             <>
@@ -889,155 +1067,8 @@ export function ScreensEditor(props: {
           )}
         </div>
       )}
-      </div>
-        {menu && (
-          <section className="bg-white border-2 border-slate-300 rounded-2xl p-4 space-y-3" data-testid="choose-card">
-            <p className="text-sm font-semibold text-slate-900">{menu.name.trim() ? `On "${menu.name}", clients can choose` : "On this screen, clients can choose"}</p>
-            <div className="grid grid-cols-2 gap-2">
-              {([["one", "One", "Tapping another replaces it. Like a nail shape."], ["many", "More than one", "Each tap adds or removes."]] as const).map(([k, name, about]) => (
-                <button key={k} type="button" data-testid={`choose-${k}`} onClick={() => changeMenu(menu.id, (m) => ({ ...m, choose: k }))}
-                  className={`text-left rounded-xl border p-3 ${menu.choose === k ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:bg-slate-50"}`}>
-                  <p className="text-sm font-medium text-slate-800">{name}</p>
-                  <p className="text-xs text-slate-500">{about}</p>
-                </button>
-              ))}
-            </div>
-            <label className="flex items-start gap-2 text-sm text-slate-700">
-              <input type="checkbox" className="mt-0.5" checked={menu.mustChoose} data-testid="must-choose"
-                onChange={(e) => changeMenu(menu.id, (m) => ({ ...m, mustChoose: e.target.checked }))} />
-              <span>They must choose something here before moving on</span>
-            </label>
-            <p className="text-xs text-slate-500">Where they go after choosing is set on each button or tap spot ("Then…"). How many services in all: {draft.builder === "picture" ? "\"How many services\" above" : "Services tab"}.</p>
-          </section>
-        )}
-        {menu && menu.kind === "picture" && (
-          <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3" data-testid="picture-settings">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-slate-800">Your picture</p>
-              <p className="text-xs text-slate-500">
-                Design the whole screen as one picture, {KIOSK_PICTURE.width} × {KIOSK_PICTURE.height} px. Start from the template so it fits the 15" kiosk exactly.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" onClick={downloadTemplate} data-testid="picture-template">Download template</Button>
-                <label className="inline-flex items-center gap-1.5 text-sm border border-slate-200 rounded-md px-3 h-8 cursor-pointer bg-white hover:bg-slate-50">
-                  {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  {menu.imageUrl ? "Replace picture" : "Upload picture"}
-                  <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploading} data-testid="picture-upload"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadPicture(f); e.target.value = ""; }} />
-                </label>
-              </div>
-              {pictureWarning && <p className="text-xs text-amber-700">{pictureWarning}</p>}
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-slate-800">Show the kiosk footer</p>
-                <p className="text-xs text-slate-500">Back, what the client chose, the total and Continue, over the bottom {KIOSK_PICTURE_FOOTER_PCT}% of your picture (the strip marked on the template).</p>
-              </div>
-              <Switch checked={menu.footer} aria-label="Show the kiosk footer" data-testid="picture-footer"
-                onCheckedChange={(v) => changeMenu(menu.id, (m) => ({ ...m, footer: v }))} />
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-800">Tap spots</p>
-                <Button size="sm" variant="outline" disabled={menu.spots.length >= KIOSK_MENU_LIMITS.spots} onClick={() => addSpot()} data-testid="picture-add-spot">Add tap spot</Button>
-              </div>
-              <p className="text-xs text-slate-500">
-                A tap spot is an invisible button. Place it over a part of your picture and choose what it does.{" "}
-                {props.onHelp && <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("picture")}>Show me how</button>}
-              </p>
-              <div className="space-y-1">
-                {menu.spots.map((sp) => (
-                  <button key={sp.id} type="button" onClick={() => setSpotId(sp.id)}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${sp.id === spotId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
-                    {spotName(sp)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-slate-800">Text</p>
-                <Button size="sm" variant="outline" disabled={(menu.texts ?? []).length >= KIOSK_TEXT_LIMITS.boxes} onClick={addText} data-testid="picture-add-text">Add text</Button>
-              </div>
-              <p className="text-xs text-slate-500">Your own words on the screen, in the size, font, style and colour you choose.</p>
-              <div className="space-y-1">
-                {(menu.texts ?? []).map((t) => (
-                  <button key={t.id} type="button" onClick={() => { setTextId(t.id); setSpotId(null); }} data-testid="text-row"
-                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm truncate ${t.id === textId ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-50 border border-slate-100"}`}>
-                    {t.text.en?.trim() || "Empty text"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {pictureProblems(menu).map((msg) => <p key={msg} className="text-xs text-amber-700" data-testid="picture-problem">{msg}</p>)}
-          </section>
-        )}
-        {menu && menu.kind !== "picture" && (
-          <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
-            <label className="block text-xs text-slate-500">
-              Heading on the screen
-              <Input className="mt-1" value={menu.title.en ?? ""} maxLength={60} placeholder="Hi {name}! What brings you in today?"
-                onChange={(e) => changeMenu(menu.id, (m) => ({ ...m, title: { ...m.title, en: e.target.value } }))} />
-              <span className="block mt-1">Empty: the kiosk's own greeting, in every language. {"{name}"} is the client's first name.</span>
-            </label>
-            <div>
-              <p className="text-xs text-slate-500 mb-1.5">
-                Layout{props.onHelp && <> · <button type="button" className="underline text-slate-700" onClick={() => props.onHelp!("easy")}>How layouts work</button></>}
-              </p>
-              <div className="grid grid-cols-5 gap-1.5">
-                {LAYOUTS.map((l) => (
-                  <button key={l.key} type="button" data-testid={`screens-layout-${l.key}`}
-                    onClick={() => { changeMenu(menu.id, (m) => relayout(m, l.style, l.cols, m.style === "single" ? 3 : m.rows)); setPage(0); setExtraPages(0); setSlot(null); }}
-                    className={`rounded-lg border p-1.5 flex flex-col items-center gap-1 ${layoutKey === l.key ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200"}`}>
-                    <span className="w-6 h-10 rounded-sm border border-slate-300 p-0.5 grid gap-px"
-                      style={{ gridTemplateColumns: `repeat(${l.cols}, 1fr)`, gridTemplateRows: l.style === "single" ? "1fr" : "repeat(3, 1fr)" }}>
-                      {Array.from({ length: l.style === "single" ? 1 : l.cols * 3 }, (_, i) => (
-                        <span key={i} className="bg-slate-300 rounded-[1px]" style={l.style === "single" ? { margin: "3px 1px" } : undefined} />
-                      ))}
-                    </span>
-                    <span className="text-[10px] leading-tight text-slate-600 text-center">{l.name}</span>
-                  </button>
-                ))}
-              </div>
-              {menu.style === "grid" && (
-                <label className="flex items-center justify-between mt-2 text-sm text-slate-700">
-                  Rows on a page
-                  <select className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm" value={menu.rows} data-testid="screens-rows"
-                    onChange={(e) => { changeMenu(menu.id, (m) => relayout(m, "grid", m.cols, Number(e.target.value))); setPage(0); setExtraPages(0); setSlot(null); }}>
-                    {[1, 2, 3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </label>
-              )}
-              <p className="text-xs text-slate-500 mt-1.5">
-                {per} {per === 1 ? "button" : "buttons"} a page. The buttons always fill the 15" screen; more go on the next page.
-              </p>
-            </div>
-            {categoryChoices.length > 0 && (
-              <label className="block text-xs text-slate-500">
-                Fill empty slots with a category's services
-                <select className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800" value=""
-                  onChange={(e) => fillFromCategory(e.target.value)} data-testid="screens-fill-category">
-                  <option value="">Choose a category…</option>
-                  {categoryChoices.map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
-                </select>
-              </label>
-            )}
-          </section>
-        )}
-        <section className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
-          <label className="block text-xs text-slate-500">
-            Clients start on
-            <select className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
-              value={draft.startMenuId ?? ""} onChange={(e) => update((d) => ({ ...d, startMenuId: e.target.value || null }))}>
-              {draft.menus.map((m) => <option key={m.id} value={m.id}>{screenLabel(m)}</option>)}
-            </select>
-          </label>
-        </section>
-
-        {draft.builder === "easy" && (
-          <Button variant="outline" size="sm" disabled={!services.length || draft.menus.length >= KIOSK_MENU_LIMITS.menus} onClick={buildFromCatalog}>Add screens from my catalog</Button>
-        )}
-
+        </div>
+      </>)}
     </div>
   );
   const canvas = (

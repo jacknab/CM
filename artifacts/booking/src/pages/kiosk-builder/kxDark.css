@@ -1,0 +1,41 @@
+/*
+ * Kiosk Builder › the right settings panel in the dark style of the Screens panel (owner, 2026-11-15; colours from
+ * screensPanel.css / the /nail grid editor). The settings are written with the app's light Tailwind classes; inside
+ * .kx-dark those classes are repainted here, so every setting (and any new one) comes out dark without its own code.
+ */
+.kx-dark { background: #20242c; color: #eef3fb; font-family: 'DM Sans', sans-serif; border-left: 1px solid #3b424c; }
+
+/* Surfaces */
+.kx-dark .bg-white, .kx-dark .bg-slate-50, .kx-dark .bg-background { background-color: #2a2e36 !important; }
+.kx-dark .bg-slate-100 { background-color: #343943 !important; }
+.kx-dark .bg-slate-900 { background-color: #1d3a48 !important; color: #eef3fb !important; }
+.kx-dark .hover\:bg-slate-50:hover, .kx-dark .hover\:bg-accent:hover { background-color: #343943 !important; color: #eef3fb !important; }
+
+/* Text */
+.kx-dark .text-slate-900, .kx-dark .text-slate-800, .kx-dark .text-slate-700 { color: #eef3fb !important; }
+.kx-dark .text-slate-600, .kx-dark .text-slate-500 { color: #a7b0bc !important; }
+.kx-dark .text-slate-400 { color: #8b94a0 !important; }
+.kx-dark .text-amber-700 { color: #fbbf24 !important; }
+.kx-dark .text-white { color: #fff !important; }
+
+/* Lines and the chosen state (the left panel's blue) */
+.kx-dark .border-slate-100, .kx-dark .border-slate-200, .kx-dark .border-slate-300, .kx-dark .border-input { border-color: #454c56 !important; }
+.kx-dark .border-slate-900, .kx-dark .border-blue-600 { border-color: #0d9bd1 !important; }
+.kx-dark .ring-slate-900, .kx-dark .ring-blue-600\/30 { --tw-ring-color: #0d9bd1 !important; }
+.kx-dark .divide-slate-100 > * + * { border-color: #3b424c !important; }
+
+/* Form controls */
+.kx-dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), .kx-dark select, .kx-dark textarea {
+  background-color: #232830 !important; color: #eef3fb !important; border-color: #454c56 !important; }
+.kx-dark input::placeholder, .kx-dark textarea::placeholder { color: #6b7480 !important; }
+.kx-dark select option { background: #232830; color: #eef3fb; }
+.kx-dark input[type="checkbox"], .kx-dark input[type="range"] { accent-color: #0d9bd1; }
+.kx-dark [role="switch"][data-state="unchecked"] { background-color: #454c56 !important; }
+.kx-dark label.cursor-pointer { background-color: #343943 !important; border-color: #454c56 !important; color: #eef3fb !important; }
+
+/* Tabs at the top of the panel: Screen | Tap spots | Text (or Buttons) */
+.kx-dark .kx-panel-tabs { display: flex; border: 1px solid #454c56; border-radius: 2px; position: sticky; top: 0; z-index: 2; background: #20242c; }
+.kx-dark .kx-panel-tabs > button { flex: 1; height: 42px; border: 0; background: transparent; color: #8b94a0; font-family: inherit;
+  font-size: 13px; font-weight: 800; letter-spacing: .04em; cursor: pointer; }
+.kx-dark .kx-panel-tabs > button + button { border-left: 1px solid #454c56; }
+.kx-dark .kx-panel-tabs > button.active { background: #1d3a48; color: #eef3fb; box-shadow: inset 0 -2px 0 #0d9bd1; }
