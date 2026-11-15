@@ -18,3 +18,22 @@
 .kx-screens > button.kx-dragging { opacity: .4; }
 .kx-screens > button.kx-drop-before { box-shadow: 0 -3px 0 #0d9bd1; }
 .kx-screens > button.kx-drop-after { box-shadow: 0 3px 0 #0d9bd1; }
+/* Workflows (2026-11-15): each one a sub-menu holding its screens. */
+.kx-screens .kx-label-gap { margin-top: 14px; }
+.kx-screens .kx-flow { display: flex; flex-direction: column; gap: 6px; }
+.kx-screens .kx-flow > button { min-height: 46px; padding: 0 12px; text-align: left; border: 1px solid #454c56; border-radius: 2px; background: #343943; color: #eef3fb;
+  font-family: inherit; font-size: 14px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.kx-screens .kx-flow > button.active { border-color: #0d9bd1; background: #1d3a48; }
+.kx-screens .kx-flow > .kx-add { display: flex; align-items: center; gap: 6px; background: transparent; border-style: dashed; color: #c8cdd3; }
+.kx-screens .kx-flow > .kx-add:disabled { opacity: .5; cursor: not-allowed; }
+.kx-screens .kx-flow > button[draggable="true"] { cursor: grab; }
+.kx-screens .kx-flow > button.kx-dragging { opacity: .4; }
+.kx-screens .kx-flow > button.kx-drop-before { box-shadow: 0 -3px 0 #0d9bd1; }
+.kx-screens .kx-flow > button.kx-drop-after { box-shadow: 0 3px 0 #0d9bd1; }
+.kx-screens .kx-flow-head { display: flex; align-items: center; gap: 6px; background: #2f343d !important; }
+.kx-screens .kx-flow-head.active { background: #1d3a48 !important; }
+.kx-screens .kx-flow-head.kx-drop-into { border-color: #0d9bd1; }
+.kx-screens .kx-flow-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.kx-screens .kx-flow-count { font-size: 12px; font-weight: 700; color: #8b94a0; }
+.kx-screens .kx-nested { margin-left: 12px; }
+.kx-screens > button.kx-drop-into, .kx-screens .kx-add.kx-drop-into { border-color: #0d9bd1; }

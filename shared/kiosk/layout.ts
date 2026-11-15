@@ -127,13 +127,23 @@ export interface KioskMenu {
   choose: "one" | "many";
   /** Continue, Finish and "Then…" wait until something on this screen is chosen. */
   mustChoose: boolean;
+  /** The workflow this screen belongs to (Manicure, Pedicure…); null: not in one, like the first screen. */
+  workflowId: string | null;
 }
+
+/**
+ * A workflow (owner, 2026-11-15): one service path's screens kept together, e.g. Manicure, Pedicure, Fake nails.
+ * Two workflows can each have a "Length" screen with their own choices. Screens are in `menus` (workflowId);
+ * within a workflow, their order in `menus` is the order Continue follows.
+ */
+export interface KioskWorkflow { id: string; name: string }
+export const KIOSK_WORKFLOW_LIMITS = { workflows: 20, name: 40 } as const;
 
 export type KioskBuilderKind = "easy" | "picture";
 /** The kind of screen each builder makes. */
 export const builderScreenKind = (b: KioskBuilderKind): KioskMenu["kind"] => (b === "picture" ? "picture" : "buttons");
 
-export const KIOSK_MENU_LIMITS = { menus: 40, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40, spots: 80 } as const;
+export const KIOSK_MENU_LIMITS = { menus: 120, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40, spots: 80 } as const;
 /** The picture a picture screen is made for: the 15" kiosk, standing (9:16). */
 export const KIOSK_PICTURE = { width: 1080, height: 1920 } as const;
 /** With the footer on, it covers this much of the bottom of a picture screen (percent of its height): 154 of 1920 px. */
@@ -193,6 +203,8 @@ export interface KioskLayout {
    * Every screen in `menus` is of this builder's kind.
    */
   builder: KioskBuilderKind;
+  /** The owner's workflows, in the builder's order (KioskWorkflow). */
+  workflows: KioskWorkflow[];
   menus: KioskMenu[];
   /**
    * Kiosk Extras groups a client must choose from ("Nail shape"): on a screen that shows extras of the group,
@@ -219,6 +231,7 @@ export const KIOSK_DEFAULTS: Omit<KioskLayout, "preset"> = {
   menuMode: "catalog",
   startMenuId: null,
   builder: "easy",
+  workflows: [],
   menus: [],
   requiredGroups: [],
 };
@@ -324,7 +337,17 @@ function normalizeSpotAction(raw: unknown, menuIds: Set<string>, ownId: string):
 }
 
 /** The business's screens: unknown links and broken buttons dropped, sizes clamped, at most 10 pages each. */
-export function normalizeMenus(raw: unknown): KioskMenu[] {
+/** The workflows: valid ids, once each, named. */
+export function normalizeWorkflows(raw: unknown): KioskWorkflow[] {
+  const seen = new Set<string>();
+  return (Array.isArray(raw) ? raw : []).flatMap((w) => {
+    if (!isObj(w) || typeof w.id !== "string" || !MENU_ID.test(w.id) || seen.has(w.id)) return [];
+    seen.add(w.id);
+    return [{ id: w.id, name: cleanLabel(w.name, KIOSK_WORKFLOW_LIMITS.name) || "Workflow" }];
+  }).slice(0, KIOSK_WORKFLOW_LIMITS.workflows);
+}
+
+export function normalizeMenus(raw: unknown, workflowIds: Set<string> = new Set()): KioskMenu[] {
   const list = (Array.isArray(raw) ? raw : []).filter((m) => isObj(m) && typeof m.id === "string" && MENU_ID.test(m.id));
   const seen = new Set<string>();
   const unique = list.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true))).slice(0, KIOSK_MENU_LIMITS.menus);
@@ -367,6 +390,7 @@ export function normalizeMenus(raw: unknown): KioskMenu[] {
       footer: kind === "picture" && m.footer === true,
       choose: m.choose === "one" ? "one" : "many",
       mustChoose: m.mustChoose === true,
+      workflowId: typeof m.workflowId === "string" && workflowIds.has(m.workflowId) ? m.workflowId : null,
     };
   });
 }
@@ -408,10 +432,11 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
           ? "picture" : "easy";
       // Never both kinds of screen: the other builder's screens (and links to them) are left out.
       const kind = builderScreenKind(builder);
-      const menus = normalizeMenus(rawMenus.filter((m) => isObj(m) && (m.kind === "picture" ? "picture" : "buttons") === kind));
+      const workflows = normalizeWorkflows(r.workflows);
+      const menus = normalizeMenus(rawMenus.filter((m) => isObj(m) && (m.kind === "picture" ? "picture" : "buttons") === kind), new Set(workflows.map((w) => w.id)));
       const start = typeof r.startMenuId === "string" && menus.some((m) => m.id === r.startMenuId) ? r.startMenuId : null;
       // Own screens only with a start screen to open on.
-      return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, builder, menus };
+      return { menuMode: r.menuMode === "screens" && start ? "screens" as const : "catalog" as const, startMenuId: start, builder, workflows, menus };
     })(),
     requiredGroups: normalizeGroupNames(r.requiredGroups),
   };
@@ -475,6 +500,7 @@ export function validateKioskLayout(raw: unknown): string[] {
         }
       }
       if (raw.menuMode === "screens" && !ids.has(raw.startMenuId)) errors.push("Choose the screen clients start on.");
+      if (Array.isArray(raw.workflows) && raw.workflows.length > KIOSK_WORKFLOW_LIMITS.workflows) errors.push(`At most ${KIOSK_WORKFLOW_LIMITS.workflows} workflows.`);
     }
   }
   if (isObj(raw.text)) {

@@ -117,18 +117,59 @@ const KIOSK_W = 1080, KIOSK_H = 1920;
 
 const newId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 8)}`;
 
-/** A new screen's temporary name: "Screen 3", the next number not in use (the owner renames it any time). */
-export function nextScreenName(d: KioskLayout): string {
-  const taken = new Set(d.menus.map((m) => m.name.trim().toLowerCase()));
-  let n = d.menus.length + 1;
+/**
+ * A new screen's temporary name: "Screen 3", the next number not in use in its workflow (names repeat across
+ * workflows: Manicure and Pedicure can each have a "Length"). The owner renames it any time.
+ */
+export function nextScreenName(d: KioskLayout, workflowId: string | null = null): string {
+  const mine = d.menus.filter((m) => m.workflowId === workflowId);
+  const taken = new Set(mine.map((m) => m.name.trim().toLowerCase()));
+  let n = mine.length + 1;
   while (taken.has(`screen ${n}`)) n++;
   return `Screen ${n}`;
 }
 
-/** Adds a blank screen of this builder's kind (the kiosk then uses the owner's own screens). Returns the new id. */
-export function withNewScreen(d: KioskLayout, name: string): { layout: KioskLayout; id: string } {
-  const m: KioskMenu = { id: newId("screen"), kind: builderScreenKind(d.builder), name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false };
-  return { layout: { ...d, menus: [...d.menus, m], startMenuId: d.startMenuId ?? m.id, menuMode: "screens" }, id: m.id };
+/**
+ * Adds a blank screen of this builder's kind, last in its workflow (null: not in a workflow); the kiosk then uses
+ * the owner's own screens. Returns the new id.
+ */
+export function withNewScreen(d: KioskLayout, name: string, workflowId: string | null = null): { layout: KioskLayout; id: string } {
+  const m: KioskMenu = { id: newId("screen"), kind: builderScreenKind(d.builder), name, title: {}, style: "grid", cols: 3, rows: 4, tiles: [], imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId };
+  return { layout: { ...d, menus: placeInWorkflow(d.menus, m, null), startMenuId: d.startMenuId ?? m.id, menuMode: "screens" }, id: m.id };
+}
+
+/** `menus` with `m` put before the screen `beforeId`, or (null) after the last screen of m's workflow, else at the end. */
+export function placeInWorkflow(menus: KioskMenu[], m: KioskMenu, beforeId: string | null): KioskMenu[] {
+  const rest = menus.filter((x) => x.id !== m.id);
+  let at = beforeId ? rest.findIndex((x) => x.id === beforeId) : -1;
+  if (at < 0) {
+    const last = rest.map((x) => x.workflowId).lastIndexOf(m.workflowId);
+    at = last < 0 ? rest.length : last + 1;
+  }
+  return [...rest.slice(0, at), m, ...rest.slice(at)];
+}
+
+/** Moves a screen into a workflow (null: none), before `beforeId` or last in it. */
+export function withScreenMoved(d: KioskLayout, id: string, workflowId: string | null, beforeId: string | null): KioskLayout {
+  const m = d.menus.find((x) => x.id === id);
+  if (!m || beforeId === id) return d;
+  return { ...d, menus: placeInWorkflow(d.menus, { ...m, workflowId }, beforeId) };
+}
+
+/** Adds a workflow (named "Workflow 2"… until the owner renames it). Returns its id. */
+export function withNewWorkflow(d: KioskLayout): { layout: KioskLayout; id: string } {
+  const taken = new Set(d.workflows.map((w) => w.name.trim().toLowerCase()));
+  let n = d.workflows.length + 1;
+  while (taken.has(`workflow ${n}`)) n++;
+  const w = { id: newId("flow"), name: `Workflow ${n}` };
+  return { layout: { ...d, workflows: [...d.workflows, w] }, id: w.id };
+}
+
+/** Removes a workflow and its screens (and every button and tap spot that opened them). */
+export function withoutWorkflow(d: KioskLayout, workflowId: string): KioskLayout {
+  let next: KioskLayout = { ...d, workflows: d.workflows.filter((w) => w.id !== workflowId) };
+  for (const m of d.menus) if (m.workflowId === workflowId) next = withoutScreen(next, m.id);
+  return next;
 }
 
 /** Removes a screen and every button and tap spot that opened it. */
@@ -170,7 +211,7 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
     g.services.push(s);
   }
   const serviceScreen = (name: string, svcs: CatalogService[]): KioskMenu => ({
-    id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false,
+    id: newId("screen"), kind: "buttons", name, title: {}, style: "grid", cols: 3, rows: 4, imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId: null,
     tiles: svcs.slice(0, 12 * KIOSK_MENU_LIMITS.pages).map((s) => ({ id: newId("btn"), kind: "service", serviceId: s.id })),
   });
   if (groups.length <= 1) {
@@ -181,7 +222,7 @@ export function screensFromCatalog(services: CatalogService[], categories: Catal
   const cols = subs.length <= 4 ? 2 : 3;
   const home: KioskMenu = {
     id: newId("screen"), kind: "buttons", name: "Start", title: {}, style: "grid", cols, rows: Math.min(6, Math.max(2, Math.ceil(subs.length / cols))),
-    imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false,
+    imageUrl: null, spots: [], footer: false, choose: "many", mustChoose: false, workflowId: null,
     tiles: subs.map(({ g, m }) => ({ id: newId("btn"), kind: "menu", menuId: m.id, ...(g.imageUrl ? { imageUrl: g.imageUrl } : {}) })),
   };
   return { menus: [home, ...subs.map((x) => x.m)], start: home.id };
@@ -236,6 +277,12 @@ export function ScreensEditor(props: {
   const [scale, setScale] = useState(0.4);
 
   const menu = draft.menus.find((m) => m.id === menuId) ?? null;
+  /** A screen's name with its workflow ("Pedicure › Length"), where two screens can share a name. */
+  const screenLabel = (m: KioskMenu | undefined | null) => {
+    if (!m) return "a deleted screen";
+    const w = m.workflowId ? draft.workflows.find((x) => x.id === m.workflowId) : null;
+    return w ? `${w.name} › ${m.name}` : m.name;
+  };
   // Regular add-ons (from the catalog) and the Kiosk Extras (kept here, so new ones show at once).
   const plainAddons = useMemo(() => props.addons.filter((a) => !a.kioskExtra), [props.addons]);
   const addons = useMemo<CatalogAddon[]>(() => [
@@ -286,7 +333,9 @@ export function ScreensEditor(props: {
 
   const addScreen = (name?: string): string => {
     let id = "";
-    update((d) => { const r = withNewScreen(d, name ?? nextScreenName(d)); id = r.id; return r.layout; });
+    // In the open screen's workflow: a screen made from here is the next step of the same path.
+    const wf = menu?.workflowId ?? null;
+    update((d) => { const r = withNewScreen(d, name ?? nextScreenName(d, wf), wf); id = r.id; return r.layout; });
     return id;
   };
   const buildFromCatalog = () => {
@@ -332,7 +381,7 @@ export function ScreensEditor(props: {
     const a = sp.action;
     if (a.kind === "service") return svcById.get(a.serviceId)?.name ?? "A service no longer on your menu";
     if (a.kind === "addon") return `+ ${addons.find((x) => x.id === a.addonId)?.name ?? "An add-on no longer on your menu"}`;
-    if (a.kind === "menu") return `Opens "${menusById.get(a.menuId)?.name ?? "a deleted screen"}"`;
+    if (a.kind === "menu") return `Opens "${screenLabel(menusById.get(a.menuId))}"`;
     return FUNCTION_NAMES[a.fn].name;
   };
   const uploadPicture = async (file: File) => {
@@ -437,10 +486,18 @@ export function ScreensEditor(props: {
             onChange(parseNext(e.target.value));
           }}>
           <option value="">Nowhere: stay on this screen (they can choose more)</option>
-          <optgroup label="Your screens">
-            {others.map((m) => <option key={m.id} value={`menu:${m.id}`}>{m.name || "Screen"}</option>)}
-            {draft.menus.length < KIOSK_MENU_LIMITS.menus && <option value="new">+ A new screen</option>}
-          </optgroup>
+          {/* Your screens, by workflow: two workflows can each have a "Length". */}
+          {[{ id: null as string | null, name: draft.workflows.length ? "Your screens (not in a workflow)" : "Your screens" }, ...draft.workflows].map((w) => {
+            const list = others.filter((m) => m.workflowId === w.id);
+            const here = (menu?.workflowId ?? null) === w.id;
+            if (!list.length && !here) return null;
+            return (
+              <optgroup key={w.id ?? "none"} label={w.id ? `Workflow: ${w.name}` : w.name}>
+                {list.map((m) => <option key={m.id} value={`menu:${m.id}`}>{m.name || "Screen"}</option>)}
+                {here && draft.menus.length < KIOSK_MENU_LIMITS.menus && <option value="new">+ A new screen{w.id ? ` in ${w.name}` : ""}</option>}
+              </optgroup>
+            );
+          })}
           <optgroup label="Kiosk screens">
             <option value="continue">The next step (in your kiosk's order)</option>
             <option value="staff">Choosing staff</option>
@@ -549,7 +606,7 @@ export function ScreensEditor(props: {
                 return (
                   <button key={m.id} type="button" className={`w-full text-left px-3 py-2 rounded-lg text-sm border ${on ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:bg-slate-50"}`}
                     onClick={() => setSpotAction({ kind: "menu", menuId: m.id })}>
-                    {m.name}{on ? " ✓" : ""}
+                    {screenLabel(m)}{on ? " ✓" : ""}
                   </button>
                 );
               })}
@@ -575,7 +632,7 @@ export function ScreensEditor(props: {
               <p className="text-sm font-semibold text-slate-800">
                 {tile.kind === "service" ? (svcById.get(tile.serviceId!)?.name ?? "A service no longer on your menu")
                   : tile.kind === "addon" ? `+ ${addonMap.get(tile.addonId!)?.name ?? "An extra no longer on your menu"}`
-                  : `Opens "${menusById.get(tile.menuId!)?.name ?? "a deleted screen"}"`}
+                  : `Opens "${screenLabel(menusById.get(tile.menuId!))}"`}
               </p>
               <label className="block text-xs text-slate-500">
                 Button name
@@ -657,7 +714,7 @@ export function ScreensEditor(props: {
                   {draft.menus.filter((m) => m.id !== menu.id).map((m) => (
                     <button key={m.id} type="button" className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 border border-slate-100"
                       onClick={() => { setTile(slot, { id: newId("btn"), kind: "menu", menuId: m.id }); setSlot(null); }}>
-                      {m.name}
+                      {screenLabel(m)}
                     </button>
                   ))}
                   <Button variant="outline" size="sm" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus}
@@ -796,7 +853,7 @@ export function ScreensEditor(props: {
             Clients start on
             <select className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-sm text-slate-800"
               value={draft.startMenuId ?? ""} onChange={(e) => update((d) => ({ ...d, startMenuId: e.target.value || null }))}>
-              {draft.menus.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {draft.menus.map((m) => <option key={m.id} value={m.id}>{screenLabel(m)}</option>)}
             </select>
           </label>
         </section>

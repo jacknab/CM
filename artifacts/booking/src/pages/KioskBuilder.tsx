@@ -27,7 +27,7 @@ import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
-import { ScreensEditor, nextScreenName, withNewScreen, withoutScreen, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensEditor, nextScreenName, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
 import type { HelpTopicId } from "@/pages/kiosk-builder/help";
@@ -465,10 +465,10 @@ export default function KioskBuilder() {
     if (builder === "easy" && draft.menuMode !== "screens") update((d) => ({ ...d, menuMode: "screens" }));
     openOwnScreens();
   };
-  const newScreen = () => {
+  const newScreen = (workflowId: string | null) => {
     let sid = "";
-    // A temporary name ("Screen 3"), the next one not in use; the owner renames it any time.
-    update((d) => { const r = withNewScreen(d, nextScreenName(d)); sid = r.id; return r.layout; });
+    // A temporary name ("Screen 3"), the next one not in use in its workflow; the owner renames it any time.
+    update((d) => { const r = withNewScreen(d, nextScreenName(d, workflowId), workflowId); sid = r.id; return r.layout; });
     setScreenId(sid); openOwnScreens(); setFocusName((n) => n + 1);
   };
   const screensPanel = (
@@ -476,7 +476,10 @@ export default function KioskBuilder() {
       onOpen={openScreen} onNew={newScreen}
       onRename={(sid, name) => update((d) => ({ ...d, menus: d.menus.map((m) => (m.id === sid ? { ...m, name } : m)) }))}
       onDelete={(sid) => { update((d) => withoutScreen(d, sid)); setScreenId(null); }}
-      onMove={(from, to) => update((d) => { const menus = [...d.menus]; const [m] = menus.splice(from, 1); menus.splice(to, 0, m); return { ...d, menus }; })} />
+      onMove={(sid, workflowId, beforeId) => update((d) => withScreenMoved(d, sid, workflowId, beforeId))}
+      onNewWorkflow={() => { let wid = ""; update((d) => { const r = withNewWorkflow(d); wid = r.id; return r.layout; }); return wid; }}
+      onRenameWorkflow={(wid, name) => update((d) => ({ ...d, workflows: d.workflows.map((w) => (w.id === wid ? { ...w, name } : w)) }))}
+      onDeleteWorkflow={(wid) => { if (draft.menus.some((m) => m.id === screenId && m.workflowId === wid)) setScreenId(null); update((d) => withoutWorkflow(d, wid)); }} />
   );
   const usingOwn = scr === "categories" && (ownScreens || draft.menuMode === "screens");
   // Easy builder › Categories: the category cards, or the owner's own button screens (the kiosk uses what's chosen).

@@ -284,3 +284,33 @@ describe("what clients can choose on a screen", () => {
     expect(l.menus.map((m) => [m.choose, m.mustChoose])).toEqual([["one", true], ["many", false]]);
   });
 });
+
+describe("workflows (owner, 2026-11-15)", () => {
+  const raw = {
+    builder: "picture", menuMode: "screens", startMenuId: "start",
+    workflows: [{ id: "mani", name: "  Manicure " }, { id: "pedi", name: "" }, { id: "mani", name: "Twice" }, { id: "bad id!", name: "X" }],
+    menus: [
+      { id: "start", name: "What are you here for?", kind: "picture" },
+      { id: "m-len", name: "Length", kind: "picture", workflowId: "mani" },
+      { id: "p-len", name: "Length", kind: "picture", workflowId: "pedi" },
+      { id: "lost", name: "Lost", kind: "picture", workflowId: "gone" },
+    ],
+  };
+  it("keeps each workflow once, named, and its screens in it", () => {
+    const l = normalizeKioskLayout(raw, "nail");
+    expect(l.workflows).toEqual([{ id: "mani", name: "Manicure" }, { id: "pedi", name: "Workflow" }]);
+    expect(l.menus.map((m) => [m.id, m.name, m.workflowId])).toEqual([
+      ["start", "What are you here for?", null], ["m-len", "Length", "mani"], ["p-len", "Length", "pedi"], ["lost", "Lost", null],
+    ]);
+  });
+  it("a design from before workflows has none, and every screen is outside one", () => {
+    const l = normalizeKioskLayout({ builder: "picture", menus: [{ id: "a", name: "A", kind: "picture" }] }, "nail");
+    expect(l.workflows).toEqual([]);
+    expect(l.menus[0].workflowId).toBeNull();
+  });
+  it("refuses more than 20 workflows", () => {
+    const many = Array.from({ length: 21 }, (_, i) => ({ id: `w${i}`, name: `W${i}` }));
+    expect(validateKioskLayout({ ...raw, workflows: many }).join(" ")).toContain("At most 20 workflows");
+    expect(normalizeKioskLayout({ ...raw, workflows: many }, "nail").workflows).toHaveLength(20);
+  });
+});

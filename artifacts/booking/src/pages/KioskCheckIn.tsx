@@ -1035,8 +1035,8 @@ function KioskCheckInScreens() {
   /**
    * Continue on a picture screen (owner, 2026-11-13: part of the logic, not a setting). Where the screen's own links
    * lead: (1) the "Then go to…" of what the client chose here, (2) else a screen any tap spot here leads to, (3) else
-   * the next screen in the builder's list the client hasn't been on (not one only opened from a tap spot, like a
-   * category's own page), (4) after the last one, the kiosk's next step.
+   * the next screen of the same workflow in the builder's list that the client hasn't been on (not one only opened
+   * from a tap spot, like a category's own page), (4) after the workflow's last one, the kiosk's next step.
    */
   const continueFromPicture = (m: KioskMenu, note: (text: string) => void) => {
     const chosen = (sp: KioskMenu["spots"][number]) =>
@@ -1049,7 +1049,8 @@ function KioskCheckInScreens() {
     if (linked?.kind === "menu") return continueFromScreen(m, note, { menuId: linked.menuId });
     const branches = new Set(layout.menus.flatMap((x) => x.spots.flatMap((sp) => (sp.action.kind === "menu" ? [sp.action.menuId] : []))));
     const seen = new Set([...menuStack, layout.startMenuId ?? ""]);
-    const after = layout.menus.slice(layout.menus.findIndex((x) => x.id === m.id) + 1).find((x) => !seen.has(x.id) && !branches.has(x.id));
+    const after = layout.menus.slice(layout.menus.findIndex((x) => x.id === m.id) + 1)
+      .find((x) => x.workflowId === m.workflowId && !seen.has(x.id) && !branches.has(x.id));
     return continueFromScreen(m, note, after ? { menuId: after.id } : "next");
   };
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
