@@ -383,3 +383,10 @@ describe("the order board and themes (owner, 2026-11-15)", () => {
     expect(l.theme.colors.selected).toBe("#ffc93c");
   });
 });
+
+describe("a tap spot not set yet (2026-11-15)", () => {
+  it("is kept, doing nothing, until its action is chosen", () => {
+    const l = normalizeKioskLayout({ builder: "picture", menus: [{ id: "s", name: "S", kind: "picture", spots: [{ id: "a", x: 1, y: 1, w: 20, h: 10, action: { kind: "function", fn: "none" } }] }] }, "nail");
+    expect(l.menus[0].spots[0].action).toEqual({ kind: "function", fn: "none" });
+  });
+});

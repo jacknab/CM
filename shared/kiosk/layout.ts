@@ -78,8 +78,9 @@ export type KioskSpotAction =
  * continue: on to the next step (the layout's order) · staff: straight to choosing staff · review: finish, to the
  * review screen where they press Check In · back: the screen before · startOver: back to the welcome screen.
  */
-export type KioskSpotFunction = "continue" | "staff" | "review" | "back" | "startOver";
-export const KIOSK_SPOT_FUNCTIONS: KioskSpotFunction[] = ["continue", "staff", "review", "back", "startOver"];
+/** "none": a tap spot whose action hasn't been chosen yet (a new one, 2026-11-15) — it does nothing on the kiosk. */
+export type KioskSpotFunction = "continue" | "staff" | "review" | "back" | "startOver" | "none";
+export const KIOSK_SPOT_FUNCTIONS: KioskSpotFunction[] = ["continue", "staff", "review", "back", "startOver", "none"];
 
 /**
  * What happens after a button or tap spot chooses a service, add-on or Kiosk Extra (owner, 2026-11-13): stay so they

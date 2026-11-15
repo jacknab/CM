@@ -30,6 +30,8 @@ const FUNCTION_NAMES: Record<KioskSpotFunction, { name: string; about: string }>
   review: { name: "Finish", about: "Straight to the review, where they press Check In" },
   back: { name: "Back", about: "The screen before" },
   startOver: { name: "Start over", about: "Back to the welcome screen" },
+  // A new tap spot until its action is chosen (not offered in the Function list).
+  none: { name: "Not set yet", about: "Does nothing on the kiosk until you choose what it does" },
 };
 
 /** "Then…" for a button or tap spot that chooses something, as a select value. */
@@ -468,7 +470,9 @@ export function ScreensEditor(props: {
   // ── Picture screens: tap spots ──
   const changeSpots = (change: (spots: KioskSpot[]) => KioskSpot[]) => menu && changeMenu(menu.id, (m) => ({ ...m, spots: change(m.spots) }));
   const spot = menu?.kind === "picture" ? menu.spots.find((sp) => sp.id === spotId) ?? null : null;
-  const addSpot = (action: KioskSpotAction = { kind: "function", fn: "continue" }) => {
+  // A new tap spot does nothing until its action is chosen (owner, 2026-11-15: new spots used to be Continue, so a
+  // forgotten one said "Please choose a service first" on the kiosk).
+  const addSpot = (action: KioskSpotAction = { kind: "function", fn: "none" }) => {
     if (!menu || menu.spots.length >= KIOSK_MENU_LIMITS.spots) return;
     const sp: KioskSpot = { id: newId("spot"), x: 35, y: 45, w: 30, h: 10, action };
     changeSpots((list) => [...list, sp]);
@@ -538,6 +542,8 @@ export function ScreensEditor(props: {
     if (m.kind !== "picture") return [];
     const out: string[] = [];
     if (!m.imageUrl) out.push("Upload the picture for this screen.");
+    const unset = m.spots.filter((sp) => sp.action.kind === "function" && sp.action.fn === "none").length;
+    if (unset) out.push(`${unset === 1 ? "1 tap spot doesn't" : `${unset} tap spots don't`} do anything yet: choose what ${unset === 1 ? "it does" : "each one does"} on the Tap spots tab.`);
     if (m.footer) {
       // The footer has its own Back and Continue; a spot under it can't be tapped.
       if (m.spots.some((sp) => sp.y + sp.h > 100 - KIOSK_PICTURE_FOOTER_PCT + 0.01))
@@ -946,7 +952,7 @@ export function ScreensEditor(props: {
           )}
           {spotTab === "function" && (
             <div className="space-y-1">
-              {(Object.keys(FUNCTION_NAMES) as KioskSpotFunction[]).map((fn) => {
+              {(Object.keys(FUNCTION_NAMES) as KioskSpotFunction[]).filter((fn) => fn !== "none").map((fn) => {
                 const on = spot.action.kind === "function" && spot.action.fn === fn;
                 return (
                   <button key={fn} type="button" className={`w-full text-left px-3 py-2 rounded-lg border ${on ? "border-slate-900 bg-slate-50" : "border-slate-100 hover:bg-slate-50"}`}
