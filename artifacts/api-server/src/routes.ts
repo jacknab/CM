@@ -4402,6 +4402,9 @@ export async function registerRoutes(
   // Memberships: plans in the app, joining at certxa.com/join/<code>, visits at checkout (routes/proMemberships.ts).
   const { default: proMembershipsRouter } = await import("./routes/proMemberships.js");
   app.use(proMembershipsRouter);
+  // Checkout extras: products on a visit, and what a gift card already paid (routes/proCheckout.ts).
+  const { default: proCheckoutRouter } = await import("./routes/proCheckout.js");
+  app.use(proCheckoutRouter);
   // The Solo billing page's card on file (change / remove).
   const { default: soloCardRouter } = await import("./routes/soloCard.js");
   app.use(soloCardRouter);

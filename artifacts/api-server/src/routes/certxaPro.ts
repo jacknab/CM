@@ -847,10 +847,11 @@ router.post("/appointments/:id/refund", async (req, res) => {
       const userId = (req.session as { userId?: string } | undefined)?.userId ?? null;
 // ── Checkout with a Certxa gift card (owner, 2026-11-15) ──
 // Takes the amount off the card for this booking. Once per booking: a retry (the app then marks the booking paid with
-// PATCH /api/appointments/:id) gets the same redemption back, never a second one.
+// PATCH /api/appointments/:id) gets the same redemption back, never a second one. `partial`: a card with less on it
+// than the amount pays what it has, and the rest is paid another way (split payment).
 router.post("/appointments/:id/gift-card", async (req, res) => {
   const parsedId = id.safeParse(req.params.id);
-  const body = z.object({ code: z.string().trim().min(1).max(64), amountCents: z.number().int().positive().max(10_000_000) }).safeParse(req.body);
+  const body = z.object({ code: z.string().trim().min(1).max(64), amountCents: z.number().int().positive().max(10_000_000), partial: z.boolean().optional() }).safeParse(req.body);
   if (!parsedId.success) return invalid(res, parsedId.error);
   if (!body.success) return invalid(res, body.error);
   try {
@@ -859,8 +860,16 @@ router.post("/appointments/:id/gift-card", async (req, res) => {
     if (!appt) return res.status(404).json({ error: "Appointment not found" });
     if (appt.status === "cancelled" || appt.status === "no_show") return res.status(409).json({ error: "This booking is closed." });
     if (appt.status === "completed" && appt.total_paid != null) return res.status(409).json({ error: "This booking is paid." });
-    const { redeemGiftCard } = await import("../lib/nailGiftCards");
-    const r = await redeemGiftCard({ storeId, code: body.data.code, amount: body.data.amountCents / 100, appointmentId: parsedId.data });
+    const { redeemGiftCard, normalizeGiftCode } = await import("../lib/nailGiftCards");
+    let cents = body.data.amountCents;
+    if (body.data.partial) {
+      const card = (await pool.query(
+        `SELECT remaining_balance FROM gift_cards WHERE code = $1 AND store_id = $2 AND is_active = true AND (expires_at IS NULL OR expires_at > now())`,
+        [normalizeGiftCode(body.data.code), storeId])).rows[0];
+      const left = Math.round(Number(card?.remaining_balance ?? 0) * 100);
+      if (left > 0) cents = Math.min(cents, left);
+    }
+    const r = await redeemGiftCard({ storeId, code: body.data.code, amount: cents / 100, appointmentId: parsedId.data });
     if (!r.ok) return res.status(r.status).json({ error: r.message });
     return res.json({ code: r.code, redeemedCents: Math.round(r.redeemed * 100), balanceCents: Math.round(r.balance * 100) });
   } catch (error) { return unexpected(res, error); }
