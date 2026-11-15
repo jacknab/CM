@@ -37,11 +37,7 @@
 .kx-screens .kx-flow-count { font-size: 12px; font-weight: 700; color: #8b94a0; }
 .kx-screens .kx-nested { margin-left: 12px; }
 .kx-screens > button.kx-drop-into, .kx-screens .kx-add.kx-drop-into { border-color: #0d9bd1; }
-/* Tabs (2026-11-15): Screens | Workflows. */
-.kx-screens .kx-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin-bottom: 8px; border: 1px solid #454c56; border-radius: 2px; }
-.kx-screens .kx-tabs > button { height: 38px; border: 0; background: transparent; color: #8b94a0; font-family: inherit; font-size: 13px; font-weight: 800;
-  letter-spacing: .04em; cursor: pointer; }
-.kx-screens .kx-tabs > button.active { background: #1d3a48; color: #eef3fb; box-shadow: inset 0 -2px 0 #0d9bd1; }
+/* The open screen's Workflow box. */
 .kx-screens select { width: 100%; height: 44px; padding: 0 10px; border: 1px solid #454c56; border-radius: 2px; background: #232830; color: #eef3fb;
   font-size: 14px; font-family: inherit; }
 .kx-screens > .kx-add.kx-add-wrap { white-space: normal; line-height: 1.25; padding-top: 8px; padding-bottom: 8px; }

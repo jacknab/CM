@@ -157,6 +157,22 @@ export function withScreenMoved(d: KioskLayout, id: string, workflowId: string |
   return { ...d, menus: placeInWorkflow(d.menus, { ...m, workflowId }, beforeId) };
 }
 
+/**
+ * A copy of a screen into a workflow (owner, 2026-11-15: dragged from the Screens column, the original stays): same
+ * picture, buttons, tap spots, text and settings, with new ids so the two are edited apart. Returns the copy's id.
+ */
+export function withScreenCopied(d: KioskLayout, id: string, workflowId: string, beforeId: string | null): { layout: KioskLayout; id: string | null } {
+  const m = d.menus.find((x) => x.id === id);
+  if (!m || d.menus.length >= KIOSK_MENU_LIMITS.menus) return { layout: d, id: null };
+  const copy: KioskMenu = {
+    ...structuredClone(m), id: newId("screen"), workflowId,
+    tiles: m.tiles.map((t) => (t ? { ...t, id: newId("btn") } : null)),
+    spots: m.spots.map((sp) => ({ ...sp, id: newId("spot") })),
+    texts: (m.texts ?? []).map((t) => ({ ...t, id: newId("text") })),
+  };
+  return { layout: { ...d, menus: placeInWorkflow(d.menus, copy, beforeId) }, id: copy.id };
+}
+
 /** Adds a workflow (named "Workflow 2"… until the owner renames it). Returns its id. */
 export function withNewWorkflow(d: KioskLayout): { layout: KioskLayout; id: string } {
   const taken = new Set(d.workflows.map((w) => w.name.trim().toLowerCase()));

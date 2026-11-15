@@ -1,12 +1,11 @@
 /**
- * Kiosk Builder › the left Screens panel (owner, 2026-11-13: "exactly like" the /nail grid editor's Grids panel),
- * in two tabs (2026-11-15): Screens (screens not in a workflow) and Workflows. Picture builder: "Screens from my
- * categories" on the Workflows tab.
- * Screens not in a workflow first (the first screen, "What are you here for?"), then each workflow (owner,
- * 2026-11-15: Manicure, Pedicure, Fake nails…) as its own sub-menu holding its screens and its own "New screen".
- * A click opens a screen; a workflow's name opens or closes it and shows its name box. "New screen" makes one with
- * a temporary name ("Screen 3") and selects it to type over. Screens are dragged to change their order, or onto
- * another workflow to move them: on picture screens Continue goes to the next screen of the same workflow.
+ * Kiosk Builder › the left Screens panel (owner, 2026-11-13: "exactly like" the /nail grid editor's Grids panel).
+ * Two columns side by side (2026-11-15): Screens — the kiosk's own screens, then the owner's screens not in a
+ * workflow — and Workflows (Manicure, Pedicure, Fake nails…), each a sub-menu with its screens and its own
+ * "New screen". Dragging a screen from the Screens column onto a workflow makes a COPY of it there (the original
+ * stays); inside the Workflows column a drag moves it (order, or another workflow). A click opens a screen; a
+ * workflow's name opens or closes it and shows its name box. "New screen" makes one with a temporary name
+ * ("Screen 3") selected to type over. On picture screens Continue goes to the next screen of the same workflow.
  */
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
@@ -25,6 +24,8 @@ export function ScreensPanel(props: {
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, workflowId: string | null, beforeId: string | null) => void;
+  /** A copy of the screen, into a workflow (dragged from the Screens column). */
+  onCopy: (id: string, workflowId: string, beforeId: string | null) => void;
   onNewWorkflow: () => string;
   onRenameWorkflow: (id: string, name: string) => void;
   onDeleteWorkflow: (id: string) => void;
@@ -46,10 +47,6 @@ export function ScreensPanel(props: {
   const [flowId, setFlowId] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(() => new Set(draft.workflows.map((w) => w.id)));
   const flow = draft.workflows.find((w) => w.id === flowId) ?? null;
-  // The tab: a screen in a workflow is shown on the Workflows tab.
-  const [tab, setTab] = useState<"screens" | "workflows">(active?.workflowId ? "workflows" : "screens");
-  useEffect(() => { if (active) setTab(active.workflowId ? "workflows" : "screens"); }, [active?.id, active?.workflowId]);
-  useEffect(() => { if (props.activeKioskScreen) setTab("screens"); }, [props.activeKioskScreen]);
   const [making, setMaking] = useState(false);
   // The open screen's workflow is always open.
   useEffect(() => {
@@ -69,7 +66,12 @@ export function ScreensPanel(props: {
   const [target, setTarget] = useState<DropTarget | null>(null);
   const endDrag = () => { setDragId(null); setTarget(null); };
   const drop = () => {
-    if (dragId && target) props.onMove(dragId, target.workflowId, target.beforeId);
+    const dragged = draft.menus.find((m) => m.id === dragId);
+    if (dragged && target) {
+      // From the Screens column into a workflow: a copy; otherwise the screen itself moves.
+      if (!dragged.workflowId && target.workflowId) props.onCopy(dragged.id, target.workflowId, target.beforeId);
+      else props.onMove(dragged.id, target.workflowId, target.beforeId);
+    }
     endDrag();
   };
 
@@ -78,9 +80,10 @@ export function ScreensPanel(props: {
     const cls = [nested ? "kx-nested" : "", m.id === activeId && !flowId ? "active" : "", dragId === m.id ? "kx-dragging" : "",
       target?.rowKey === m.id ? (target.after ? "kx-drop-after" : "kx-drop-before") : ""].filter(Boolean).join(" ");
     return (
-      <button key={m.id} type="button" draggable className={cls} title="Drag to change the order" data-testid="screens-panel-item"
+      <button key={m.id} type="button" draggable className={cls} data-testid="screens-panel-item"
+        title={m.workflowId ? "Drag to change the order or move it to another workflow" : "Drag onto a workflow to copy it there"}
         onClick={() => { setFlowId(null); props.onOpen(m.id); }}
-        onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/kiosk-screen", m.id); setDragId(m.id); }}
+        onDragStart={(e) => { e.dataTransfer.effectAllowed = m.workflowId ? "move" : "copyMove"; e.dataTransfer.setData("text/kiosk-screen", m.id); setDragId(m.id); }}
         onDragOver={(e) => {
           if (!dragId) return;
           e.preventDefault();
@@ -104,16 +107,29 @@ export function ScreensPanel(props: {
   );
   const loose = draft.menus.filter((m) => !m.workflowId);
 
+  // The open screen's name, workflow and delete: under the column it is in.
+  const screenMeta = active && (
+
+          <div className="kx-meta">
+            <p className="kx-label">Screen name</p>
+            <input ref={nameRef} value={active.name} maxLength={KIOSK_MENU_LIMITS.name} data-testid="screens-panel-name"
+              onChange={(e) => props.onRename(active.id, e.target.value)} />
+            <p className="kx-label kx-label-gap">Workflow</p>
+            <select value={active.workflowId ?? ""} data-testid="screens-panel-move"
+              onChange={(e) => props.onMove(active.id, e.target.value || null, null)}>
+              <option value="">Not in a workflow</option>
+              {draft.workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select>
+            <button type="button" className="kx-danger" data-testid="screens-panel-delete"
+              onClick={() => { if (window.confirm(`Delete "${active.name || "this screen"}"? Buttons and tap spots that open it are removed too.`)) props.onDelete(active.id); }}>
+              <Trash2 size={15} /> Delete screen
+            </button>
+          </div>
+  );
+
   return (
     <div className="kx-screens-wrap">
       <aside className="kx-screens" data-testid="screens-panel">
-        <div className="kx-tabs" role="tablist">
-          {([["screens", "Screens"], ["workflows", "Workflows"]] as const).map(([k, name]) => (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "active" : ""} data-testid={`screens-panel-tab-${k}`}
-              onClick={() => { setTab(k); setFlowId(null); }}>{name}</button>
-          ))}
-        </div>
-        {tab === "screens" && (<>
         <p className="kx-label">Kiosk screens</p>
         {props.kioskScreens.map((k) => (
           <button key={k.key} type="button" className={props.activeKioskScreen === k.key ? "active" : ""} data-testid={`screens-panel-kiosk-${k.key}`}
@@ -124,9 +140,9 @@ export function ScreensPanel(props: {
         <p className="kx-label kx-label-gap">Your screens</p>
         {loose.map((m, i) => screenRow(m, loose, i, false))}
         {newScreenButton(null, false)}
-        </>)}
-
-        {tab === "workflows" && (<>
+        {active && !active.workflowId && screenMeta}
+      </aside>
+      <aside className="kx-screens" data-testid="screens-panel-flows">
         <p className="kx-label">Workflows</p>
         {draft.workflows.map((w) => {
           const list = draft.menus.filter((m) => m.workflowId === w.id);
@@ -168,8 +184,6 @@ export function ScreensPanel(props: {
             <Plus size={16} /> {making ? "Making screens…" : "Screens from my categories"}
           </button>
         )}
-        </>)}
-
         {flow ? (
           <div className="kx-meta">
             <p className="kx-label">Workflow name</p>
@@ -184,23 +198,7 @@ export function ScreensPanel(props: {
               <Trash2 size={15} /> Delete workflow
             </button>
           </div>
-        ) : active && (
-          <div className="kx-meta">
-            <p className="kx-label">Screen name</p>
-            <input ref={nameRef} value={active.name} maxLength={KIOSK_MENU_LIMITS.name} data-testid="screens-panel-name"
-              onChange={(e) => props.onRename(active.id, e.target.value)} />
-            <p className="kx-label kx-label-gap">Workflow</p>
-            <select value={active.workflowId ?? ""} data-testid="screens-panel-move"
-              onChange={(e) => props.onMove(active.id, e.target.value || null, null)}>
-              <option value="">Not in a workflow</option>
-              {draft.workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-            <button type="button" className="kx-danger" data-testid="screens-panel-delete"
-              onClick={() => { if (window.confirm(`Delete "${active.name || "this screen"}"? Buttons and tap spots that open it are removed too.`)) props.onDelete(active.id); }}>
-              <Trash2 size={15} /> Delete screen
-            </button>
-          </div>
-        )}
+        ) : active?.workflowId ? screenMeta : null}
       </aside>
     </div>
   );

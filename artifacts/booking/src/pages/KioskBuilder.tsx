@@ -27,7 +27,7 @@ import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
-import { ScreensEditor, nextScreenName, withCategoryScreens, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensEditor, nextScreenName, withCategoryScreens, withScreenCopied, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
 import type { HelpTopicId } from "@/pages/kiosk-builder/help";
@@ -518,6 +518,12 @@ export default function KioskBuilder() {
       onRename={(sid, name) => update((d) => ({ ...d, menus: d.menus.map((m) => (m.id === sid ? { ...m, name } : m)) }))}
       onDelete={(sid) => { update((d) => withoutScreen(d, sid)); setScreenId(null); }}
       onMove={(sid, workflowId, beforeId) => update((d) => withScreenMoved(d, sid, workflowId, beforeId))}
+      onCopy={(sid, workflowId, beforeId) => {
+        let made: string | null = null;
+        update((d) => { const r = withScreenCopied(d, sid, workflowId, beforeId); made = r.id; return r.layout; });
+        if (made) openScreen(made);
+        else toast({ title: "No room for more screens", description: "Delete some screens first.", variant: "destructive" });
+      }}
       onNewWorkflow={() => { let wid = ""; update((d) => { const r = withNewWorkflow(d); wid = r.id; return r.layout; }); return wid; }}
       onRenameWorkflow={(wid, name) => update((d) => ({ ...d, workflows: d.workflows.map((w) => (w.id === wid ? { ...w, name } : w)) }))}
       onCategoryScreens={builder !== "picture" ? undefined : async () => {
