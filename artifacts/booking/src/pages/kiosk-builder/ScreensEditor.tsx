@@ -218,14 +218,21 @@ export function catalogGroups(services: CatalogService[], categories: CatalogCat
  * Picture builder (owner, 2026-11-15): one picture screen per catalog category, in a workflow of the category's
  * name (an existing workflow of that name is used), with a tap spot for each of its services laid out in rows.
  * The owner uploads the picture, drags each spot onto its part of it and deletes the ones they don't want.
- * Returns the first new screen's id (null: nothing made).
+ * A category that already has its screen (a screen of its name in its workflow) is skipped, so pressing it again
+ * only adds screens for categories added since. Returns the first new screen's id (null: nothing made) and why not.
  */
-export function withCategoryScreens(d: KioskLayout, services: CatalogService[], categories: CatalogCategory[]): { layout: KioskLayout; first: string | null } {
+export function withCategoryScreens(d: KioskLayout, services: CatalogService[], categories: CatalogCategory[]): { layout: KioskLayout; first: string | null; allThere: boolean } {
   let next: KioskLayout = { ...d, workflows: [...d.workflows], menus: [...d.menus] };
   let first: string | null = null;
-  for (const g of catalogGroups(services, categories)) {
+  const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const groups = catalogGroups(services, categories);
+  const missing = groups.filter((g) => {
+    const flow = next.workflows.find((w) => same(w.name, g.name));
+    return !(flow && next.menus.some((m) => m.workflowId === flow.id && same(m.name, g.name)));
+  });
+  for (const g of missing) {
     if (next.menus.length >= KIOSK_MENU_LIMITS.menus) break;
-    let flow = next.workflows.find((w) => w.name.trim().toLowerCase() === g.name.trim().toLowerCase());
+    let flow = next.workflows.find((w) => same(w.name, g.name));
     if (!flow && next.workflows.length < KIOSK_WORKFLOW_LIMITS.workflows) {
       flow = { id: newId("flow"), name: g.name.slice(0, KIOSK_WORKFLOW_LIMITS.name) };
       next.workflows.push(flow);
@@ -249,7 +256,7 @@ export function withCategoryScreens(d: KioskLayout, services: CatalogService[], 
     first = first ?? m.id;
   }
   if (first) next = { ...next, startMenuId: next.startMenuId ?? first, menuMode: "screens" };
-  return { layout: next, first };
+  return { layout: next, first, allThere: groups.length > 0 && missing.length === 0 };
 }
 
 export function screensFromCatalog(services: CatalogService[], categories: CatalogCategory[]): { menus: KioskMenu[]; start: string } {

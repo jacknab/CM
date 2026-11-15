@@ -489,7 +489,9 @@ export default function KioskBuilder() {
         if (!cat) return;
         if (!cat.services.length) { toast({ title: "No services to make screens for", description: "Add services in Catalog first." }); return; }
         let first: string | null = null;
-        update((d) => { const r = withCategoryScreens(d, cat!.services, cat!.categories); first = r.first; return r.layout; });
+        let allThere = false;
+        update((d) => { const r = withCategoryScreens(d, cat!.services, cat!.categories); first = r.first; allThere = r.allThere; return r.layout; });
+        if (allThere) { toast({ title: "Every category already has its screen", description: "New screens are only made for categories added since." }); return; }
         if (!first) { toast({ title: "No room for more screens", description: "Delete some screens first.", variant: "destructive" }); return; }
         setScreenId(first); openOwnScreens();
         toast({ title: "Screens made from your categories", description: "Upload each screen's picture, drag the tap spots onto it, and delete the ones you don't want." });
