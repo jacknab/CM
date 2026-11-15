@@ -1507,6 +1507,9 @@ async function repairTwilioMessagingServiceInboundWebhook() {
   // Client forms and waivers: links sent by themselves when a client books (lib/proForms.ts).
   const { startProFormsSweep } = await import("./lib/proForms");
   startProFormsSweep();
+  // Memberships: renewals charged on the business's Stripe account (lib/proMemberships.ts).
+  const { startMembershipRenewals } = await import("./lib/proMemberships");
+  startMembershipRenewals();
 
   // Start scheduled campaign dispatcher (checks every 5 minutes for due campaigns)
   const { startCampaignScheduler } = await import("./services/campaign-scheduler");

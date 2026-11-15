@@ -774,6 +774,27 @@ async function paidAppointmentsInRange(storeId: number, from: Date, to: Date) {
   });
 }
 
+/**
+ * Membership payments (Certxa Pro, 2026-11-15; lib/proMemberships.ts) aren't bookings, so they are added to the sales
+ * totals and the transactions here, shaped like paid bookings (id: minus the charge id, so it never matches a booking).
+ */
+async function membershipChargesInRange(storeId: number, from: Date, to: Date): Promise<any[]> {
+  const r = await pool.query(
+    `SELECT c.id, c.amount_cents, c.created_at, c.payment_intent, m.name, cl.full_name
+       FROM client_membership_charges c JOIN client_memberships m ON m.id = c.membership_id LEFT JOIN clients cl ON cl.id = m.customer_id
+      WHERE c.store_id = $1 AND c.status = 'paid' AND c.created_at BETWEEN $2 AND $3`,
+    [storeId, from.toISOString(), to.toISOString()]).catch(() => ({ rows: [] as any[] }));
+  return r.rows.map((c) => ({
+    id: -Number(c.id), totalPaid: (Number(c.amount_cents) / 100).toFixed(2), paymentMethod: "card", completedAt: c.created_at, date: c.created_at,
+    customer: { fullName: c.full_name || "Client" }, service: { name: `Membership: ${c.name}` }, staff: null, staffId: null,
+    tipAmount: "0", discountAmount: "0", stripePaymentIntentId: c.payment_intent,
+  }));
+}
+async function paidSalesInRange(storeId: number, from: Date, to: Date): Promise<any[]> {
+  const [appts, members] = await Promise.all([paidAppointmentsInRange(storeId, from, to), membershipChargesInRange(storeId, from, to)]);
+  return [...appts, ...members];
+}
+
 // ─── GET /api/payments/overview ─────────────────────────────────────────────
 router.get("/overview", async (req: Request, res: Response) => {
   if (!await requireOwnerOrAdmin(req, res)) return;
@@ -796,13 +817,13 @@ router.get("/overview", async (req: Request, res: Response) => {
 
     const sum = (rows: any[]) => rows.reduce((t, a) => t + (Number(a.totalPaid) || 0), 0);
     const [todayRows, yRows, weekRows, prevWeekRows, monthRows, lastMonthRows, curRows] = await Promise.all([
-      paidAppointmentsInRange(storeId, today.from, today.to),
-      paidAppointmentsInRange(storeId, yesterday.from, yesterday.to),
-      paidAppointmentsInRange(storeId, week.from, week.to),
-      paidAppointmentsInRange(storeId, prevWeek.from, prevWeek.to),
-      paidAppointmentsInRange(storeId, month.from, month.to),
-      paidAppointmentsInRange(storeId, lastMonth.from, lastMonth.to),
-      paidAppointmentsInRange(storeId, cur.from, cur.to),
+      paidSalesInRange(storeId, today.from, today.to),
+      paidSalesInRange(storeId, yesterday.from, yesterday.to),
+      paidSalesInRange(storeId, week.from, week.to),
+      paidSalesInRange(storeId, prevWeek.from, prevWeek.to),
+      paidSalesInRange(storeId, month.from, month.to),
+      paidSalesInRange(storeId, lastMonth.from, lastMonth.to),
+      paidSalesInRange(storeId, cur.from, cur.to),
     ]);
 
     const pct = (now: number, prev: number): number | null =>
@@ -888,7 +909,7 @@ router.get("/transactions", async (req: Request, res: Response) => {
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 25));
     const offset = Math.max(0, Number(req.query.offset) || 0);
 
-    let rows = await paidAppointmentsInRange(storeId, from, to);
+    let rows = await paidSalesInRange(storeId, from, to);
 
     rows = rows.filter((a: any) => {
       if (staffFilter && a.staffId !== staffFilter) return false;

@@ -4396,10 +4396,13 @@ export async function registerRoutes(
   // Certxa Pro text message credits: one tap with a card on file, else certxa.com/pro-credits (routes/soloCredits.ts).
   const { default: soloCreditsRouter } = await import("./routes/soloCredits.js");
   app.use(soloCreditsRouter);
-  // The Solo billing page's card on file (change / remove).
   // Client forms and waivers: the app's Forms and the client's private page certxa.com/f/<code> (routes/proForms.ts).
   const { default: proFormsRouter } = await import("./routes/proForms.js");
   app.use(proFormsRouter);
+  // Memberships: plans in the app, joining at certxa.com/join/<code>, visits at checkout (routes/proMemberships.ts).
+  const { default: proMembershipsRouter } = await import("./routes/proMemberships.js");
+  app.use(proMembershipsRouter);
+  // The Solo billing page's card on file (change / remove).
   const { default: soloCardRouter } = await import("./routes/soloCard.js");
   app.use(soloCardRouter);
   // Website messages: clients write from the pro's website, the pro answers in the app (routes/proMessages.ts).
