@@ -47,6 +47,11 @@ const jsonLd = {
   ],
 };
 
+/** Team card photos by team member id (about.json). */
+const TEAM_PHOTOS: Record<string, string> = {
+  t2: '/airo-assets/images/team/toby-benjamin',
+};
+
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' as const } },
@@ -148,11 +153,22 @@ export default function AboutPage() {
                 {about.team.map((member) => (
                   <motion.div key={member.id} variants={fadeUp}
                     className="bg-card border border-border rounded-2xl p-6 flex flex-col gap-4 hover:-translate-y-1 transition-transform duration-300">
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-                      <span className="text-xl font-bold text-primary" style={{ fontFamily: 'var(--font-heading)' }}>
-                        {member.name.charAt(0)}
-                      </span>
-                    </div>
+                    {TEAM_PHOTOS[member.id] ? (
+                      <img
+                        src={TEAM_PHOTOS[member.id]}
+                        alt={`${member.name}, ${member.role} at Certxa`}
+                        width={600}
+                        height={734}
+                        className="w-full h-72 rounded-xl bg-primary/5 object-contain object-bottom"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <span className="text-xl font-bold text-primary" style={{ fontFamily: 'var(--font-heading)' }}>
+                          {member.name.charAt(0)}
+                        </span>
+                      </div>
+                    )}
                     <div>
                       <p className="font-bold text-foreground text-sm">{member.name}</p>
                       <p className="text-xs text-primary font-medium mt-0.5">{member.role}</p>

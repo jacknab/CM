@@ -54,6 +54,7 @@ export const MARKETING_IMAGES: MarketingImageDefinition[] = [
   image("pages/autumn/device-mockup", "Autumn — device mockup", ["Features"], 447, 558, "contain"),
   image("pages/autumn/software-screenshot", "Autumn — software screenshot", ["Autumn"], 1024, 576),
   image("team/thanh-lam-founder", "Founder portrait", ["About"], 1145, 1374),
+  image("team/toby-benjamin", "Toby Benjamin portrait", ["About"], 600, 734),
   image("products/tablet-stand", "Check-in kiosk stand", ["Products"], 600, 600, "contain"),
   image("products/certxa-station-hero", "Certxa Station — hero", ["Products"], 1536, 1024, "contain", "/_site/images/products/certxa-station-hero.webp"),
   image("products/certxa-station", "Certxa Station — product card", ["Products"], 1200, 800, "contain", "/_site/images/products/certxa-station.webp"),
