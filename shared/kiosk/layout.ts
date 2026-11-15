@@ -210,7 +210,21 @@ export interface KioskTextBox {
   color: string;
   /** Where the lines sit in the box (owner, 2026-11-15); centred unless set. */
   align: "left" | "center" | "right";
+  /** A bullet in front of every line (owner, 2026-11-15); absent: no bullets. */
+  bullet?: { design: KioskBulletDesign; color: string };
 }
+
+/** The bullet designs a text box can use (drawn by components/kiosk/KioskBullet.tsx). */
+export const KIOSK_BULLETS = [
+  { key: "check", name: "Check" },
+  { key: "dot", name: "Dot" },
+  { key: "star", name: "Star" },
+  { key: "heart", name: "Heart" },
+  { key: "diamond", name: "Diamond" },
+] as const;
+export type KioskBulletDesign = typeof KIOSK_BULLETS[number]["key"];
+/** The colours offered for bullets in the builder (any colour is kept). */
+export const KIOSK_BULLET_COLORS = ["#e84891", "#db2777", "#dc2626", "#ea580c", "#d4a017", "#16a34a", "#0d9488", "#2563eb", "#7c3aed", "#b9785c", "#111827", "#ffffff"] as const;
 export const KIOSK_TEXT_LIMITS = { boxes: 30, chars: 200, size: { min: 16, max: 240 } } as const;
 
 export const KIOSK_MENU_LIMITS = { menus: 120, pages: 10, cols: { min: 1, max: 4 }, rows: { min: 1, max: 6 }, label: 40, name: 40, spots: 80 } as const;
@@ -445,6 +459,8 @@ export function normalizeTextBoxes(raw: unknown): KioskTextBox[] {
       style: t.style === "bold" || t.style === "italic" ? t.style : "regular",
       color: typeof t.color === "string" && HEX.test(t.color) ? t.color.toLowerCase() : "#111827",
       align: t.align === "left" || t.align === "right" ? t.align : "center",
+      ...(isObj(t.bullet) && KIOSK_BULLETS.some((x) => x.key === t.bullet.design) && typeof t.bullet.color === "string" && HEX.test(t.bullet.color)
+        ? { bullet: { design: t.bullet.design, color: t.bullet.color.toLowerCase() } } : {}),
     }];
   });
 }

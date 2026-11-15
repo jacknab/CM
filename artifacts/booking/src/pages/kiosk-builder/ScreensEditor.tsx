@@ -13,10 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { KioskMenuScreen, servicePicture, type MenuColors, type MenuService } from "@/components/kiosk/KioskMenuScreen";
 import { KioskPictureScreen } from "@/components/kiosk/KioskPictureScreen";
+import { KioskBullet } from "@/components/kiosk/KioskBullet";
 import { loadKioskFonts } from "@/lib/kioskFonts";
 import { ExtraForm, priceText, type KioskExtrasStore } from "./extras";
 import {
-  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_SPOT_PRICE_DEFAULT, KIOSK_TEXT_FONTS, KIOSK_TEXT_LIMITS, KIOSK_WORKFLOW_LIMITS, spotPriceText, type KioskSpotPrice, type KioskTextBox, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
+  KIOSK_MENU_LIMITS, KIOSK_PICTURE, KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, KIOSK_BULLET_COLORS, KIOSK_BULLETS, KIOSK_SPOT_PRICE_DEFAULT, KIOSK_TEXT_FONTS, type KioskBulletDesign, KIOSK_TEXT_LIMITS, KIOSK_WORKFLOW_LIMITS, spotPriceText, type KioskSpotPrice, type KioskTextBox, builderScreenKind, sameGroup, menuPageCount, menuSlotsPerPage,
   type KioskLayout, type KioskMenu, type KioskNext, type KioskSpot, type KioskSpotAction, type KioskSpotFunction, type KioskTile,
 } from "@shared/kiosk/layout";
 
@@ -366,6 +367,8 @@ export function ScreensEditor(props: {
   const [textId, setTextId] = useState<string | null>(null);
   // The arrow keys move the chosen spot's price inside it (its price was clicked, or "Move with arrow keys").
   const [priceMode, setPriceMode] = useState(false);
+  // The bullet design tab open in the chosen text's card (its own design, else Check).
+  const [bulletTab, setBulletTab] = useState<KioskBulletDesign>("check");
   // The right panel's tab (owner, 2026-11-15): Screen, then Tap spots and Text (picture screens) or Buttons.
   const [panelTab, setPanelTab] = useState<"screen" | "spots" | "text" | "buttons">("screen");
   const [spotTab, setSpotTab] = useState<"service" | "addon" | "function" | "menu">("service");
@@ -487,6 +490,7 @@ export function ScreensEditor(props: {
     const h = grow ? Math.min(100 - x.y, Math.max(KIOSK_SPOT_MIN.h, x.h + dy)) : x.h;
     return { ...x, w, h, x: grow ? x.x : Math.min(100 - w, Math.max(0, x.x + dx)), y: grow ? x.y : Math.min(100 - h, Math.max(0, x.y + dy)) };
   }));
+  useEffect(() => { setBulletTab(textBox?.bullet?.design ?? "check"); }, [textId]);
   // The font list shows each font in itself.
   useEffect(() => { if (textBox) loadKioskFonts(KIOSK_TEXT_FONTS.map((f) => f.key)); }, [!!textBox]);
   /** A spot's price as the kiosk shows it, from the catalog (services, add-ons, Kiosk Extras). */
@@ -1047,6 +1051,37 @@ export function ScreensEditor(props: {
                   <Icon className="w-4 h-4" /> {name}
                 </button>
               ))}
+            </div>
+          </div>
+          <div data-testid="text-bullets">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs text-slate-500">Bullets: one in front of every line</p>
+              <button type="button" data-testid="text-bullet-none" onClick={() => patchText({ bullet: undefined })}
+                className={`text-xs px-2 h-7 rounded border ${!textBox.bullet ? "bg-slate-900 text-white border-slate-900" : "border-slate-200 text-slate-600"}`}>No bullets</button>
+            </div>
+            {/* One tab per design (owner, 2026-11-15), each showing that design in every colour. */}
+            <div className="grid grid-cols-5 gap-1 rounded-md border border-slate-200 p-0.5" role="tablist" aria-label="Bullet design">
+              {KIOSK_BULLETS.map((b) => (
+                <button key={b.key} type="button" role="tab" aria-selected={bulletTab === b.key} data-testid={`text-bullet-tab-${b.key}`}
+                  onClick={() => setBulletTab(b.key)}
+                  className={`h-9 rounded inline-flex items-center justify-center gap-1.5 text-xs ${bulletTab === b.key ? "bg-slate-900 text-white" : "text-slate-600"}`}>
+                  <KioskBullet design={b.key} color="currentColor" size={14} /> {b.name}
+                </button>
+              ))}
+            </div>
+            <div className="mt-2 grid grid-cols-6 gap-1.5" data-testid="text-bullet-colors">
+              {KIOSK_BULLET_COLORS.map((col) => {
+                const on = textBox.bullet?.design === bulletTab && textBox.bullet.color === col;
+                return (
+                  <button key={col} type="button" aria-label={`${KIOSK_BULLETS.find((b) => b.key === bulletTab)!.name} bullet, ${col}`} aria-pressed={on}
+                    data-testid={`text-bullet-${bulletTab}-${col.slice(1)}`}
+                    onClick={() => patchText({ bullet: { design: bulletTab, color: col } })}
+                    className={`h-11 rounded-md grid place-items-center border ${on ? "border-slate-900 ring-2 ring-slate-900" : "border-slate-200"}`}
+                    style={{ background: col === "#ffffff" ? "#4b5563" : undefined }}>
+                    <KioskBullet design={bulletTab} color={col} size={24} />
+                  </button>
+                );
+              })}
             </div>
           </div>
           <p className="text-xs text-slate-500">Drag the box to move it and its corners to size it; the words line up inside the box as chosen above. Arrow keys nudge it.</p>

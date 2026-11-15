@@ -358,3 +358,13 @@ describe("a tap spot's price (owner, 2026-11-15)", () => {
     expect(spotPriceText("addon", 0)).toBe("Included");
   });
 });
+
+describe("text box bullets (owner, 2026-11-15)", () => {
+  const box = (bullet: unknown) => normalizeKioskLayout({ builder: "picture", menus: [{ id: "s", name: "S", kind: "picture", texts: [{ id: "t", text: { en: "a\nb" }, bullet }] }] }, "nail").menus[0].texts[0];
+  it("keeps a known design and colour, drops anything else", () => {
+    expect(box({ design: "heart", color: "#E84891" }).bullet).toEqual({ design: "heart", color: "#e84891" });
+    expect(box({ design: "skull", color: "#e84891" }).bullet).toBeUndefined();
+    expect(box({ design: "check", color: "pink" }).bullet).toBeUndefined();
+    expect(box(undefined).bullet).toBeUndefined();
+  });
+});

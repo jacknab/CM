@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import { KIOSK_PICTURE_FOOTER_PCT, KIOSK_SPOT_MIN, type KioskMenu, type KioskSpot, type KioskTextBox } from "@shared/kiosk/layout";
 import { kioskFontCss, loadKioskFonts } from "@/lib/kioskFonts";
+import { KioskBullet } from "./KioskBullet";
 
 export interface PictureColors { primary: string; bg: string; surface?: string; text?: string; muted?: string; border?: string;
   /** The dashed outline around a chosen tap spot on a screen with the footer (theme colour "selected"). */
@@ -211,7 +212,18 @@ export function KioskPictureScreen(p: {
                 pointerEvents: editor ? "auto" : "none", cursor: editor ? "move" : undefined,
                 outline: editor ? `2px ${active ? "solid" : "dashed"} ${active ? c.primary : "rgba(37,99,235,.7)"}` : "none", outlineOffset: 0,
               }}>
-              {words || (editor ? <span style={{ opacity: 0.5, fontSize: 14, fontFamily: "inherit" }}>Your text</span> : null)}
+              {words && t.bullet ? (
+                // A bullet in front of every line (empty lines stay empty, without one).
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.18em",
+                  alignItems: t.align === "left" ? "flex-start" : t.align === "right" ? "flex-end" : "center" }}>
+                  {words.split("\n").map((line, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.4em", minHeight: "1.15em" }}>
+                      {line.trim() && <KioskBullet design={t.bullet!.design} color={t.bullet!.color} size="0.95em" />}
+                      <span>{line}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : words || (editor ? <span style={{ opacity: 0.5, fontSize: 14, fontFamily: "inherit" }}>Your text</span> : null)}
               {active && (["nw", "ne", "sw", "se"] as const).map((corner) => (
                 <span key={corner} onPointerDown={(e) => startDrag(e, t, corner, "text")} data-testid={`text-handle-${corner}`}
                   style={{ position: "absolute", width: 14, height: 14, background: "#fff", border: `2px solid ${c.primary}`, borderRadius: 3,

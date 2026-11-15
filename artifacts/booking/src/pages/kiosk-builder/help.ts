@@ -168,7 +168,7 @@ export const KIOSK_HELP: HelpTopic[] = [
       { h: "Deleting" },
       { p: "Every screen in the left panel, every tap spot in the Tap spots list and every text in the Text list has a bin at the end of its row. A chosen tap spot or text also has Delete at the top of its card, or press Delete on the keyboard." },
       { h: "Your own text" },
-      { p: "Text tab › \"Add text\" puts a text box on the screen. Type the words, then choose the size, the font, Regular, Bold or Italic, the colour, and Left, Centre or Right to line the words up in the box. Drag the box to move it and its corners to size it. Text never stops a tap spot under it from working." },
+      { p: "Text tab › \"Add text\" puts a text box on the screen. Type the words, then choose the size, the font, Regular, Bold or Italic, the colour, and Left, Centre or Right to line the words up in the box. Bullets: pick a design tab (Check, Dot, Star, Heart, Diamond), then a colour; every line gets one. \"No bullets\" takes them off. Drag the box to move it and its corners to size it. Text never stops a tap spot under it from working." },
       { h: "3. The footer (optional)" },
       { p: "Turn on \"Show the kiosk footer\" to put the kiosk's own bar at the bottom: Back, what the client chose, the total and Continue. It covers the bottom strip of your picture (marked on the template), so keep tap spots out of it. With the footer on you don't need your own Back and Continue spots." },
       { h: "Where Continue goes" },
