@@ -71,7 +71,9 @@ interface ServiceItem        { id: number; optionId?: number; name: string; desc
 
 interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[];
   /** A Kiosk Extra (Kiosk Builder): only on the business's own screens, never in the add-ons step; pick-one within its group. */
-  kioskExtra?: boolean; kioskExtraGroup?: string | null; }
+  kioskExtra?: boolean; kioskExtraGroup?: string | null;
+  /** On a pick: the chosen service it was picked for (2026-11-15) — it goes under that service on the ticket. */
+  forServiceId?: number; }
 interface StaffItem          { id: number; name: string; role: string | null; color: string | null; avatarThumbUrl: string | null; }
 interface ClientInfo         { id: number; name: string; loyaltyPoints: number; totalVisits: number; }
 /** Smart Check-In — what this client's history suggests for today (server: lib/smartCheckin.ts). */
@@ -966,18 +968,24 @@ function KioskCheckInScreens() {
    * if it was on. A Kiosk Extra in a group (say "Nail shape") replaces the one already chosen from that group.
    */
   const chooseAddonOnScreen = (addonId: number, note: (text: string) => void) => {
-    const first = selectedServices[0];
-    if (!first) return note(t.chooseServiceFirst);
+    if (!selectedServices.length) return note(t.chooseServiceFirst);
     const addon = allAddons.find((x) => x.id === addonId);
     if (!addon) return;
-    if (addon.serviceIds.length && !addon.serviceIds.includes(first.id)) return note(t.addonNotForService);
+    // For the service the client is on now: the latest one chosen that this add-on goes with (a pedicure's add-on
+    // after Manicure + Pedicure is the pedicure's).
+    const forService = [...selectedServices].reverse().find((sv) => !addon.serviceIds.length || addon.serviceIds.includes(sv.id));
+    if (!forService) return note(t.addonNotForService);
     setSelectedAddons((cur) => {
-      if (cur.some((x) => x.id === addon.id)) return cur.filter((x) => x.id !== addon.id);
+      if (cur.some((x) => x.id === addon.id && x.forServiceId === forService.id)) return cur.filter((x) => !(x.id === addon.id && x.forServiceId === forService.id));
+      // One of a Kiosk Extras group per service ("Nail shape"): another replaces it.
       const group = addon.kioskExtra ? (addon.kioskExtraGroup ?? "").trim().toLowerCase() : "";
-      const kept = group ? cur.filter((x) => !(x.kioskExtra && (x.kioskExtraGroup ?? "").trim().toLowerCase() === group)) : cur;
-      return [...kept, addon];
+      const kept = group ? cur.filter((x) => !(x.kioskExtra && x.forServiceId === forService.id && (x.kioskExtraGroup ?? "").trim().toLowerCase() === group)) : cur;
+      return [...kept, { ...addon, forServiceId: forService.id }];
     });
   };
+  /** The add-ons still wanted after the chosen services change: those picked for a service that is still chosen. */
+  const addonsStillChosen = (cur: AddonItem[], services: ServiceItem[], firstBefore: number | undefined) =>
+    cur.filter((x) => (x.forServiceId != null ? services.some((sv) => sv.id === x.forServiceId) : services[0]?.id === firstBefore));
   /**
    * Continue from one of the business's own screens: a service must be chosen, and every "must choose one" Kiosk
    * Extras group this screen shows (layout.requiredGroups) needs its pick. Otherwise the screen says what's missing.
@@ -1033,24 +1041,24 @@ function KioskCheckInScreens() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingNext, selectedServices, selectedAddons]);
   /**
-   * Continue on a picture screen (owner, 2026-11-13: part of the logic, not a setting). Where the screen's own links
-   * lead: (1) the "Then go to…" of what the client chose here, (2) else a screen any tap spot here leads to, (3) else
-   * the next screen of the same workflow in the builder's list that the client hasn't been on (not one only opened
-   * from a tap spot, like a category's own page), (4) after the workflow's last one, the kiosk's next step.
+   * Continue on a picture screen (owner, 2026-11-13: part of the logic, not a setting). (1) The "Then go to…" of what
+   * the client chose here — the latest choice first, skipping screens they've already been on (a first screen links
+   * into several workflows: Pedicure's pick must not lead into Manicure); (2) else the next screen of the same
+   * workflow in the builder's list that they haven't been on (not one only opened from a tap spot, like a category's
+   * own page); (3) after the workflow's last one, the kiosk's next step.
    */
   const continueFromPicture = (m: KioskMenu, note: (text: string) => void) => {
-    const chosen = (sp: KioskMenu["spots"][number]) =>
-      (sp.action.kind === "service" && selectedServices.some((x) => x.id === (sp.action as { serviceId: number }).serviceId))
-      || (sp.action.kind === "addon" && selectedAddons.some((x) => x.id === (sp.action as { addonId: number }).addonId));
-    const exists = (id: string) => id !== m.id && layout.menus.some((x) => x.id === id);
-    const fromChoice = m.spots.find((sp) => sp.next && chosen(sp) && (sp.next.kind !== "menu" || exists(sp.next.menuId)))?.next;
+    const seen = new Set([...menuStack, layout.startMenuId ?? "", m.id]);
+    const open = (id: string) => !seen.has(id) && layout.menus.some((x) => x.id === id);
+    // Latest choice first: services in the order picked (newest last), then add-ons in the order picked.
+    const order: Array<KioskMenu["spots"][number]> = [];
+    for (const ad of [...selectedAddons].reverse()) order.push(...m.spots.filter((sp) => sp.action.kind === "addon" && sp.action.addonId === ad.id));
+    for (const sv of [...selectedServices].reverse()) order.push(...m.spots.filter((sp) => sp.action.kind === "service" && sp.action.serviceId === sv.id));
+    const fromChoice = order.find((sp) => sp.next && (sp.next.kind !== "menu" || open(sp.next.menuId)))?.next;
     if (fromChoice) return continueFromScreen(m, note, fromChoice.kind === "menu" ? { menuId: fromChoice.menuId } : fromChoice.kind === "continue" ? "next" : fromChoice.kind);
-    const linked = m.spots.find((sp) => sp.next?.kind === "menu" && exists(sp.next.menuId))?.next;
-    if (linked?.kind === "menu") return continueFromScreen(m, note, { menuId: linked.menuId });
     const branches = new Set(layout.menus.flatMap((x) => x.spots.flatMap((sp) => (sp.action.kind === "menu" ? [sp.action.menuId] : []))));
-    const seen = new Set([...menuStack, layout.startMenuId ?? ""]);
     const after = layout.menus.slice(layout.menus.findIndex((x) => x.id === m.id) + 1)
-      .find((x) => x.workflowId === m.workflowId && !seen.has(x.id) && !branches.has(x.id));
+      .find((x) => x.workflowId === m.workflowId && open(x.id) && !branches.has(x.id));
     return continueFromScreen(m, note, after ? { menuId: after.id } : "next");
   };
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
@@ -1318,7 +1326,7 @@ body *{cursor:default}`;
     }
     setSvcLimitNote(false);
     setSel(next);
-    if (next[0]?.id !== current[0]?.id) setSelectedAddons([]);
+    setSelectedAddons((cur) => addonsStillChosen(cur, next, current[0]?.id));
     kick();
   };
 
@@ -2379,7 +2387,7 @@ body *{cursor:default}`;
         if (items && !selectedServices.some((x) => x.id === svc.id)) {
           const kept = selectedServices.filter((x) => !items.services.has(x.id));
           const next = [...kept, svc].slice(-Math.max(1, layout.services.maxServices));
-          if (next[0]?.id !== selectedServices[0]?.id) setSelectedAddons([]);
+          setSelectedAddons((cur) => addonsStillChosen(cur, next, selectedServices[0]?.id));
           setSvcLimitNote(false);
           return setSel(next);
         }
@@ -3143,7 +3151,7 @@ body *{cursor:default}`;
   if (screen === "addons") {
     const selSvc = selectedServices[0];
     const toggleAddon = (a: AddonItem) => {
-      setSelectedAddons(p => p.find(x => x.id === a.id) ? p.filter(x => x.id !== a.id) : [...p, a]);
+      setSelectedAddons(p => p.find(x => x.id === a.id) ? p.filter(x => x.id !== a.id) : [...p, { ...a, forServiceId: selSvc?.id }]);
       kick();
     };
     const proceedFromAddons = () => advance("addons");

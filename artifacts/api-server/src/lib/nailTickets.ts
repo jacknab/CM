@@ -734,7 +734,7 @@ export async function removeServiceLine(storeId: number, appointmentId: number, 
  */
 export async function createNailTicketGroup(
   deps: TicketDeps,
-  input: CreateTicketInput & { extraServiceIds: number[] },
+  input: CreateTicketInput & { extraServiceIds: number[]; extraAddonIds?: Record<number, number[]> },
 ): Promise<TicketResult<CreatedTicketGroup>> {
   let base: CreateTicketInput = input;
   let packageName: string | null = null;
@@ -789,12 +789,19 @@ export async function createNailTicketGroup(
         if (!(await appendServiceLine(input.storeId, made.data.appointmentId, line))) {
           return { ok: false as const, status: 409, message: `Ticket #${made.data.ticketNumber} was saved, but ${line.label} could not be added to it.` };
         }
+        // Its own add-ons (a kiosk check-in says which service each is for) go under it, as at the desk.
+        const own = input.extraAddonIds?.[id] ?? [];
+        if (own.length) {
+          const at = sanitizeCustomLines((await pool.query(`SELECT custom_lines FROM appointments WHERE id = $1`, [made.data.appointmentId])).rows[0]?.custom_lines, true).length - 1;
+          for (const addonId of own) await addAddonToTicket(input.storeId, made.data.appointmentId, addonId, at);
+        }
         names.push(line.label);
         continue;
       }
       // Someone else does this service: its own ticket, linked to the visit, waiting for the first one to be done.
       const own = await createNailTicketLocked(deps, {
         storeId: input.storeId, clientId: input.clientId, serviceId: id, bookedByUserId: input.bookedByUserId ?? null,
+        addonIds: input.extraAddonIds?.[id] ?? [],
         startOnAssign: false, idempotencyKey: null, leaveUnassigned: true, visitTicketNumber: made.data.ticketNumber,
       });
       if (!own.ok) return { ok: false as const, status: own.status, message: `Ticket #${made.data.ticketNumber} was saved, but ${line.label} could not be given its own ticket: ${own.message}` };
@@ -2002,7 +2009,7 @@ export async function ensureOwnerStaff(storeId: number): Promise<void> {
        FROM (SELECT st.id FROM locations l JOIN users u ON u.id = l.user_id
                JOIN staff st ON st.store_id = l.id AND COALESCE(st.status, 'active') NOT IN ('removed', 'deactivated')
               WHERE l.id = $1 AND NOT ${hasOwner}
-                AND (lower(trim(st.name)) = 'owner' OR lower(trim(st.name)) = lower(trim(CONCAT_WS(' ', u.first_name, u.last_name))))
+                AND (lower(trim(st.name)) = 'owner' OR lower(trim(st.name)) IN (lower(trim(CONCAT_WS(' ', u.first_name, u.last_name))), lower(trim(u.first_name))))
               ORDER BY st.id LIMIT 1) pick
       WHERE s.id = pick.id`,
     [storeId],

@@ -26451,6 +26451,10 @@ or
       const selectedServices: any[] = verified.services;
       const selectedAddons: any[] = verified.addons;
       const primaryServiceId = selectedServices[0].id;
+      // Each add-on goes under the service it was picked for (2026-11-15); without one, under the first service.
+      const extraServiceIdList: number[] = [...new Set<number>(selectedServices.slice(1).map((sv: any) => Number(sv.id)))]
+        .filter((id) => Number.isInteger(id) && id > 0 && id !== Number(primaryServiceId));
+      const addonsFor = (serviceId: number): any[] => selectedAddons.filter((a: any) => (extraServiceIdList.includes(Number(a.forServiceId)) ? Number(a.forServiceId) : Number(primaryServiceId)) === serviceId);
       // A client checks in for at most two services, two and a half hours in all. Longer visits are made at the desk.
       {
         const visitMinutes = selectedServices.reduce((sum: number, sv: any) => sum + (Number(sv.duration) || 30), 0)
@@ -26579,7 +26583,7 @@ or
           storeId: store.id,
           clientId: safeClientId!,
           serviceId: primaryServiceId,
-          addonIds: selectedAddons.map((a: any) => Number(a.id)),
+          addonIds: addonsFor(Number(primaryServiceId)).map((a: any) => Number(a.id)),
           nail: nailSizeId || nailShapeId || nailArtEffectId ? { nailSizeId, nailShapeId, nailArtEffectId } : null,
           // A barbershop's service starts with the hand-over, as on /barber; a nail salon's waits for START.
           startOnAssign: isBarbershop,
@@ -26594,9 +26598,10 @@ or
         }
       }
         // same technician takes both when one can, otherwise the second goes to whoever is next for it.
-        const extraServiceIds: number[] = selectedServices.slice(1).map((sv: any) => Number(sv.id)).filter((id: number) => Number.isInteger(id) && id > 0 && id !== Number(primaryServiceId));
+        const extraServiceIds: number[] = extraServiceIdList;
+        const extraAddonIds: Record<number, number[]> = Object.fromEntries(extraServiceIds.map((id) => [id, addonsFor(id).map((a: any) => Number(a.id))]));
         const makeTicket = (how: { staffId: number } | { autoAssign: true }) => extraServiceIds.length > 0
-          ? nailTickets.createNailTicketGroup(nailDeps, { ...ticketInput, ...how, extraServiceIds })
+          ? nailTickets.createNailTicketGroup(nailDeps, { ...ticketInput, ...how, extraServiceIds, extraAddonIds })
           : nailTickets.createNailTicket(nailDeps, { ...ticketInput, ...how });
         let made = wanted ? await makeTicket({ staffId: wanted }) : await makeTicket({ autoAssign: true });
         // The technician they asked for can't take it (left, or doesn't do this service): the line decides instead.
@@ -26740,11 +26745,16 @@ or
               return null;
             }
 
+            // The first service (with its add-ons) now; each further service is its own appointment right after it,
+            // with the same staff member, so checkout charges every service, add-on and Kiosk Extra (2026-11-15).
+            const minutesOf = (serviceId: number) =>
+              (Number(selectedServices.find((sv: any) => Number(sv.id) === serviceId)?.duration) || 30)
+              + addonsFor(serviceId).reduce((sum: number, a: any) => sum + (Number(a.duration) || 0), 0);
             const createResult = await atomicCreateBooking({
               storeId: store.id,
               timezone: storeTz,
               startTime: now,
-              durationMinutes: totalDuration,
+              durationMinutes: extraServiceIdList.length ? minutesOf(Number(primaryServiceId)) : totalDuration,
               staffId: assignedStaffId!,
               serviceId: primaryServiceId,
               customerId: safeClientId,
@@ -26759,12 +26769,33 @@ or
               rejection = { status: 409, body: { error: createResult.error.message } };
               return null;
             }
+            const firstAddons = addonsFor(Number(primaryServiceId));
+            if (firstAddons.length) await tx.insert(appointmentAddons).values(firstAddons.map((a: any) => ({ appointmentId: createResult.data.id, addonId: Number(a.id) })));
+            let at = now.getTime() + minutesOf(Number(primaryServiceId)) * 60_000;
+            const group: number[] = [createResult.data.id];
+            for (const serviceId of extraServiceIdList) {
+              const more = await atomicCreateBooking({
+                storeId: store.id, timezone: storeTz, startTime: new Date(at), durationMinutes: minutesOf(serviceId),
+                staffId: assignedStaffId!, serviceId, customerId: safeClientId, status: "confirmed", checkedInAt: now,
+                clientRequestedStaff: clientRequestedStaffBool, resourceId: assignedResourceId,
+              }, tx);
+              if (!more.ok) throw new Error(`kiosk-extra-service:${more.error.message}`);
+              const own = addonsFor(serviceId);
+              if (own.length) await tx.insert(appointmentAddons).values(own.map((a: any) => ({ appointmentId: more.data.id, addonId: Number(a.id) })));
+              group.push(more.data.id);
+              at += minutesOf(serviceId) * 60_000;
+            }
+            if (group.length > 1) await tx.execute(sql`UPDATE appointments SET ticket_group_id = ${group[0]} WHERE store_id = ${store.id} AND id = ANY(${`{${group.join(",")}}`}::int[])`);
             return createResult.data;
           });
           appointmentId = created?.id ?? null;
           ticketNumber = created?.ticketNumber ?? null;
         } catch (apptErr: any) {
           console.warn("[kiosk/checkin] appt creation failed:", apptErr?.message);
+          // A further service that doesn't fit right after the first: nothing is saved, the client asks at the desk.
+          if (String(apptErr?.message ?? "").startsWith("kiosk-extra-service:")) {
+            return res.status(409).json({ error: "Your second service can't be fitted in right now. Please ask the front desk." });
+          }
           return res.status(500).json({ error: "Could not create check-in appointment" });
         }
         if (rejection) {

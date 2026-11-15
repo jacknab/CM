@@ -86,7 +86,9 @@ export async function kioskGate(req: Request, res: Response, store: StoreRow): P
 
 // ── What is being booked comes from the catalog, never from the browser ───────
 
-type Picked = { id: number; name: string; price: number; duration: number; category?: string | null; optionId?: number };
+type Picked = { id: number; name: string; price: number; duration: number; category?: string | null; optionId?: number;
+  /** An add-on: the chosen service it was picked for (2026-11-15), so it goes under that service on the ticket. */
+  forServiceId?: number };
 
 /**
  * Rebuilds the kiosk's service and add-on choices from this salon's own catalog: ids must belong to
@@ -133,9 +135,11 @@ export async function verifyKioskSelection(
     )).rows;
     if (rows.length !== new Set(addonIds).size) return { ok: false, error: "An add-on is no longer available. Please choose again." };
     const byId = new Map(rows.map((r: any) => [r.id, r]));
-    addons = addonIds.map((id) => {
+    const chosen = new Set(services.map((sv) => sv.id));
+    addons = addonIds.map((id, i) => {
       const a: any = byId.get(id);
-      return { id, name: a.name, price: Number(a.price), duration: Number(a.duration) };
+      const forId = Number((rawAddons[i] as any)?.forServiceId);
+      return { id, name: a.name, price: Number(a.price), duration: Number(a.duration), ...(chosen.has(forId) ? { forServiceId: forId } : {}) };
     });
   }
   return { ok: true, services, addons };
