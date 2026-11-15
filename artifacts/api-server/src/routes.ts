@@ -199,6 +199,7 @@ import { applyLoyaltyDelta, awardLoyaltyForCompletion, redeemLoyaltyReward } fro
 import { setupAiReceptionistRoutes } from "./routes/aiReceptionist";
 import { setupSupportAgentRoutes } from "./routes/supportAgent";
 import { setupSalesAgentRoutes } from "./routes/salesAgent";
+import { setupKevinRoutes } from "./routes/kevinAgent";
 import validateRouter from "./routes/validate";
 import onboardingRouter from "./routes/onboarding";
 import usageRouter from "./routes/usage";
@@ -1534,6 +1535,8 @@ export async function registerRoutes(
   setupSupportAgentRoutes(httpServer, app);
   // Tom, the inbound sales phone agent on (888) 814-7623 (owner, 2026-10-31).
   setupSalesAgentRoutes(httpServer, app);
+  // Kevin, the property management receptionist (routes/kevinAgent.ts; owner, 2026-11-15).
+  setupKevinRoutes(httpServer, app);
   setupAiReceptionistRoutes(httpServer, app);
   app.use(validateRouter);
   app.use(onboardingRouter);
