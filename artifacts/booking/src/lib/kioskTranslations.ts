@@ -149,6 +149,11 @@ export interface KioskStrings {
   orderTotal: string;
   removeItem: string;
   orderFor: (name: string) => string;
+  searchServices: string;
+  searchResults: (q: string) => string;
+  noResults: string;
+  keyDone: string;
+  keySpace: string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -301,6 +306,11 @@ const en: KioskStrings = {
   orderTotal: "Total",
   removeItem: "Remove",
   orderFor: (n: string) => `Check-in for ${n}`,
+  searchServices: "Search Services",
+  searchResults: (q: string) => `“${q}”`,
+  noResults: "No services match that.",
+  keyDone: "Done",
+  keySpace: "Space",
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -445,6 +455,11 @@ const es: KioskStrings = {
   orderTotal: "Total",
   removeItem: "Quitar",
   orderFor: (n: string) => `Registro de ${n}`,
+  searchServices: "Buscar servicios",
+  searchResults: (q: string) => `“${q}”`,
+  noResults: "Ningún servicio coincide.",
+  keyDone: "Listo",
+  keySpace: "Espacio",
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -589,6 +604,11 @@ const vi: KioskStrings = {
   orderTotal: "Tổng",
   removeItem: "Bỏ",
   orderFor: (n: string) => `Đăng ký cho ${n}`,
+  searchServices: "Tìm dịch vụ",
+  searchResults: (q: string) => `“${q}”`,
+  noResults: "Không có dịch vụ phù hợp.",
+  keyDone: "Xong",
+  keySpace: "Dấu cách",
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -733,6 +753,11 @@ const zh: KioskStrings = {
   orderTotal: "合计",
   removeItem: "移除",
   orderFor: (n: string) => `${n} 的签到`,
+  searchServices: "搜索服务",
+  searchResults: (q: string) => `“${q}”`,
+  noResults: "没有符合的服务。",
+  keyDone: "完成",
+  keySpace: "空格",
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -877,6 +902,11 @@ const ko: KioskStrings = {
   orderTotal: "합계",
   removeItem: "삭제",
   orderFor: (n: string) => `${n}님 체크인`,
+  searchServices: "서비스 검색",
+  searchResults: (q: string) => `“${q}”`,
+  noResults: "일치하는 서비스가 없습니다.",
+  keyDone: "완료",
+  keySpace: "스페이스",
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",

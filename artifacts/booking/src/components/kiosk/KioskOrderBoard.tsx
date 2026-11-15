@@ -1,32 +1,48 @@
 /**
  * The kiosk's order board (layout.servicesView "board", the Order Board theme; owner, 2026-11-15): one screen to
- * choose services. Category buttons top left, the chosen category's services below them, and the client's order on
- * the right — each line with a remove button, the total and Continue at the bottom. It takes the place of the
+ * choose services. Redesigned the same day after the owner's picture: the open category's picture and its name
+ * at the top (no greeting: owner, 2026-11-15) with Search Services on the right; a column of category tiles on the left (the open
+ * one dark with a gold edge); the category's services as photo cards (name, price, minutes). What the client has
+ * chosen sits in a bar along the bottom — each as a chip with ×, the total and Continue. It takes the place of the
  * category cards and the service list; the steps after it (questions, add-ons, staff, review) are the kiosk's own.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export interface BoardService { id: number; name: string; price: number; duration: number; imageUrl?: string | null }
 export interface BoardGroup { key: string; label: string; imageUrl?: string | null; svcs: BoardService[] }
 export interface BoardColors { primary: string; bg: string; surface: string; text: string; muted: string; border: string; selected: string; tint: string }
 export interface BoardOrderLine { key: string; name: string; price: number | null; imageUrl?: string | null; onRemove: () => void }
 
-const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
+const money = (n: number) => `$${n.toFixed(2)}`;
 
 /** A picture, else the first letter on a tint (the nail look has no emoji). */
-function Thumb({ url, name, size, colors, round }: { url?: string | null; name: string; size: number; colors: BoardColors; round?: boolean }) {
+function Thumb({ url, name, w, h, colors, radius = 16, letterSize }: { url?: string | null; name: string; w: number | string; h: number | string; colors: BoardColors; radius?: number | string; letterSize?: number }) {
   const [broken, setBroken] = useState(false);
-  const r = round ? "50%" : 16;
-  if (url && !broken) return <img src={url} alt="" draggable={false} onError={() => setBroken(true)} style={{ width: size, height: size, objectFit: "cover", borderRadius: r, flexShrink: 0 }} />;
+  if (url && !broken) return <img src={url} alt="" draggable={false} onError={() => setBroken(true)} style={{ width: w, height: h, objectFit: "cover", borderRadius: radius, display: "block", flexShrink: 0 }} />;
   return (
-    <div style={{ width: size, height: size, borderRadius: r, background: colors.tint, color: colors.primary, display: "grid", placeItems: "center", fontWeight: 800, fontSize: size * 0.42, flexShrink: 0 }}>
+    <div style={{ width: w, height: h, borderRadius: radius, background: colors.tint, color: colors.primary, display: "grid", placeItems: "center", fontWeight: 900, fontSize: letterSize ?? 40, flexShrink: 0 }}>
       {name.trim().charAt(0).toUpperCase()}
     </div>
   );
 }
 
+/** A clock, drawn so it takes the text colour. */
+const Clock = ({ size = 22 }: { size?: number }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden style={{ flexShrink: 0 }}>
+    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.2" />
+    <path d="M12 7v5.3l3.4 2" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+  </svg>
+);
+const Magnifier = ({ size = 26 }: { size?: number }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden>
+    <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2.4" />
+    <path d="M15.5 15.5L21 21" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
+
+const KEY_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+
 export function KioskOrderBoard(p: {
-  heading: string;
   groups: BoardGroup[];
   selectedIds: number[];
   onToggle: (svc: BoardService) => void;
@@ -34,7 +50,10 @@ export function KioskOrderBoard(p: {
   showPrice: boolean;
   showDuration: boolean;
   colors: BoardColors;
-  labels: { back: string; continue: string; myOrder: string; orderEmpty: string; total: string; remove: string; forClient: string };
+  labels: {
+    back: string; continue: string; myOrder: string; orderEmpty: string; total: string; remove: string; forClient: string;
+    search: string; results: (q: string) => string; noResults: string; done: string; space: string;
+  };
   onBack: () => void;
   onContinue: () => void;
   /** A message over the services ("You can choose up to 2 services"). */
@@ -46,106 +65,143 @@ export function KioskOrderBoard(p: {
   const [catKey, setCatKey] = useState<string>(() => p.groups.find((g) => g.svcs.some((s) => p.selectedIds.includes(s.id)))?.key ?? p.groups[0]?.key ?? "");
   useEffect(() => { if (!p.groups.some((g) => g.key === catKey) && p.groups[0]) setCatKey(p.groups[0].key); }, [p.groups, catKey]);
   const group = p.groups.find((g) => g.key === catKey) ?? p.groups[0];
+  // Search Services: typed on the kiosk's own keyboard, across every category.
+  const [query, setQuery] = useState("");
+  const [typing, setTyping] = useState(false);
+  const results = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    const seen = new Set<number>();
+    return p.groups.flatMap((g) => g.svcs).filter((s) => !seen.has(s.id) && (seen.add(s.id), s.name.toLowerCase().includes(q)));
+  }, [query, p.groups]);
+  const list = results ?? group?.svcs ?? [];
   const total = p.order.reduce((n, l) => n + (l.price ?? 0), 0);
-  const heading = p.serif ? "'Playfair Display', serif" : undefined;
+  // Titles in a heavy plain font (the owner's picture), not the site's own heading font; the nail look keeps its serif.
+  const heading = p.serif ? "'Playfair Display', serif" : "'DM Sans', 'Inter', sans-serif";
   const press = (fn: () => void) => ({ onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); fn(); } });
 
   return (
-    <div style={{ position: "fixed", inset: 0, display: "flex", background: c.bg, color: c.text, userSelect: "none" }} data-testid="kiosk-order-board">
-      {/* ── Left: categories, then the category's services ── */}
-      <div style={{ flex: "1 1 66%", minWidth: 0, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "28px 32px 12px", display: "flex", alignItems: "center", gap: 16 }}>
-          <button type="button" {...press(p.onBack)} data-testid="board-back"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 52, padding: "0 18px 0 12px", borderRadius: 999, border: 0, background: "transparent", color: c.text, fontSize: 22, fontWeight: 800 }}>
-            <span aria-hidden style={{ fontSize: 26, lineHeight: 1 }}>‹</span> {p.labels.back}
-          </button>
+    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: c.bg, color: c.text, userSelect: "none" }} data-testid="kiosk-order-board">
+      {/* ── Top: the category's picture, name and line; Search Services ── */}
+      <header style={{ display: "flex", alignItems: "center", gap: 20, padding: "28px 28px 22px" }}>
+        <button type="button" {...press(p.onBack)} data-testid="board-back" aria-label={p.labels.back}
+          style={{ width: 52, height: 52, borderRadius: 26, border: `2px solid ${c.border}`, background: c.surface, color: c.text, fontSize: 30, lineHeight: 1, display: "grid", placeItems: "center", flexShrink: 0 }}>‹</button>
+        {!results && group && <Thumb url={group.imageUrl} name={group.label} w={84} h={84} radius={42} colors={c} letterSize={36} />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h2 data-testid="board-title" style={{ margin: 0, fontSize: 52, fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.01em", fontFamily: heading }}>
+            {results ? p.labels.results(query.trim()) : group?.label}
+          </h2>
         </div>
-        <h2 data-kx-edit="text:whatBringsYouIn" style={{ margin: "0 32px 18px", fontSize: 30, fontWeight: 800, lineHeight: 1.2, fontFamily: heading }}>{p.heading}</h2>
+        <button type="button" {...press(() => setTyping(true))} data-testid="board-search"
+          style={{ flexShrink: 0, width: 340, height: 64, borderRadius: 32, border: `2.5px solid ${c.text}`, background: c.surface, color: query ? c.text : c.muted,
+            display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 18px 0 24px", fontSize: 21 }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{query || p.labels.search}</span>
+          <span style={{ color: c.text, display: "flex" }}><Magnifier /></span>
+        </button>
+      </header>
 
-        {/* Category buttons */}
-        <div data-kx-edit="category-cards" style={{ padding: "0 32px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 14 }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", gap: 20, padding: "0 28px" }}>
+        {/* ── Left: the category tiles ── */}
+        <nav data-kx-edit="category-cards" style={{ width: 172, flexShrink: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 16, padding: "6px 4px 16px" }}>
           {p.groups.map((g) => {
-            const on = g.key === group?.key;
+            const on = !results && g.key === group?.key;
             const count = g.svcs.filter((s) => p.selectedIds.includes(s.id)).length;
             return (
-              <button key={g.key} type="button" {...press(() => setCatKey(g.key))} data-testid={`board-cat-${g.key}`} aria-pressed={on}
-                style={{ position: "relative", minHeight: 128, borderRadius: 22, border: 0, padding: "14px 10px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10,
-                  background: on ? c.selected : c.surface, color: c.text, boxShadow: on ? "0 8px 22px rgba(0,0,0,.12)" : "0 2px 8px rgba(0,0,0,.05)", transition: "transform .1s" }}>
-                <Thumb url={g.imageUrl} name={g.label} size={58} colors={c} round />
-                <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2, textAlign: "center" }}>{g.label}</span>
+              <button key={g.key} type="button" {...press(() => { setQuery(""); setCatKey(g.key); })} data-testid={`board-cat-${g.key}`} aria-pressed={on}
+                style={{ position: "relative", minHeight: 142, borderRadius: 22, padding: "16px 10px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10,
+                  background: on ? c.text : c.surface, color: on ? c.surface : c.text, border: `4px solid ${on ? c.selected : "transparent"}`,
+                  boxShadow: on ? `0 10px 24px ${c.text}33` : "0 4px 14px rgba(15,23,42,.10)" }}>
+                <Thumb url={g.imageUrl} name={g.label} w={64} h={64} radius={18} colors={c} letterSize={30} />
+                <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1.15, textAlign: "center" }}>{g.label}</span>
                 {count > 0 && (
-                  <span style={{ position: "absolute", top: 10, right: 12, minWidth: 26, height: 26, borderRadius: 13, background: c.primary, color: "#fff", fontSize: 14, fontWeight: 800, display: "grid", placeItems: "center", padding: "0 7px" }}>{count}</span>
+                  <span style={{ position: "absolute", top: 8, right: 8, minWidth: 28, height: 28, borderRadius: 14, background: c.primary, color: "#fff", fontSize: 15, fontWeight: 800, display: "grid", placeItems: "center", padding: "0 8px" }}>{count}</span>
                 )}
               </button>
             );
           })}
-        </div>
+        </nav>
 
-        {/* The category's services */}
-        {group && (
-          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", paddingTop: 26 }}>
-            <h3 style={{ margin: "0 32px 16px", fontSize: 40, fontWeight: 900, lineHeight: 1.1, fontFamily: heading }}>{group.label}</h3>
-            <div data-kx-edit="service-cards" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 32px 32px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16, alignContent: "start" }}>
-              {group.svcs.map((s) => {
-                const on = p.selectedIds.includes(s.id);
-                return (
-                  <button key={s.id} type="button" {...press(() => p.onToggle(s))} data-testid={`board-svc-${s.id}`} aria-pressed={on}
-                    style={{ position: "relative", borderRadius: 20, padding: "16px 12px 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center",
-                      background: c.surface, color: c.text, border: `3px solid ${on ? c.primary : "transparent"}`, boxShadow: on ? `0 0 0 4px ${c.primary}22` : "0 2px 8px rgba(0,0,0,.05)" }}>
-                    <Thumb url={s.imageUrl} name={s.name} size={96} colors={c} />
-                    <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{s.name}</span>
-                    {(p.showPrice || p.showDuration) && (
-                      <span style={{ fontSize: 15, color: c.muted }}>
-                        {p.showPrice ? money(s.price) : ""}{p.showPrice && p.showDuration ? " · " : ""}{p.showDuration ? `${s.duration} min` : ""}
-                      </span>
-                    )}
-                    {on && <span aria-hidden style={{ position: "absolute", top: 8, right: 8, width: 30, height: 30, borderRadius: 15, background: c.primary, color: "#fff", display: "grid", placeItems: "center", fontWeight: 900 }}>✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {p.note && (
-          <div role="status" style={{ margin: "0 32px 20px", padding: "12px 16px", borderRadius: 14, background: "rgba(15,23,42,.88)", color: "#fff", fontWeight: 700, fontSize: 16, textAlign: "center" }}>{p.note}</div>
-        )}
+        {/* ── The services ── */}
+        <div data-kx-edit="service-cards" style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "6px 4px 24px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 18, alignContent: "start" }}>
+          {results && results.length === 0 && <p style={{ gridColumn: "1 / -1", fontSize: 22, color: c.muted, padding: "24px 4px" }}>{p.labels.noResults}</p>}
+          {list.map((s) => {
+            const on = p.selectedIds.includes(s.id);
+            return (
+              <button key={s.id} type="button" {...press(() => p.onToggle(s))} data-testid={`board-svc-${s.id}`} aria-pressed={on}
+                style={{ position: "relative", borderRadius: 24, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", textAlign: "left",
+                  background: c.surface, color: c.text, border: `4px solid ${on ? c.primary : "transparent"}`,
+                  boxShadow: on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
+                <Thumb url={s.imageUrl} name={s.name} w="100%" h={210} radius={0} colors={c} letterSize={72} />
+                <div style={{ padding: "14px 16px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  <span data-testid="board-svc-name" style={{ fontSize: 24, fontWeight: 800, lineHeight: 1.15 }}>{s.name}</span>
+                  {p.showPrice && <span style={{ fontSize: 30, fontWeight: 900, lineHeight: 1 }}>{money(s.price)}</span>}
+                  {p.showDuration && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 21, color: c.text }}><Clock /> {s.duration} min</span>
+                  )}
+                </div>
+                {on && <span aria-hidden style={{ position: "absolute", top: 12, right: 12, width: 40, height: 40, borderRadius: 20, background: c.primary, color: "#fff", display: "grid", placeItems: "center", fontWeight: 900, fontSize: 22, border: "3px solid #fff" }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── Right: the order ── */}
-      <aside data-testid="board-order" style={{ flex: "0 0 34%", minWidth: 0, background: c.surface, borderLeft: `1px solid ${c.border}`, display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "96px 24px 16px" }}>
-          <h3 style={{ margin: 0, fontSize: 32, fontWeight: 900, lineHeight: 1.1, fontFamily: heading }}>{p.labels.myOrder}</h3>
-          <p style={{ margin: "6px 0 0", fontSize: 16, color: c.muted }}>{p.labels.forClient}</p>
+      {p.note && (
+        <div role="status" style={{ margin: "0 28px 12px", padding: "14px 18px", borderRadius: 16, background: "rgba(15,23,42,.88)", color: "#fff", fontWeight: 700, fontSize: 19, textAlign: "center" }}>{p.note}</div>
+      )}
+
+      {/* ── Bottom: the order ── */}
+      <footer data-testid="board-order" style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 16, padding: "16px 28px 22px", background: c.surface, borderTop: `1.5px solid ${c.border}`, boxShadow: "0 -6px 18px rgba(15,23,42,.06)" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: "0 0 8px", fontSize: 15, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: c.muted }}>{p.labels.myOrder} · {p.labels.forClient}</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {p.order.length === 0 ? <span style={{ fontSize: 18, color: c.muted }}>{p.labels.orderEmpty}</span> : p.order.map((l) => (
+              <span key={l.key} data-testid="board-order-line" style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 46, padding: "0 6px 0 16px", borderRadius: 23, background: c.bg, border: `1.5px solid ${c.border}`, fontSize: 18, fontWeight: 700 }}>
+                {l.name}{p.showPrice && l.price != null ? ` · ${money(l.price)}` : ""}
+                <button type="button" {...press(l.onRemove)} aria-label={`${p.labels.remove} ${l.name}`} data-testid="board-order-remove"
+                  style={{ width: 34, height: 34, borderRadius: 17, border: 0, background: c.border, color: c.text, fontSize: 20, fontWeight: 800, lineHeight: 1 }}>×</button>
+              </span>
+            ))}
+          </div>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "8px 18px" }}>
-          {p.order.length === 0 ? (
-            <p style={{ padding: "18px 6px", color: c.muted, fontSize: 16 }}>{p.labels.orderEmpty}</p>
-          ) : p.order.map((l) => (
-            <div key={l.key} data-testid="board-order-line" style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 6px", borderBottom: `1px solid ${c.border}` }}>
-              <Thumb url={l.imageUrl} name={l.name} size={52} colors={c} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ margin: 0, fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>{l.name}</p>
-                {p.showPrice && l.price != null && <p style={{ margin: "2px 0 0", fontSize: 15, color: c.muted }}>{money(l.price)}</p>}
-              </div>
-              <button type="button" {...press(l.onRemove)} aria-label={`${p.labels.remove} ${l.name}`} data-testid="board-order-remove"
-                style={{ width: 40, height: 40, borderRadius: 20, border: `2px solid ${c.border}`, background: c.bg, color: c.text, fontSize: 22, fontWeight: 700, lineHeight: 1, flexShrink: 0 }}>×</button>
+        {p.showPrice && (
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: c.muted }}>{p.labels.total}</p>
+            <p data-testid="board-total" style={{ margin: 0, fontSize: 34, fontWeight: 900, lineHeight: 1.1 }}>{money(total)}</p>
+          </div>
+        )}
+        <button type="button" {...press(() => { if (p.order.length) p.onContinue(); })} disabled={!p.order.length} data-testid="board-continue"
+          style={{ flexShrink: 0, height: 72, padding: "0 40px", borderRadius: 36, border: 0, fontSize: 24, fontWeight: 900,
+            background: p.order.length ? c.primary : c.border, color: p.order.length ? "#fff" : c.muted }}>
+          {p.labels.continue}
+        </button>
+      </footer>
+
+      {/* ── The kiosk's own keyboard for Search Services ── */}
+      {typing && (
+        <div data-testid="board-keyboard" style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: c.surface, borderTop: `2px solid ${c.border}`, boxShadow: "0 -12px 30px rgba(15,23,42,.18)", padding: "18px 20px 26px", zIndex: 5 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+            <div style={{ flex: 1, height: 60, borderRadius: 30, border: `2.5px solid ${c.text}`, display: "flex", alignItems: "center", gap: 12, padding: "0 22px", fontSize: 24 }}>
+              <Magnifier /> <span style={{ color: query ? c.text : c.muted }}>{query || p.labels.search}</span>
+            </div>
+            <button type="button" {...press(() => setTyping(false))} data-testid="board-keyboard-done"
+              style={{ height: 60, padding: "0 30px", borderRadius: 30, border: 0, background: c.primary, color: "#fff", fontSize: 22, fontWeight: 900 }}>{p.labels.done}</button>
+          </div>
+          {KEY_ROWS.map((row) => (
+            <div key={row} style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 8 }}>
+              {row.split("").map((k) => (
+                <button key={k} type="button" {...press(() => setQuery((q) => q + k.toLowerCase()))} data-testid={`board-key-${k}`}
+                  style={{ width: 88, height: 70, borderRadius: 14, border: `1.5px solid ${c.border}`, background: c.bg, color: c.text, fontSize: 28, fontWeight: 700 }}>{k}</button>
+              ))}
             </div>
           ))}
+          <div style={{ display: "flex", justifyContent: "center", gap: 8 }}>
+            <button type="button" {...press(() => setQuery((q) => q + " "))} style={{ width: 460, height: 70, borderRadius: 14, border: `1.5px solid ${c.border}`, background: c.bg, color: c.text, fontSize: 20, fontWeight: 700 }}>{p.labels.space}</button>
+            <button type="button" {...press(() => setQuery((q) => q.slice(0, -1)))} aria-label="Backspace" style={{ width: 140, height: 70, borderRadius: 14, border: `1.5px solid ${c.border}`, background: c.bg, color: c.text, fontSize: 28 }}>⌫</button>
+            <button type="button" {...press(() => setQuery(""))} style={{ width: 140, height: 70, borderRadius: 14, border: `1.5px solid ${c.border}`, background: c.bg, color: c.text, fontSize: 20, fontWeight: 700 }}>✕</button>
+          </div>
         </div>
-        <div style={{ padding: "16px 20px 28px", borderTop: `1px solid ${c.border}` }}>
-          {p.showPrice && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
-              <span style={{ fontSize: 18, color: c.muted, fontWeight: 700 }}>{p.labels.total}</span>
-              <span data-testid="board-total" style={{ fontSize: 30, fontWeight: 900 }}>{money(total)}</span>
-            </div>
-          )}
-          <button type="button" {...press(() => { if (p.order.length) p.onContinue(); })} disabled={!p.order.length} data-testid="board-continue"
-            style={{ width: "100%", height: 64, borderRadius: 18, border: 0, fontSize: 22, fontWeight: 900,
-              background: p.order.length ? c.primary : c.border, color: p.order.length ? "#fff" : c.muted }}>
-            {p.labels.continue}
-          </button>
-        </div>
-      </aside>
+      )}
     </div>
   );
 }

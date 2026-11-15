@@ -2250,7 +2250,6 @@ body *{cursor:default}`;
     const strip = (label: string) => label.replace(/^[←‹<]\s*/, "").replace(/\s*[→›>]$/, "");
     return (
       <KioskOrderBoard
-        heading={t.whatBringsYouIn(clientFirst)}
         groups={groups}
         selectedIds={selectedServices.map((sv) => sv.id)}
         onToggle={(b) => {
@@ -2270,7 +2269,8 @@ body *{cursor:default}`;
         ]}
         showPrice={showPrice} showDuration={showDuration}
         colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, selected: layout.theme.colors.selected ?? PRIMARY_S, tint: TINT }}
-        labels={{ back: strip(t.backBtn), continue: strip(t.continueBtn), myOrder: t.myOrder, orderEmpty: t.orderEmpty, total: t.orderTotal, remove: t.removeItem, forClient: t.orderFor(clientFirst) }}
+        labels={{ back: strip(t.backBtn), continue: strip(t.continueBtn), myOrder: t.myOrder, orderEmpty: t.orderEmpty, total: t.orderTotal, remove: t.removeItem, forClient: t.orderFor(clientFirst),
+          search: t.searchServices, results: t.searchResults, noResults: t.noResults, done: t.keyDone, space: t.keySpace }}
         onBack={() => { kick(); backToStart(); }}
         onContinue={() => { kick(); void afterServiceChosen(); }}
         note={svcLimitNote ? limitText : null}
