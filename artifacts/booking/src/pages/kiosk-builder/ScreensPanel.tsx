@@ -8,7 +8,7 @@
  * ("Screen 3") selected to type over. On picture screens Continue goes to the next screen of the same workflow.
  */
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, Plus, Trash2 } from "lucide-react";
 import { KIOSK_MENU_LIMITS, KIOSK_WORKFLOW_LIMITS, type KioskLayout, type KioskMenu } from "@shared/kiosk/layout";
 import "./screensPanel.css";
 
@@ -26,6 +26,8 @@ export function ScreensPanel(props: {
   onMove: (id: string, workflowId: string | null, beforeId: string | null) => void;
   /** A copy of the screen, into a workflow (dragged from the Screens column). */
   onCopy: (id: string, workflowId: string, beforeId: string | null) => void;
+  /** A copy of the screen with all its settings, right after it. */
+  onDuplicate: (id: string) => void;
   onNewWorkflow: () => string;
   onRenameWorkflow: (id: string, name: string) => void;
   onDeleteWorkflow: (id: string) => void;
@@ -127,6 +129,10 @@ export function ScreensPanel(props: {
               <option value="">Not in a workflow</option>
               {draft.workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
+            <button type="button" className="kx-dup" data-testid="screens-panel-duplicate" disabled={draft.menus.length >= KIOSK_MENU_LIMITS.menus}
+              onClick={() => props.onDuplicate(active.id)}>
+              <Copy size={15} /> Duplicate screen
+            </button>
             <button type="button" className="kx-danger" data-testid="screens-panel-delete"
               onClick={() => { if (window.confirm(`Delete "${active.name || "this screen"}"? Buttons and tap spots that open it are removed too.`)) props.onDelete(active.id); }}>
               <Trash2 size={15} /> Delete screen

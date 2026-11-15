@@ -28,7 +28,7 @@ import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kio
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
 import "@/pages/kiosk-builder/kxDark.css";
-import { ScreensEditor, nextScreenName, withCategoryScreens, withScreenCopied, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
+import { ScreensEditor, nextScreenName, withCategoryScreens, withScreenCopied, withScreenDuplicated, withNewScreen, withNewWorkflow, withoutScreen, withoutWorkflow, withScreenMoved, type CatalogAddon, type CatalogCategory, type CatalogService } from "@/pages/kiosk-builder/ScreensEditor";
 import { ExtrasPanel, useKioskExtras } from "@/pages/kiosk-builder/extras";
 import { HelpGuide } from "@/pages/kiosk-builder/HelpGuide";
 import type { HelpTopicId } from "@/pages/kiosk-builder/help";
@@ -523,6 +523,12 @@ export default function KioskBuilder() {
       onCopy={(sid, workflowId, beforeId) => {
         let made: string | null = null;
         update((d) => { const r = withScreenCopied(d, sid, workflowId, beforeId); made = r.id; return r.layout; });
+        if (made) openScreen(made);
+        else toast({ title: "No room for more screens", description: "Delete some screens first.", variant: "destructive" });
+      }}
+      onDuplicate={(sid) => {
+        let made: string | null = null;
+        update((d) => { const r = withScreenDuplicated(d, sid); made = r.id; return r.layout; });
         if (made) openScreen(made);
         else toast({ title: "No room for more screens", description: "Delete some screens first.", variant: "destructive" });
       }}

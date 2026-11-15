@@ -164,7 +164,7 @@ export function withScreenMoved(d: KioskLayout, id: string, workflowId: string |
  * A copy of a screen into a workflow (owner, 2026-11-15: dragged from the Screens column, the original stays): same
  * picture, buttons, tap spots, text and settings, with new ids so the two are edited apart. Returns the copy's id.
  */
-export function withScreenCopied(d: KioskLayout, id: string, workflowId: string, beforeId: string | null): { layout: KioskLayout; id: string | null } {
+export function withScreenCopied(d: KioskLayout, id: string, workflowId: string | null, beforeId: string | null): { layout: KioskLayout; id: string | null } {
   const m = d.menus.find((x) => x.id === id);
   if (!m || d.menus.length >= KIOSK_MENU_LIMITS.menus) return { layout: d, id: null };
   const copy: KioskMenu = {
@@ -174,6 +174,20 @@ export function withScreenCopied(d: KioskLayout, id: string, workflowId: string,
     texts: (m.texts ?? []).map((t) => ({ ...t, id: newId("text") })),
   };
   return { layout: { ...d, menus: placeInWorkflow(d.menus, copy, beforeId) }, id: copy.id };
+}
+
+/**
+ * Duplicates a screen (owner, 2026-11-15): a copy with all its settings, named "… copy", right after the original in
+ * the same workflow. Returns the copy's id (null: no room for more screens).
+ */
+export function withScreenDuplicated(d: KioskLayout, id: string): { layout: KioskLayout; id: string | null } {
+  const m = d.menus.find((x) => x.id === id);
+  if (!m) return { layout: d, id: null };
+  const same = d.menus.filter((x) => x.workflowId === m.workflowId);
+  const r = withScreenCopied(d, id, m.workflowId, same[same.indexOf(m) + 1]?.id ?? null);
+  if (!r.id) return r;
+  const name = `${m.name.trim() || "Screen"} copy`.slice(0, KIOSK_MENU_LIMITS.name);
+  return { layout: { ...r.layout, menus: r.layout.menus.map((x) => (x.id === r.id ? { ...x, name } : x)) }, id: r.id };
 }
 
 /** Adds a workflow (named "Workflow 2"… until the owner renames it). Returns its id. */
