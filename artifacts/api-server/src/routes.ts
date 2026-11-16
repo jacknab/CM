@@ -25782,6 +25782,8 @@ or
         // The Order Board's label on the photo (migration 0363).
         kioskBadge: services.kioskBadge,
         kioskBadgeColor: services.kioskBadgeColor,
+        // The Order Board's service screen: what the service includes (migration 0372).
+        kioskIncludes: services.kioskIncludes,
       }).from(services)
         .leftJoin(serviceIllustrationCategories, eq(services.illustrationCategoryId, serviceIllustrationCategories.id))
         .where(and(eq(services.storeId, store.id), eq(services.isActive, true), eq(services.hiddenFromPublic, false)))

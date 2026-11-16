@@ -377,6 +377,8 @@ export const services = pgTable("services", {
   /** A coloured label on the service's photo on the kiosk's Order Board, e.g. "Acrylic Full Set" (migration 0363). */
   kioskBadge: text("kiosk_badge"),
   kioskBadgeColor: text("kiosk_badge_color"),
+  /** What the service includes, one line per bullet, on the Order Board's service screen (migration 0372). */
+  kioskIncludes: text("kiosk_includes"),
 });
 
 export const serviceOptions = pgTable("service_options", {
@@ -1606,6 +1608,7 @@ export const insertServiceSchema = createInsertSchema(services).omit({ id: true 
   offeredAt: z.enum(["place", "client", "any"]).optional(),
   kioskBadge: z.string().trim().max(30).nullable().optional(),
   kioskBadgeColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  kioskIncludes: z.string().trim().max(1000).nullable().optional(),
 });
 export const insertServiceOptionSchema = createInsertSchema(serviceOptions).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAddonSchema = createInsertSchema(addons).omit({ id: true });

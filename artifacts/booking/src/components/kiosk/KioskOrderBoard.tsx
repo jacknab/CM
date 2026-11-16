@@ -5,12 +5,16 @@
  * one dark with a gold edge); the category's services as photo cards (name, price, minutes). What the client has
  * chosen sits in a bar along the bottom — each as a chip with ×, the total and Continue. It takes the place of the
  * category cards and the service list; the steps after it (questions, add-ons, staff, review) are the kiosk's own.
+ * Tapping a service opens its own screen (owner, 2026-11-16): the photo and name at the top, its short description in
+ * big letters, what it includes as bullet points, and Cancel / Add to Ticket at the bottom.
  */
 import { useEffect, useMemo, useState } from "react";
 
 export interface BoardService { id: number; name: string; price: number; duration: number; imageUrl?: string | null;
   /** The coloured label on the photo ("Acrylic Full Set"), set on the service in Catalog. */
-  badge?: { text: string; color: string } | null }
+  badge?: { text: string; color: string } | null;
+  /** The service screen: its short description and what it includes (Catalog › service). */
+  description?: string | null; includes?: string[] }
 export interface BoardGroup { key: string; label: string; imageUrl?: string | null; svcs: BoardService[];
   /** A line under the category's name, set on the category in Catalog › Categories. */
   description?: string | null;
@@ -74,6 +78,7 @@ export function KioskOrderBoard(p: {
   labels: {
     back: string; continue: string; myOrder: string; orderEmpty: string; total: string; remove: string; forClient: string;
     search: string; results: (q: string) => string; noResults: string; done: string; space: string;
+    cancel: string; addToTicket: string;
   };
   onBack: () => void;
   onContinue: () => void;
@@ -96,6 +101,8 @@ export function KioskOrderBoard(p: {
     return p.groups.flatMap((g) => g.svcs).filter((s) => !seen.has(s.id) && (seen.add(s.id), s.name.toLowerCase().includes(q)));
   }, [query, p.groups]);
   const list = results ?? group?.svcs ?? [];
+  // The service screen: a service not yet chosen opens it; a chosen one is taken off the order, as before.
+  const [detail, setDetail] = useState<BoardService | null>(null);
   // The cards fill the screen (owner, 2026-11-16): 2 across and 3 down, 3 across for more than 6; each a third of the
   // height, the photo taking what the words leave. More than 9 scroll.
   const cols = list.length > 6 ? 3 : 2;
@@ -159,7 +166,7 @@ export function KioskOrderBoard(p: {
           {list.map((s) => {
             const on = p.selectedIds.includes(s.id);
             return (
-              <button key={s.id} type="button" {...press(() => p.onToggle(s))} data-testid={`board-svc-${s.id}`} aria-pressed={on}
+              <button key={s.id} type="button" {...press(() => (on ? p.onToggle(s) : setDetail(s)))} data-testid={`board-svc-${s.id}`} aria-pressed={on}
                 style={{ position: "relative", borderRadius: u(24), padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", textAlign: "left",
                   background: c.surface, color: c.text, border: `4px solid ${on ? c.primary : "transparent"}`,
                   boxShadow: on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
@@ -215,6 +222,37 @@ export function KioskOrderBoard(p: {
           {p.labels.continue}
         </button>
       </footer>
+
+      {/* ── The service screen ── */}
+      {detail && (
+        <div data-testid="board-service-screen" style={{ position: "absolute", inset: 0, zIndex: 6, background: c.bg, display: "flex", flexDirection: "column" }}>
+          <div style={{ scrollbarWidth: "none", flex: 1, minHeight: u(0), overflowY: "auto", padding: `${u(56)} ${u(72)} ${u(24)}`, display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
+            <div style={{ width: u(720), maxWidth: "100%", borderRadius: u(32), overflow: "hidden", boxShadow: "0 14px 36px rgba(15,23,42,.16)", flexShrink: 0 }}>
+              <Thumb url={detail.imageUrl} name={detail.name} w="100%" h="auto" radius={0} colors={c} letterSize={u(120)} />
+            </div>
+            <h2 data-testid="board-service-name" style={{ margin: `${u(36)} 0 0`, fontSize: u(60), fontWeight: 900, lineHeight: 1.08, letterSpacing: "-0.01em", fontFamily: heading }}>{detail.name}</h2>
+            {detail.description && (
+              <p data-testid="board-service-description" style={{ margin: `${u(22)} 0 0`, maxWidth: u(880), fontSize: u(40), fontWeight: 700, lineHeight: 1.25 }}>{detail.description}</p>
+            )}
+            {!!detail.includes?.length && (
+              <ul data-testid="board-service-includes" style={{ listStyle: "none", margin: `${u(36)} 0 0`, padding: 0, display: "flex", flexDirection: "column", gap: u(16), textAlign: "left", alignSelf: "center", maxWidth: u(820) }}>
+                {detail.includes.map((line, i) => (
+                  <li key={i} style={{ display: "flex", alignItems: "baseline", gap: u(18), fontSize: u(32), lineHeight: 1.3 }}>
+                    <span aria-hidden style={{ width: u(14), height: u(14), borderRadius: "50%", background: c.primary, flexShrink: 0, transform: `translateY(-${u(4)})` }} />
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div style={{ flexShrink: 0, display: "flex", gap: u(24), padding: `${u(24)} ${u(72)} ${u(48)}` }}>
+            <button type="button" {...press(() => setDetail(null))} data-testid="board-service-cancel"
+              style={{ flex: 1, height: u(100), borderRadius: u(50), border: `3px solid ${c.text}`, background: c.surface, color: c.text, fontSize: u(32), fontWeight: 900 }}>{p.labels.cancel}</button>
+            <button type="button" {...press(() => { const s = detail; setDetail(null); p.onToggle(s); })} data-testid="board-service-add"
+              style={{ flex: 1, height: u(100), borderRadius: u(50), border: 0, background: c.primary, color: "#fff", fontSize: u(32), fontWeight: 900 }}>{p.labels.addToTicket}</button>
+          </div>
+        </div>
+      )}
 
       {/* ── The kiosk's own keyboard for Search Services ── */}
       {typing && (

@@ -85,6 +85,8 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
     // The kiosk's Order Board: a coloured label on the service's photo ("Acrylic Full Set").
     kioskBadge: z.string().trim().max(30).optional().nullable(),
     kioskBadgeColor: z.string().optional().nullable(),
+    // The Order Board's service screen: what the service includes, one line per bullet.
+    kioskIncludes: z.string().max(1000).optional().nullable(),
   });
 
   const { register, handleSubmit, formState: { errors }, setValue, watch, reset } = useForm<z.infer<typeof formSchema>>({
@@ -103,6 +105,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       offeredAt: initialData.offeredAt ?? "any",
       kioskBadge: initialData.kioskBadge || "",
       kioskBadgeColor: initialData.kioskBadgeColor || KIOSK_BADGE_COLORS[0].hex,
+      kioskIncludes: initialData.kioskIncludes || "",
     } : {
       depositRequired: false,
       depositAmount: null,
@@ -112,6 +115,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       offeredAt: "any",
       kioskBadge: "",
       kioskBadgeColor: KIOSK_BADGE_COLORS[0].hex,
+      kioskIncludes: "",
     }
   });
 
@@ -172,6 +176,7 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       offeredAt: initialData.offeredAt ?? "any",
         kioskBadge: initialData.kioskBadge || "",
         kioskBadgeColor: initialData.kioskBadgeColor || KIOSK_BADGE_COLORS[0].hex,
+        kioskIncludes: initialData.kioskIncludes || "",
       });
       if (initialData?.options && initialData.options.length > 0) {
         setOptions(initialData.options.map((o: any) => ({
@@ -335,6 +340,9 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
       longevity: typeof data.longevity === "string" && data.longevity.trim() ? data.longevity.trim() : null,
       kioskBadge: typeof data.kioskBadge === "string" && data.kioskBadge.trim() ? data.kioskBadge.trim() : null,
       kioskBadgeColor: typeof data.kioskBadge === "string" && data.kioskBadge.trim() ? (data.kioskBadgeColor || KIOSK_BADGE_COLORS[0].hex) : null,
+      // One line per bullet; blank lines dropped.
+      kioskIncludes: typeof data.kioskIncludes === "string" && data.kioskIncludes.trim()
+        ? data.kioskIncludes.split("\n").map((l) => l.trim()).filter(Boolean).join("\n") : null,
       illustrationCategoryId: initialData?.illustrationCategoryId ?? null,
       autoAssigned: false,
       categoryId,
@@ -489,6 +497,15 @@ export function ServiceForm({ onSuccess, categories, initialData, initialCategor
         </div>
         <p className="text-xs text-muted-foreground">
           A short coloured label on this service's photo on the kiosk's Order Board. Leave it empty for none.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="kioskIncludes">What's included (kiosk)</Label>
+        <Textarea id="kioskIncludes" {...register("kioskIncludes")} rows={4} maxLength={1000}
+          placeholder={"Nail shaping\nCuticle care\nHand massage\nPolish of your choice"} data-testid="input-service-kiosk-includes" />
+        <p className="text-xs text-muted-foreground">
+          One per line. Shown as bullet points when a client taps this service on the kiosk's Order Board.
         </p>
       </div>
 

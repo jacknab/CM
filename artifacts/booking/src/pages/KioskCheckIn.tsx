@@ -68,7 +68,8 @@ interface NailConfig {
 }
 
 interface ServiceOptionItem  { id: number; name: string; description?: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number; imageUrl?: string | null; }
-interface ServiceItem        { /** The Order Board's coloured label on the photo (Catalog › service). */ kioskBadge?: string | null; kioskBadgeColor?: string | null; id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
+interface ServiceItem        { /** The Order Board's coloured label on the photo (Catalog › service). */ kioskBadge?: string | null; kioskBadgeColor?: string | null;
+  /** The Order Board's service screen: what it includes, one per line (Catalog › service). */ kioskIncludes?: string | null; id: number; optionId?: number; name: string; description?: string | null; duration: number; longevity?: string | null; price: number; category: string; imageUrl?: string | null; optionCount?: number; }
 
 interface AddonItem          { id: number; name: string; description?: string | null; price: number; duration: number; imageUrl?: string | null; serviceIds: number[];
   /** A Kiosk Extra (Kiosk Builder): only on the business's own screens, never in the add-ons step; pick-one within its group. */
@@ -2250,7 +2251,8 @@ body *{cursor:default}`;
     const groups = categoryGroups().map((g) => ({ key: g.key, label: g.label, imageUrl: catImgs[g.label] ?? catImgs[g.key] ?? null, description: descs[g.label] ?? null,
       iconUrl: icons ? nailCategoryIconUrl(g.label) : null,
       svcs: g.svcs.map((sv) => ({ id: sv.id, name: sv.name, price: sv.price, duration: sv.duration, imageUrl: sv.imageUrl ?? null,
-        badge: sv.kioskBadge ? { text: sv.kioskBadge, color: sv.kioskBadgeColor || PRIMARY } : null })) }));
+        badge: sv.kioskBadge ? { text: sv.kioskBadge, color: sv.kioskBadgeColor || PRIMARY } : null,
+        description: sv.description ?? null, includes: (sv.kioskIncludes ?? "").split("\n").map((l) => l.trim()).filter(Boolean) })) }));
     const limitText = layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
       : t.servicesMax(layout.services.maxServices, String(Math.round(layout.services.maxVisitMinutes / 6) / 10));
     const strip = (label: string) => label.replace(/^[←‹<]\s*/, "").replace(/\s*[→›>]$/, "");
@@ -2276,7 +2278,8 @@ body *{cursor:default}`;
         showPrice={showPrice} showDuration={showDuration}
         colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, selected: layout.theme.colors.selected ?? PRIMARY_S, tint: TINT }}
         labels={{ back: strip(t.backBtn), continue: strip(t.continueBtn), myOrder: t.myOrder, orderEmpty: t.orderEmpty, total: t.orderTotal, remove: t.removeItem, forClient: t.orderFor(clientFirst),
-          search: t.searchServices, results: t.searchResults, noResults: t.noResults, done: t.keyDone, space: t.keySpace }}
+          search: t.searchServices, results: t.searchResults, noResults: t.noResults, done: t.keyDone, space: t.keySpace,
+          cancel: t.cancel, addToTicket: t.addToTicket }}
         onBack={() => { kick(); backToStart(); }}
         onContinue={() => { kick(); void afterServiceChosen(); }}
         note={svcLimitNote ? limitText : null}

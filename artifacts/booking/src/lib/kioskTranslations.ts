@@ -154,6 +154,8 @@ export interface KioskStrings {
   noResults: string;
   keyDone: string;
   keySpace: string;
+  /** The order board's service screen: its button (owner, 2026-11-16). */
+  addToTicket: string;
   pageOf: (cur: number, total: number) => string;
   previousBtn: string;
   seeMore: string;
@@ -311,6 +313,7 @@ const en: KioskStrings = {
   noResults: "No services match that.",
   keyDone: "Done",
   keySpace: "Space",
+  addToTicket: "Add to Ticket",
   pageOf: (c, t) => `Page ${c}/${t}`,
   previousBtn: "← Previous",
   seeMore: "See More  ›",
@@ -460,6 +463,7 @@ const es: KioskStrings = {
   noResults: "Ningún servicio coincide.",
   keyDone: "Listo",
   keySpace: "Espacio",
+  addToTicket: "Agregar al ticket",
   pageOf: (c, t) => `Página ${c}/${t}`,
   previousBtn: "← Anterior",
   seeMore: "Ver más  ›",
@@ -609,6 +613,7 @@ const vi: KioskStrings = {
   noResults: "Không có dịch vụ phù hợp.",
   keyDone: "Xong",
   keySpace: "Dấu cách",
+  addToTicket: "Thêm vào phiếu",
   pageOf: (c, t) => `Trang ${c}/${t}`,
   previousBtn: "← Trước",
   seeMore: "Xem thêm  ›",
@@ -758,6 +763,7 @@ const zh: KioskStrings = {
   noResults: "没有符合的服务。",
   keyDone: "完成",
   keySpace: "空格",
+  addToTicket: "加入订单",
   pageOf: (c, t) => `第 ${c}/${t} 页`,
   previousBtn: "← 上一页",
   seeMore: "查看更多  ›",
@@ -907,6 +913,7 @@ const ko: KioskStrings = {
   noResults: "일치하는 서비스가 없습니다.",
   keyDone: "완료",
   keySpace: "스페이스",
+  addToTicket: "티켓에 추가",
   pageOf: (c, t) => `${c}/${t} 페이지`,
   previousBtn: "← 이전",
   seeMore: "더 보기  ›",
