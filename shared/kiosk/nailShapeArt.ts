@@ -34,7 +34,7 @@ export const nailShapeArtUrl = (name: string): string | null => {
  * 512×768, all drawn to one scale on one baseline so the lengths compare. Shapes get a set as the pictures arrive.
  */
 export type NailLengthArtKey = "xxs" | "xs" | "s" | "m" | "l" | "xl";
-const LENGTH_SETS: NailShapeArtKey[] = ["coffin-ballerina", "almond", "stiletto", "square", "round", "oval-coffin", "oval"];
+const LENGTH_SETS: NailShapeArtKey[] = ["coffin-ballerina", "almond", "stiletto", "square", "round", "oval-coffin", "oval", "squoval"];
 /** Most specific first: "XXS" before "XS" before "S"; "XXL" has no picture. */
 const LENGTH_RULES: Array<[RegExp, NailLengthArtKey | null]> = [
   [/\bxxs\b|extra[\s-]*extra[\s-]*short/, "xxs"],
