@@ -110,21 +110,29 @@ export const addonsForService = <A extends AddonLike>(addons: A[], serviceId: nu
   addons.filter((a) => !a.kioskExtra && (a.serviceIds.length === 0 || a.serviceIds.includes(serviceId)));
 
 /**
- * The upgrade to offer: the owner's add-on for this kind of service, else Certxa's pick from the salon's add-ons
- * (one that costs something and isn't already chosen); null for none.
+ * The upgrade to offer: a returning client's usual add-on when this service takes it ("Add it again?", owner
+ * 2026-11-16), else the owner's add-on for this kind of service, else Certxa's pick from the salon's add-ons (one that
+ * costs something and isn't already chosen); null for none. The owner's "No offer" turns all of them off.
  */
-export function pickUpgrade<A extends AddonLike>(kind: ServiceKind, addons: A[], serviceId: number, settings: ServiceFlowSettings, chosenIds: number[]): { addon: A; pitch: string; family: UpgradeFamily } | null {
+export function pickUpgrade<A extends AddonLike>(kind: ServiceKind, addons: A[], serviceId: number, settings: ServiceFlowSettings, chosenIds: number[], usualIds: number[] = []): { addon: A; pitch: string; family: UpgradeFamily; usual: boolean } | null {
   const own = settings[kind];
   const pool = addons.filter((a) => !a.kioskExtra && !chosenIds.includes(a.id));
+  if (own?.upgradeAddonId === null) return null;
+  // Removals and gel polish have their own questions; they are never "the usual".
+  const usualFits = (a: A) => a.price > 0 && !GEL_REMOVAL.test(a.name) && !ENHANCEMENT_REMOVAL.test(a.name) && !GEL_POLISH.test(a.name);
+  const mineUsual = addonsForService(pool, serviceId).filter(usualFits);
+  for (const id of usualIds) {
+    const addon = mineUsual.find((a) => a.id === id);
+    if (addon) return { addon, pitch: "", family: upgradeFamily(addon.name), usual: true };
+  }
   if (own) {
-    if (own.upgradeAddonId == null) return null;
     const addon = pool.find((a) => a.id === own.upgradeAddonId);
-    return addon ? { addon, pitch: own.pitch, family: upgradeFamily(addon.name) } : null;
+    return addon ? { addon, pitch: own.pitch, family: upgradeFamily(addon.name), usual: false } : null;
   }
   const mine = addonsForService(pool, serviceId).filter((a) => a.price > 0);
   for (const family of DEFAULT_UPGRADES[kind]) {
     const addon = mine.find((a) => upgradeFamily(a.name) === family);
-    if (addon) return { addon, pitch: "", family };
+    if (addon) return { addon, pitch: "", family, usual: false };
   }
   return null;
 }

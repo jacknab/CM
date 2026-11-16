@@ -187,7 +187,23 @@ export async function smartCheckinFor(storeId: number, clientId: number, timezon
 }
 
 // ── What was offered, and what came of it ─────────────────────────────────────
-export interface OfferReport { kind: "service" | "addon"; itemId: number; accepted: boolean }
+/** The Order Board's upgrade offers over the last `days`: per add-on, how often offered and taken, and what it added. */
+export async function upgradeOfferReport(storeId: number, days: number) {
+  const { rows } = await pool.query(
+    `SELECT e.item_id AS "addonId", ad.name, ad.price::float AS price,
+            COUNT(*)::int AS offered, COUNT(*) FILTER (WHERE e.accepted)::int AS accepted
+       FROM kiosk_recommendation_events e
+       JOIN addons ad ON ad.id = e.item_id AND ad.store_id = $1
+      WHERE e.store_id = $1 AND e.kind = 'upgrade' AND e.created_at > NOW() - make_interval(days => $2)
+      GROUP BY e.item_id, ad.name, ad.price
+      ORDER BY offered DESC, ad.name`,
+    [storeId, days],
+  );
+  return rows.map((r: any) => ({ ...r, added: Math.round(r.accepted * r.price * 100) / 100 }));
+}
+
+/** "upgrade": the Order Board's upgrade offer (an add-on), measured in Kiosk Builder › Upgrade offers. */
+export interface OfferReport { kind: "service" | "addon" | "upgrade"; itemId: number; accepted: boolean }
 
 /** The offers made during one check-in, recorded against the ticket it produced (so paid tickets can be measured). */
 export async function recordOffers(storeId: number, clientId: number | null, appointmentId: number | null, raw: unknown): Promise<void> {
@@ -195,7 +211,7 @@ export async function recordOffers(storeId: number, clientId: number | null, app
   const offers: OfferReport[] = [];
   for (const o of raw.slice(0, 12) as any[]) {
     const itemId = Number(o?.itemId);
-    if ((o?.kind === "service" || o?.kind === "addon") && Number.isInteger(itemId)) offers.push({ kind: o.kind, itemId, accepted: o.accepted === true });
+    if ((o?.kind === "service" || o?.kind === "addon" || o?.kind === "upgrade") && Number.isInteger(itemId)) offers.push({ kind: o.kind, itemId, accepted: o.accepted === true });
   }
   for (const o of offers) {
     await pool.query(

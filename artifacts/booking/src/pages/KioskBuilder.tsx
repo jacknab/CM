@@ -187,6 +187,8 @@ export default function KioskBuilder() {
   // Own screens: editing the screen, or the live kiosk preview.
   const [screensView, setScreensView] = useState<"edit" | "preview">("edit");
   // The salon's catalog as its kiosk sees it, for the screen editor.
+  // Kiosk Builder › Upgrade offers: how each upgrade did over the last 30 days.
+  const [upgradeReport, setUpgradeReport] = useState<Array<{ addonId: number; name: string; offered: number; accepted: number; added: number }> | null>(null);
   const [catalog, setCatalog] = useState<{ services: CatalogService[]; categories: CatalogCategory[]; addons: CatalogAddon[]; storeName: string } | null>(null);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -218,6 +220,11 @@ export default function KioskBuilder() {
       .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }))
       .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
   }, [slug, editingOwn, catalog, toast, id, scr, draft?.servicesView]);
+  useEffect(() => {
+    if (!(scr === "services" && draft?.servicesView === "board") || upgradeReport) return;
+    api<{ rows: Array<{ addonId: number; name: string; offered: number; accepted: number; added: number }> }>("/api/kiosk-builder/upgrade-report")
+      .then((d) => setUpgradeReport(d.rows)).catch(() => setUpgradeReport([]));
+  }, [scr, draft?.servicesView, upgradeReport]);
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       const fd = new FormData();
@@ -800,6 +807,19 @@ export default function KioskBuilder() {
                       </div>
                     );
                   })}
+                  <div className="mt-3" data-testid="upgrade-report">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Last 30 days</p>
+                    {!upgradeReport ? <p className="text-sm text-slate-500">Loading…</p>
+                      : !upgradeReport.length ? <p className="text-sm text-slate-500">No upgrades offered yet.</p>
+                      : upgradeReport.map((r) => (
+                        <div key={r.addonId} className="flex items-baseline justify-between gap-3 py-1 text-sm">
+                          <span className="text-slate-800">{r.name}</span>
+                          <span className="text-slate-500 tabular-nums whitespace-nowrap">
+                            {r.accepted} of {r.offered} said yes ({Math.round((r.accepted / r.offered) * 100)}%) · +${r.added.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
                 </Field>
               )}
             </>),

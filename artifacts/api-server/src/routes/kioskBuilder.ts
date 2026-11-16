@@ -19,6 +19,7 @@
  *   GET    /api/kiosk-builder/extras        PATCH /api/kiosk-builder/extras/:id { name, price, duration, group }
  *   POST   /api/kiosk-builder/extras        DELETE /api/kiosk-builder/extras/:id
  *   POST /api/kiosk-builder/image                    upload a picture: welcome screen, a screen button (multipart "image") → { url }
+ *   GET  /api/kiosk-builder/upgrade-report           the Order Board's upgrade offers, last 30 days: offered, taken, added
  *
  * Needs the store-settings permission (owners and managers by default). The kiosk itself reads the published
  * layout from /api/public/kiosk/:slug/config.
@@ -32,6 +33,7 @@ import { resolveSessionStoreId } from "../lib/sessionStore";
 import { memoryUpload, uploadToR2 } from "../lib/r2";
 import { businessTypeOf, BUSINESS_TYPES, isBusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { validateKioskLayout } from "@shared/kiosk/layout";
+import { upgradeOfferReport } from "../lib/smartCheckin";
 import { KIOSK_PRESETS, presetLayout } from "@shared/kiosk/presets";
 import { KIOSK_TEXT_KEYS } from "@shared/kiosk/text";
 import { buildKioskConfigFile, cleanConfigName, KIOSK_CONFIG_FILE_MAX_BYTES, missingKioskExtras, parseKioskConfigFile, remapKioskLayout } from "@shared/kiosk/configFile";
@@ -336,6 +338,16 @@ router.post("/api/kiosk-builder/configs/import", ...guard, async (req: Request, 
 });
 
 // ── Kiosk Extras ──
+router.get("/api/kiosk-builder/upgrade-report", ...guard, async (req: Request, res: Response) => {
+  try {
+    const ctx = await storeContext(req, res); if (!ctx) return;
+    res.json({ days: 30, rows: await upgradeOfferReport(ctx.storeId, 30) });
+  } catch (err) {
+    console.error("[kiosk-builder] upgrade report", err);
+    res.status(500).json({ error: "Couldn't load the upgrade report." });
+  }
+});
+
 router.get("/api/kiosk-builder/extras", ...guard, async (req: Request, res: Response) => {
   try {
     const ctx = await storeContext(req, res); if (!ctx) return;

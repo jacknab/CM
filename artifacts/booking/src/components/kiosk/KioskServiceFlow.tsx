@@ -24,13 +24,15 @@ export interface FlowPlan<S extends FlowService, A extends FlowAddon> {
   gelPolish: A | null;
   /** swap: a mani-pedi service takes the place of the client's service; else the chosen one is added. */
   crossSell: { toes: boolean; swap: boolean; options: S[] } | null;
-  upgrade: { addon: A; pitch: string; family: UpgradeFamily } | null;
+  upgrade: { addon: A; pitch: string; family: UpgradeFamily; usual: boolean } | null;
 }
 
 /** What this client's service asks, given the salon's catalog and the kiosk's limits. Empty steps: nothing to ask. */
 export function planServiceFlow<S extends FlowService, A extends FlowAddon>(a: {
   service: S; nail: FlowNailConfig | null; services: S[]; addons: A[]; selected: S[]; chosenAddonIds: number[];
   settings: ServiceFlowSettings; maxServices: number; maxVisitMinutes: number;
+  /** Add-ons this client has had before, most often first (Smart Check-In). */
+  usualAddonIds?: number[];
 }): FlowPlan<S, A> {
   const kind = serviceKind(a.service.name, a.service.category);
   const pool = a.addons.filter((x) => !x.kioskExtra);
@@ -57,7 +59,7 @@ export function planServiceFlow<S extends FlowService, A extends FlowAddon>(a: {
       if (adds.length) crossSell = { toes: want === "pedicure", swap: false, options: adds };
     }
   }
-  const upgrade = pickUpgrade(kind, pool, a.service.id, a.settings, a.chosenAddonIds);
+  const upgrade = pickUpgrade(kind, pool, a.service.id, a.settings, a.chosenAddonIds, a.usualAddonIds);
   const steps = FLOW_STEPS[kind].filter((st) => {
     if (st === "length") return !!a.nail?.sizes?.length;
     if (st === "shape") return !!a.nail?.shapes?.length;
@@ -74,6 +76,8 @@ export interface FlowResult<S, A> {
   size: FlowNailOption | null; shape: FlowNailOption | null; effect: FlowNailOption | null;
   addAddons: A[];
   swapTo: S | null; addService: S | null;
+  /** The upgrade the client was shown (yes or no), for Kiosk Builder › Upgrade offers. */
+  upgradeShown: A | null;
 }
 
 const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
@@ -89,7 +93,7 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
     onNowTitle: string; onNowToesTitle: string; onNowNothing: string; onNowPolish: string; onNowGel: string; onNowEnhancement: string;
     removalPrice: (price: string) => string; polishTitle: string; included: string; noDesign: string;
     addPedicureTitle: string; addManicureTitle: string; upgradeTitle: (name: string) => string; yesAddIt: string;
-    pitch: Record<UpgradeFamily, string>;
+    pitch: Record<UpgradeFamily, string>; upgradeAgainTitle: (name: string) => string; usualPitch: string;
   };
   onBack: () => void;
   onDone: (r: FlowResult<S, A>) => void;
@@ -121,7 +125,8 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
     if (upgradeYes && plan.upgrade) addAddons.push(plan.upgrade.addon);
     const chosen = cross && cross !== "none" ? cross : null;
     p.onDone({ size, shape, effect: effect === "none" ? null : effect, addAddons,
-      swapTo: chosen && plan.crossSell?.swap ? chosen : null, addService: chosen && !plan.crossSell?.swap ? chosen : null });
+      swapTo: chosen && plan.crossSell?.swap ? chosen : null, addService: chosen && !plan.crossSell?.swap ? chosen : null,
+      upgradeShown: step === "upgrade" && plan.upgrade ? plan.upgrade.addon : null });
   };
   // On to the next screen; after the last, done (the upgrade screen finishes itself). No upgrade offer of the same
   // kind as the design just chosen (Chrome Powder after Chrome).
@@ -181,10 +186,10 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
             {plan.upgrade.addon.imageUrl && (
               <img src={plan.upgrade.addon.imageUrl} alt="" draggable={false} style={{ width: u(560), maxWidth: "100%", aspectRatio: "4 / 3", objectFit: "cover", borderRadius: u(32), boxShadow: "0 14px 36px rgba(15,23,42,.16)", marginBottom: u(40) }} />
             )}
-            <h2 data-testid="flow-upgrade-title" style={{ margin: 0, fontSize: u(64), fontWeight: 900, lineHeight: 1.08, fontFamily: heading }}>{L.upgradeTitle(plan.upgrade.addon.name)}</h2>
+            <h2 data-testid="flow-upgrade-title" style={{ margin: 0, fontSize: u(64), fontWeight: 900, lineHeight: 1.08, fontFamily: heading }}>{(plan.upgrade.usual ? L.upgradeAgainTitle : L.upgradeTitle)(plan.upgrade.addon.name)}</h2>
             {p.showPrice && <p style={{ margin: `${u(18)} 0 0`, fontSize: u(48), fontWeight: 900, color: c.primary }}>+{money(plan.upgrade.addon.price)}</p>}
             <p data-testid="flow-upgrade-pitch" style={{ margin: `${u(28)} 0 0`, maxWidth: u(860), fontSize: u(38), fontWeight: 600, lineHeight: 1.3 }}>
-              {plan.upgrade.pitch || L.pitch[plan.upgrade.family]}
+              {plan.upgrade.usual ? L.usualPitch : plan.upgrade.pitch || L.pitch[plan.upgrade.family]}
             </p>
           </div>
           <div style={{ flexShrink: 0, display: "flex", gap: u(24), padding: `${u(24)} ${u(72)} ${u(48)}` }}>

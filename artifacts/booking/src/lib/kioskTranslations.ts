@@ -171,6 +171,8 @@ export interface KioskStrings {
   addPedicureTitle: string;
   addManicureTitle: string;
   upgradeTitle: (name: string) => string;
+  upgradeAgainTitle: (name: string) => string;
+  usualPitch: string;
   yesAddIt: string;
   /** What an upgrade does for them, by kind of add-on (serviceFlows.ts UpgradeFamily). */
   pitch: Record<"chrome" | "french" | "rhinestones" | "nailArt" | "paraffin" | "cuticle" | "mask" | "hotStone" | "callus" | "scrub" | "massage" | "other", string>;
@@ -346,6 +348,8 @@ const en: KioskStrings = {
   addPedicureTitle: "Would you like to add a pedicure?",
   addManicureTitle: "Would you like to add a manicure?",
   upgradeTitle: (name) => `Add ${name}?`,
+  upgradeAgainTitle: (name) => `Add ${name} again?`,
+  usualPitch: "You had it last time. Want it again today?",
   yesAddIt: "Yes, add it",
   pitch: {
     chrome: "A mirror-like chrome shine that makes your new set catch the light and really stand out.",
@@ -525,6 +529,8 @@ const es: KioskStrings = {
   addPedicureTitle: "¿Le gustaría agregar un pedicure?",
   addManicureTitle: "¿Le gustaría agregar un manicure?",
   upgradeTitle: (name) => `¿Agregar ${name}?`,
+  upgradeAgainTitle: (name) => `¿Agregar ${name} otra vez?`,
+  usualPitch: "Lo pidió la última vez. ¿Lo quiere otra vez hoy?",
   yesAddIt: "Sí, agregarlo",
   pitch: {
     chrome: "Un brillo cromado como espejo que hace que sus uñas nuevas reflejen la luz y destaquen.",
@@ -704,6 +710,8 @@ const vi: KioskStrings = {
   addPedicureTitle: "Bạn có muốn làm thêm chân không?",
   addManicureTitle: "Bạn có muốn làm thêm tay không?",
   upgradeTitle: (name) => `Thêm ${name}?`,
+  upgradeAgainTitle: (name) => `Thêm ${name} như lần trước?`,
+  usualPitch: "Lần trước bạn đã chọn dịch vụ này. Hôm nay bạn có muốn làm lại không?",
   yesAddIt: "Có, thêm vào",
   pitch: {
     chrome: "Lớp chrome bóng như gương giúp bộ móng mới của bạn lấp lánh và nổi bật.",
@@ -883,6 +891,8 @@ const zh: KioskStrings = {
   addPedicureTitle: "要加一个足部护理吗？",
   addManicureTitle: "要加一个手部护理吗？",
   upgradeTitle: (name) => `加上${name}？`,
+  upgradeAgainTitle: (name) => `再加一次${name}？`,
+  usualPitch: "您上次做过这一项。今天还要吗？",
   yesAddIt: "好的，加上",
   pitch: {
     chrome: "镜面般的金属光泽，让您的新指甲闪闪发亮、格外出众。",
@@ -1062,6 +1072,8 @@ const ko: KioskStrings = {
   addPedicureTitle: "페디큐어도 추가하시겠어요?",
   addManicureTitle: "매니큐어도 추가하시겠어요?",
   upgradeTitle: (name) => `${name} 추가할까요?`,
+  upgradeAgainTitle: (name) => `${name} 다시 추가할까요?`,
+  usualPitch: "지난번에 받으셨던 서비스예요. 오늘도 하시겠어요?",
   yesAddIt: "네, 추가할게요",
   pitch: {
     chrome: "거울처럼 빛나는 크롬 광택으로 새 네일이 더욱 돋보여요.",

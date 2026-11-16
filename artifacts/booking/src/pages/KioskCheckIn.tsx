@@ -514,6 +514,8 @@ function KioskCheckInScreens() {
   const curSvcRef = useRef<ServiceItem | null>(null);
   const selNowRef = useRef<ServiceItem[]>([]);
   const providerAskedRef = useRef(false);
+  /** The upgrade each service's workflow showed (its add-on id), reported at check-in. */
+  const upgradeShownRef = useRef<Record<number, number>>({});
   selNowRef.current = selectedServices;
   const [nailSize, setNailSize]   = useState<NailOption | null>(null);
   const [nailShape, setNailShape] = useState<NailOption | null>(null);
@@ -719,7 +721,7 @@ function KioskCheckInScreens() {
     cancelPendingMarker();
     setScreen("idle"); setPhone(""); setClientInfo(null);
     setNewClientName(""); setSel([]); setSelStaff("none"); setSvcLimitNote(false);
-    flowAddedRef.current = {}; curSvcRef.current = null; selNowRef.current = []; providerAskedRef.current = false;
+    flowAddedRef.current = {}; curSvcRef.current = null; selNowRef.current = []; providerAskedRef.current = false; upgradeShownRef.current = {};
     setTicket(null); setError("");
     setSvcPage(0);
     setSelectedCategoryGroup(null); setFilteredServices(null);
@@ -1096,6 +1098,7 @@ function KioskCheckInScreens() {
     service: svc, nail: cfg, services: allServices, addons: allAddons, selected: selNowRef.current,
     chosenAddonIds: addons.filter((a) => !flowAdded(svc).includes(a.id)).map((a) => a.id),
     settings: layout.serviceFlows, maxServices: layout.services.maxServices, maxVisitMinutes: layout.services.maxVisitMinutes,
+    usualAddonIds: smart?.addonIds ?? [],
   });
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
     if (id === "questions" && boardFlow()) return !!svc && planFor(svc, cfg).steps.length > 0;
@@ -1245,6 +1248,8 @@ function KioskCheckInScreens() {
           offers: [
             ...offeredRef.current.serviceIds.map((id) => ({ kind: "service", itemId: id, accepted: selectedServices[0]?.id === id })),
             ...(offeredRef.current.addonId != null ? [{ kind: "addon", itemId: offeredRef.current.addonId, accepted: selectedAddons.some((a) => a.id === offeredRef.current.addonId) }] : []),
+            ...Object.entries(upgradeShownRef.current).filter(([sid]) => selectedServices.some((sv) => sv.id === Number(sid)))
+              .map(([sid, aid]) => ({ kind: "upgrade", itemId: aid, accepted: selectedAddons.some((a) => a.id === aid && a.forServiceId === Number(sid)) })),
           ],
           nailSizeId:      nailSize?.nailVocabId  ?? null,
           nailShapeId:     nailShape?.nailVocabId ?? null,
@@ -2305,6 +2310,8 @@ body *{cursor:default}`;
       const added = r.addAddons.filter((a) => !kept.some((x) => x.id === a.id)).map((a) => ({ ...a, forServiceId: primary.id }));
       setSelectedAddons([...kept, ...added]);
       flowAddedRef.current = { ...flowAddedRef.current, [primary.id]: added.map((a) => a.id) };
+      const { [old.id]: _was, ...shown } = upgradeShownRef.current;
+      upgradeShownRef.current = r.upgradeShown ? { ...shown, [primary.id]: r.upgradeShown.id } : shown;
       const cfg = flow.nail;
       if (cfg) {
         setNailSize(cfg.sizes.find((o) => o.nailVocabId === r.size?.nailVocabId) ?? null);
@@ -2322,7 +2329,8 @@ body *{cursor:default}`;
         labels={{ back: t.backBtn.replace(/^[←‹<]\s*/, ""), noThanks: t.noThanks, length: tx("questionLength"), shape: tx("questionShape"), design: tx("questionDesign"),
           onNowTitle: t.onNowTitle, onNowToesTitle: t.onNowToesTitle, onNowNothing: t.onNowNothing, onNowPolish: t.onNowPolish, onNowGel: t.onNowGel,
           onNowEnhancement: t.onNowEnhancement, removalPrice: t.removalPrice, polishTitle: t.polishTitle, included: t.included, noDesign: t.noDesign,
-          addPedicureTitle: t.addPedicureTitle, addManicureTitle: t.addManicureTitle, upgradeTitle: t.upgradeTitle, yesAddIt: t.yesAddIt, pitch: t.pitch }}
+          addPedicureTitle: t.addPedicureTitle, addManicureTitle: t.addManicureTitle, upgradeTitle: t.upgradeTitle, yesAddIt: t.yesAddIt, pitch: t.pitch,
+          upgradeAgainTitle: t.upgradeAgainTitle, usualPitch: t.usualPitch }}
         onBack={() => goBack("questions")}
         onDone={done}
       />
