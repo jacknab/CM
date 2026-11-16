@@ -156,6 +156,7 @@ export interface KioskStrings {
   keySpace: string;
   /** The order board's service screen: its button (owner, 2026-11-16). */
   addToTicket: string;
+  addAnotherService: string;
   /** The Order Board's service workflows (shared/kiosk/serviceFlows.ts; owner, 2026-11-16). */
   onNowTitle: string;
   onNowToesTitle: string;
@@ -331,6 +332,7 @@ const en: KioskStrings = {
   keyDone: "Done",
   keySpace: "Space",
   addToTicket: "Add to Ticket",
+  addAnotherService: "Add another service",
   onNowTitle: "Do you have anything on your nails right now?",
   onNowToesTitle: "Do you have anything on your toenails right now?",
   onNowNothing: "Nothing, just my natural nails",
@@ -509,6 +511,7 @@ const es: KioskStrings = {
   keyDone: "Listo",
   keySpace: "Espacio",
   addToTicket: "Agregar al ticket",
+  addAnotherService: "Agregar otro servicio",
   onNowTitle: "¿Tiene algo en las uñas ahora mismo?",
   onNowToesTitle: "¿Tiene algo en las uñas de los pies ahora mismo?",
   onNowNothing: "Nada, solo mis uñas naturales",
@@ -687,6 +690,7 @@ const vi: KioskStrings = {
   keyDone: "Xong",
   keySpace: "Dấu cách",
   addToTicket: "Thêm vào phiếu",
+  addAnotherService: "Thêm dịch vụ khác",
   onNowTitle: "Hiện tại móng tay của bạn có đang làm gì không?",
   onNowToesTitle: "Hiện tại móng chân của bạn có đang làm gì không?",
   onNowNothing: "Không có, móng tự nhiên",
@@ -865,6 +869,7 @@ const zh: KioskStrings = {
   keyDone: "完成",
   keySpace: "空格",
   addToTicket: "加入订单",
+  addAnotherService: "再加一项服务",
   onNowTitle: "您的指甲现在有做什么吗？",
   onNowToesTitle: "您的脚指甲现在有做什么吗？",
   onNowNothing: "没有，自然指甲",
@@ -1043,6 +1048,7 @@ const ko: KioskStrings = {
   keyDone: "완료",
   keySpace: "스페이스",
   addToTicket: "티켓에 추가",
+  addAnotherService: "다른 서비스 추가",
   onNowTitle: "지금 손톱에 하신 것이 있나요?",
   onNowToesTitle: "지금 발톱에 하신 것이 있나요?",
   onNowNothing: "없어요, 자연 손톱이에요",

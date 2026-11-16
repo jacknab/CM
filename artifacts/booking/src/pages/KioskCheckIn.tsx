@@ -504,8 +504,17 @@ function KioskCheckInScreens() {
   const [nailCfg, setNailCfg]     = useState<NailConfig | null>(null);
   // The Order Board's service workflow (components/kiosk/KioskServiceFlow.tsx): the service it is for and what it asks.
   const [flow, setFlow] = useState<{ service: ServiceItem; plan: FlowPlan<ServiceItem, AddonItem>; nail: NailConfig | null } | null>(null);
-  /** The add-ons the workflow put on, taken off again when the client comes back to it. */
-  const flowAddedRef = useRef<number[]>([]);
+  /** The add-ons each service's workflow put on, taken off again when the client comes back to it. */
+  const flowAddedRef = useRef<Record<number, number[]>>({});
+  /**
+   * The Order Board runs each service's workflow as it goes on the ticket, then the review, which can add another
+   * (owner, 2026-11-16): the service being worked on, the services chosen right now (state lags a tap), and
+   * whether the client has been asked who does it.
+   */
+  const curSvcRef = useRef<ServiceItem | null>(null);
+  const selNowRef = useRef<ServiceItem[]>([]);
+  const providerAskedRef = useRef(false);
+  selNowRef.current = selectedServices;
   const [nailSize, setNailSize]   = useState<NailOption | null>(null);
   const [nailShape, setNailShape] = useState<NailOption | null>(null);
   const [nailEffect, setNailEffect] = useState<NailOption | null>(null); // null = "plain / no design"
@@ -710,6 +719,7 @@ function KioskCheckInScreens() {
     cancelPendingMarker();
     setScreen("idle"); setPhone(""); setClientInfo(null);
     setNewClientName(""); setSel([]); setSelStaff("none"); setSvcLimitNote(false);
+    flowAddedRef.current = {}; curSvcRef.current = null; selNowRef.current = []; providerAskedRef.current = false;
     setTicket(null); setError("");
     setSvcPage(0);
     setSelectedCategoryGroup(null); setFilteredServices(null);
@@ -1081,15 +1091,19 @@ function KioskCheckInScreens() {
     !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
   // The Order Board asks its service workflow in place of the nail questions (owner, 2026-11-16).
   const boardFlow = () => layout.menuMode !== "screens" && layout.servicesView === "board";
+  const flowAdded = (svc: ServiceItem) => flowAddedRef.current[svc.id] ?? [];
   const planFor = (svc: ServiceItem, cfg: NailConfig | null, addons: AddonItem[] = selectedAddons) => planServiceFlow({
-    service: svc, nail: cfg, services: allServices, addons: allAddons, selected: selectedServices,
-    chosenAddonIds: addons.filter((a) => !flowAddedRef.current.includes(a.id)).map((a) => a.id),
+    service: svc, nail: cfg, services: allServices, addons: allAddons, selected: selNowRef.current,
+    chosenAddonIds: addons.filter((a) => !flowAdded(svc).includes(a.id)).map((a) => a.id),
     settings: layout.serviceFlows, maxServices: layout.services.maxServices, maxVisitMinutes: layout.services.maxVisitMinutes,
   });
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
     if (id === "questions" && boardFlow()) return !!svc && planFor(svc, cfg).steps.length > 0;
     if (id === "questions") return nailCfgHasOptions(cfg);
     if (id === "addons") return addonsFor(svc).length > 0;
+    // The Order Board asks who does it once, again only when that tech doesn't do a service added after.
+    if (id === "provider" && boardFlow() && providerAskedRef.current)
+      return selectedStaff !== "none" && !!selectedStaff && !!svc && !!staffServiceIds[selectedStaff.id]?.length && !staffServiceIds[selectedStaff.id].includes(svc.id);
     if (id === "provider") return allStaff.length > 0;
     if (id === "category") return layout.menuMode !== "screens";
     return true;
@@ -1100,9 +1114,9 @@ function KioskCheckInScreens() {
     if (id === "questions" && svc && boardFlow()) {
       kick();
       // Coming back to it: what it put on comes off, and it asks again.
-      const kept = selectedAddons.filter((a) => !flowAddedRef.current.includes(a.id));
+      const kept = selectedAddons.filter((a) => !(a.forServiceId === svc.id && flowAdded(svc).includes(a.id)));
       setSelectedAddons(kept);
-      flowAddedRef.current = [];
+      flowAddedRef.current = { ...flowAddedRef.current, [svc.id]: [] };
       setFlow({ service: svc, plan: planFor(svc, cfg, kept), nail: cfg });
       return setScreen("service_flow");
     }
@@ -1120,7 +1134,7 @@ function KioskCheckInScreens() {
       return setScreen("addons");
     }
     if (id === "provider") return setScreen("stylist");
-    if (id === "review") return setScreen("review");
+    if (id === "review") { if (boardFlow()) providerAskedRef.current = true; return setScreen("review"); }
     if ((id === "category" || id === "services") && layout.menuMode !== "screens" && layout.servicesView === "board") return setScreen("board");
     if (id === "category") return setScreen("service_type");
     if (id === "services") return setScreen(layout.menuMode === "screens" && menuStack.length ? "menu" : layout.menuMode === "screens" ? firstStepScreen("services") : "services");
@@ -1136,7 +1150,7 @@ function KioskCheckInScreens() {
   /** Back to the step before `from`. */
   const goBack = (from: KioskStepId | "review") => {
     kick();
-    const svc = selectedServices[0], cfg = nailCfgRef.current;
+    const svc = (boardFlow() && curSvcRef.current) || selectedServices[0], cfg = nailCfgRef.current;
     enterStep(previousKioskStep(kioskFlow(layout), from, (id) => stepApplies(id, svc, cfg)), svc, cfg, true);
   };
 
@@ -1177,8 +1191,11 @@ function KioskCheckInScreens() {
   // service's length → shape → design) asks them; then the layout's next steps.
   const afterServiceChosen = async (chosen?: ServiceItem) => {
     const selSvc = chosen ?? selectedServices[0];
-    setNailCfg(null); setNailSize(null); setNailShape(null); setNailEffect(null);
+    // On the Order Board each service has its turn; a nail set's length and shape stay when another service is added.
+    if (!boardFlow()) { setNailSize(null); setNailShape(null); setNailEffect(null); }
+    setNailCfg(null);
     nailCfgRef.current = null;
+    curSvcRef.current = selSvc ?? null;
     let cfg: NailConfig | null = null;
     if (selSvc && kioskFlow(layout).includes("questions")) {
       setScreen("loading");
@@ -1348,7 +1365,7 @@ body *{cursor:default}`;
   // default two, two and a half hours; the server holds the same limits). Tapping a chosen service takes it off.
   // With all chosen, tapping another swaps the last one. Add-ons and nail choices belong to the first service,
   // so they start again only when that one changes.
-  const toggleSvc = (s: ServiceItem) => {
+  const toggleSvc = (s: ServiceItem): ServiceItem[] | null => {
     const current = selectedServices;
     const { maxServices, maxVisitMinutes } = layout.services;
     let next: ServiceItem[];
@@ -1356,13 +1373,15 @@ body *{cursor:default}`;
     else if (current.length === 0 || maxServices === 1) next = [s];
     else {
       const keep = current.length < maxServices ? current : current.slice(0, -1);
-      if (keep.reduce((sum, x) => sum + x.duration, 0) + s.duration > maxVisitMinutes) { setSvcLimitNote(true); kick(); return; }
+      if (keep.reduce((sum, x) => sum + x.duration, 0) + s.duration > maxVisitMinutes) { setSvcLimitNote(true); kick(); return null; }
       next = [...keep, s];
     }
     setSvcLimitNote(false);
     setSel(next);
+    selNowRef.current = next;
     setSelectedAddons((cur) => addonsStillChosen(cur, next, current[0]?.id));
     kick();
+    return next;
   };
 
   /** A kiosk screen's background: its picture (Kiosk Builder › Screens) over the background colour, else the colour. */
@@ -2281,14 +2300,17 @@ body *{cursor:default}`;
       const services = r.swapTo ? selectedServices.map((sv) => (sv.id === old.id ? r.swapTo! : sv))
         : r.addService ? [...selectedServices, r.addService] : selectedServices;
       setSel(services);
+      selNowRef.current = services; curSvcRef.current = primary;
       const kept = selectedAddons.map((a) => (r.swapTo && a.forServiceId === old.id ? { ...a, forServiceId: primary.id } : a));
       const added = r.addAddons.filter((a) => !kept.some((x) => x.id === a.id)).map((a) => ({ ...a, forServiceId: primary.id }));
       setSelectedAddons([...kept, ...added]);
-      flowAddedRef.current = added.map((a) => a.id);
+      flowAddedRef.current = { ...flowAddedRef.current, [primary.id]: added.map((a) => a.id) };
       const cfg = flow.nail;
-      setNailSize(cfg?.sizes.find((o) => o.nailVocabId === r.size?.nailVocabId) ?? null);
-      setNailShape(cfg?.shapes.find((o) => o.nailVocabId === r.shape?.nailVocabId) ?? null);
-      setNailEffect(cfg?.effects.find((o) => o.nailVocabId === r.effect?.nailVocabId) ?? null);
+      if (cfg) {
+        setNailSize(cfg.sizes.find((o) => o.nailVocabId === r.size?.nailVocabId) ?? null);
+        setNailShape(cfg.shapes.find((o) => o.nailVocabId === r.shape?.nailVocabId) ?? null);
+        setNailEffect(cfg.effects.find((o) => o.nailVocabId === r.effect?.nailVocabId) ?? null);
+      }
       advance("questions", primary, cfg);
     };
     return (
@@ -2332,7 +2354,10 @@ body *{cursor:default}`;
           if ((svc.optionCount ?? (serviceOptionsMap[svc.id]?.length ?? 0)) > 0 && !selectedServices.some((x) => x.id === svc.id)) {
             setParentServiceForOptions(svc); setSelectedOption(null); setScreen("service_options"); return;
           }
-          toggleSvc(svc);
+          const adding = !selectedServices.some((x) => x.id === svc.id);
+          const next = toggleSvc(svc);
+          // Added to the ticket: its workflow now, then the review.
+          if (adding && next?.some((x) => x.id === svc.id)) void afterServiceChosen(svc);
         }}
         order={[
           ...selectedServices.map((sv) => ({ key: `s${sv.id}`, name: sv.name, price: sv.price, imageUrl: sv.imageUrl ?? null, onRemove: () => toggleSvc(sv) })),
@@ -2345,7 +2370,7 @@ body *{cursor:default}`;
           search: t.searchServices, results: t.searchResults, noResults: t.noResults, done: t.keyDone, space: t.keySpace,
           cancel: t.cancel, addToTicket: t.addToTicket }}
         onBack={() => { kick(); backToStart(); }}
-        onContinue={() => { kick(); void afterServiceChosen(); }}
+        onContinue={() => { kick(); advance("addons", curSvcRef.current ?? selectedServices[0]); }}
         note={svcLimitNote ? limitText : null}
         serif={NAIL_LOOK}
       />
@@ -2876,9 +2901,14 @@ body *{cursor:default}`;
         imageUrl: parentServiceForOptions.imageUrl,
         optionCount: 0,
       };
+      if (boardFlow()) {
+        const next = toggleSvc(syntheticSvc);
+        if (next?.some((x) => x.id === syntheticSvc.id)) void afterServiceChosen(syntheticSvc); else setScreen("board");
+        return;
+      }
       setSel([syntheticSvc]);
       setSelectedAddons([]);
-      afterServiceChosen();
+      afterServiceChosen(syntheticSvc);
     };
 
     return (
@@ -3177,6 +3207,9 @@ body *{cursor:default}`;
         </div>
         <div className="shrink-0 px-6 py-4 flex items-center justify-between" style={{ background: SURFACE, borderTop: `2px solid ${BORDER}` }}>
           <GhostBtn onPress={back}>{t.backBtn}</GhostBtn>
+          {boardFlow() && selectedServices.length < layout.services.maxServices && (
+            <GhostBtn onPress={() => { kick(); setSvcLimitNote(false); setScreen("board"); }}>{t.addAnotherService}</GhostBtn>
+          )}
           <PrimaryBtn onPress={doCheckIn} size="md">{t.checkInBtn}</PrimaryBtn>
         </div>
       </div>
@@ -3274,7 +3307,7 @@ body *{cursor:default}`;
 
   // ── ADDONS PICKER ────────────────────────────────────────────────────────────
   if (screen === "addons") {
-    const selSvc = selectedServices[0];
+    const selSvc = (boardFlow() && curSvcRef.current) || selectedServices[0];
     const toggleAddon = (a: AddonItem) => {
       setSelectedAddons(p => p.find(x => x.id === a.id) ? p.filter(x => x.id !== a.id) : [...p, { ...a, forServiceId: selSvc?.id }]);
       kick();
