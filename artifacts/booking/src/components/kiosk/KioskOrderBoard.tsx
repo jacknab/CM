@@ -13,7 +13,9 @@ export interface BoardService { id: number; name: string; price: number; duratio
   badge?: { text: string; color: string } | null }
 export interface BoardGroup { key: string; label: string; imageUrl?: string | null; svcs: BoardService[];
   /** A line under the category's name, set on the category in Catalog › Categories. */
-  description?: string | null }
+  description?: string | null;
+  /** The theme's icon for the category (a nail salon's, picked by name): shown whole in place of the picture. */
+  iconUrl?: string | null }
 export interface BoardColors { primary: string; bg: string; surface: string; text: string; muted: string; border: string; selected: string; tint: string }
 export interface BoardOrderLine { key: string; name: string; price: number | null; imageUrl?: string | null; onRemove: () => void }
 
@@ -36,6 +38,13 @@ function Thumb({ url, name, w, h, colors, radius = 16, letterSize }: { url?: str
       {name.trim().charAt(0).toUpperCase()}
     </div>
   );
+}
+
+/** A category's icon, whole and unclipped; its picture or letter if the icon won't load. */
+function Icon({ url, size, fallback }: { url: string; size: string; fallback: React.ReactNode }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) return <>{fallback}</>;
+  return <img src={url} alt="" draggable={false} onError={() => setBroken(true)} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0 }} />;
 }
 
 /** A clock, drawn so it takes the text colour. */
@@ -87,6 +96,9 @@ export function KioskOrderBoard(p: {
     return p.groups.flatMap((g) => g.svcs).filter((s) => !seen.has(s.id) && (seen.add(s.id), s.name.toLowerCase().includes(q)));
   }, [query, p.groups]);
   const list = results ?? group?.svcs ?? [];
+  // The cards fill the screen (owner, 2026-11-16): 2 across and 3 down, 3 across for more than 6; each a third of the
+  // height, the photo taking what the words leave. More than 9 scroll.
+  const cols = list.length > 6 ? 3 : 2;
   const total = p.order.reduce((n, l) => n + (l.price ?? 0), 0);
   // Titles in a heavy plain font (the owner's picture), not the site's own heading font; the nail look keeps its serif.
   const heading = p.serif ? "'Playfair Display', serif" : "'DM Sans', 'Inter', sans-serif";
@@ -98,7 +110,10 @@ export function KioskOrderBoard(p: {
       <header style={{ display: "flex", alignItems: "center", gap: u(20), padding: `${u(28)} ${u(28)} ${u(22)}` }}>
         <button type="button" {...press(p.onBack)} data-testid="board-back" aria-label={p.labels.back}
           style={{ width: u(52), height: u(52), borderRadius: u(26), border: `2px solid ${c.border}`, background: c.surface, color: c.text, fontSize: u(30), lineHeight: 1, display: "grid", placeItems: "center", flexShrink: 0 }}>‹</button>
-        {!results && group && <Thumb url={group.imageUrl} name={group.label} w={u(84)} h={u(84)} radius="50%" colors={c} letterSize={u(36)} />}
+        {!results && group && (() => {
+          const thumb = <Thumb url={group.imageUrl} name={group.label} w={u(84)} h={u(84)} radius="50%" colors={c} letterSize={u(36)} />;
+          return group.iconUrl ? <Icon key={group.key} url={group.iconUrl} size={u(88)} fallback={thumb} /> : thumb;
+        })()}
         <div style={{ flex: 1, minWidth: u(0) }}>
           <h2 data-testid="board-title" style={{ margin: 0, fontSize: u(52), fontWeight: 900, lineHeight: 1.05, letterSpacing: "-0.01em", fontFamily: heading }}>
             {results ? p.labels.results(query.trim()) : group?.label}
@@ -126,7 +141,9 @@ export function KioskOrderBoard(p: {
                 style={{ position: "relative", minHeight: u(104), borderRadius: u(18), padding: `${u(10)} ${u(8)}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: u(6),
                   background: on ? c.text : c.surface, color: on ? c.surface : c.text, border: `4px solid ${on ? c.selected : "transparent"}`,
                   boxShadow: on ? `0 10px 24px ${c.text}33` : "0 4px 14px rgba(15,23,42,.10)" }}>
-                <Thumb url={g.imageUrl} name={g.label} w={u(46)} h={u(46)} radius={u(14)} colors={c} letterSize={u(22)} />
+                {g.iconUrl
+                  ? <Icon url={g.iconUrl} size={u(58)} fallback={<Thumb url={g.imageUrl} name={g.label} w={u(46)} h={u(46)} radius={u(14)} colors={c} letterSize={u(22)} />} />
+                  : <Thumb url={g.imageUrl} name={g.label} w={u(46)} h={u(46)} radius={u(14)} colors={c} letterSize={u(22)} />}
                 <span style={{ fontSize: u(15), fontWeight: 800, lineHeight: 1.15, textAlign: "center" }}>{g.label}</span>
                 {count > 0 && (
                   <span style={{ position: "absolute", top: u(6), right: u(6), minWidth: u(24), height: u(24), borderRadius: u(12), background: c.primary, color: "#fff", fontSize: u(13), fontWeight: 800, display: "grid", placeItems: "center", padding: `0 ${u(8)}` }}>{count}</span>
@@ -137,7 +154,7 @@ export function KioskOrderBoard(p: {
         </nav>
 
         {/* ── The services ── */}
-        <div data-kx-edit="service-cards" style={{ scrollbarWidth: "none", flex: 1, minWidth: u(0), overflowY: "auto", padding: `${u(6)} ${u(4)} ${u(24)}`, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: u(18), alignContent: "start" }}>
+        <div data-kx-edit="service-cards" style={{ scrollbarWidth: "none", flex: 1, minWidth: u(0), overflowY: "auto", padding: `${u(6)} ${u(4)} ${u(24)}`, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridAutoRows: `calc((100% - ${u(36)}) / 3)`, gap: u(18), alignContent: "start" }}>
           {results && results.length === 0 && <p style={{ gridColumn: "1 / -1", fontSize: u(22), color: c.muted, padding: `${u(24)} ${u(4)}` }}>{p.labels.noResults}</p>}
           {list.map((s) => {
             const on = p.selectedIds.includes(s.id);
@@ -146,14 +163,16 @@ export function KioskOrderBoard(p: {
                 style={{ position: "relative", borderRadius: u(24), padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", textAlign: "left",
                   background: c.surface, color: c.text, border: `4px solid ${on ? c.primary : "transparent"}`,
                   boxShadow: on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
-                <Thumb url={s.imageUrl} name={s.name} w="100%" h="auto" radius={0} colors={c} letterSize={u(72)} />
+                <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex" }}>
+                  <Thumb url={s.imageUrl} name={s.name} w="100%" h="100%" radius={0} colors={c} letterSize={u(72)} />
+                </div>
                 {s.badge && (
                   <span data-testid="board-svc-badge" style={{ position: "absolute", top: u(12), left: u(12), maxWidth: "calc(100% - 70px)", padding: `${u(6)} ${u(16)}`, borderRadius: u(999),
                     background: s.badge.color, color: "#fff", border: "2.5px solid #fff", boxShadow: "0 3px 10px rgba(0,0,0,.18)",
                     fontSize: u(18), fontWeight: 800, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.badge.text}</span>
                 )}
-                <div style={{ padding: `${u(14)} ${u(16)} ${u(18)}`, display: "flex", flexDirection: "column", gap: u(8) }}>
-                  <span data-testid="board-svc-name" style={{ fontSize: u(24), fontWeight: 800, lineHeight: 1.15 }}>{s.name}</span>
+                <div style={{ flexShrink: 0, padding: `${u(14)} ${u(16)} ${u(18)}`, display: "flex", flexDirection: "column", gap: u(8) }}>
+                  <span data-testid="board-svc-name" style={{ fontSize: u(cols === 3 ? 21 : 24), fontWeight: 800, lineHeight: 1.15 }}>{s.name}</span>
                   {p.showPrice && <span style={{ fontSize: u(30), fontWeight: 900, lineHeight: 1 }}>{money(s.price)}</span>}
                   {p.showDuration && (
                     <span style={{ display: "inline-flex", alignItems: "center", gap: u(8), fontSize: u(21), color: c.text }}><Clock /> {s.duration} min</span>

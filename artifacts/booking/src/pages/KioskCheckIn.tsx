@@ -14,6 +14,7 @@ import {
   type KioskLayout, type KioskLook, type KioskScreenPictureKey, type KioskStepId, type KioskThemeColors,
 } from "@shared/kiosk/layout";
 import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
+import { nailCategoryIconUrl } from "@shared/kiosk/nailCategoryIcons";
 import { fillKioskText, resolveKioskText, type KioskText } from "@shared/kiosk/text";
 import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
@@ -83,7 +84,8 @@ interface SmartInfo {
   addonIds: number[];
 }
 interface StoreConfig        { name: string; phone: string; address: string; }
-interface KioskConfig        { /** Catalog category → its line under the name on the Order Board (by name). */ categoryDescriptions?: Record<string, string>; kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean; }
+interface KioskConfig        { /** Catalog category → its line under the name on the Order Board (by name). */ categoryDescriptions?: Record<string, string>; kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean;
+  /** A nail salon: the Order Board shows the theme's nail-category icons. */ nailSalon?: boolean; }
 interface TicketData         { token: string; clientName: string; appointmentId: number | null; ticketNumber?: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null;
   /** Checked in through the POS tablet over the salon hub with no internet: no server ticket (and no QR) yet. */
   offline?: boolean; }
@@ -539,7 +541,7 @@ function KioskCheckInScreens() {
     setBusyStaffIds(d.busyStaffIds || []);
     setStaffServiceIds(d.staffServiceIds || {});
     setKioskConfig({ categoryDescriptions: Object.fromEntries((Array.isArray(d.categories) ? d.categories : []).filter((c: any) => c?.description).map((c: any) => [String(c.name), String(c.description)])),
-      kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true });
+      kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true, nailSalon: d.businessType === "nail" });
     setSalonTimeZone(d.timezone);
     // Whether a check-in slip prints (front desk setup → Printing).
     if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
@@ -2243,7 +2245,10 @@ body *{cursor:default}`;
   if (screen === "board") {
     const catImgs = kioskConfig?.categoryImages ?? {};
     const descs = kioskConfig?.categoryDescriptions ?? {};
+    // A nail salon's categories get the theme's icons, picked by name (shared/kiosk/nailCategoryIcons.ts); the nail look has none.
+    const icons = kioskConfig?.nailSalon === true && !NAIL_LOOK;
     const groups = categoryGroups().map((g) => ({ key: g.key, label: g.label, imageUrl: catImgs[g.label] ?? catImgs[g.key] ?? null, description: descs[g.label] ?? null,
+      iconUrl: icons ? nailCategoryIconUrl(g.label) : null,
       svcs: g.svcs.map((sv) => ({ id: sv.id, name: sv.name, price: sv.price, duration: sv.duration, imageUrl: sv.imageUrl ?? null,
         badge: sv.kioskBadge ? { text: sv.kioskBadge, color: sv.kioskBadgeColor || PRIMARY } : null })) }));
     const limitText = layout.services.maxServices === 2 && layout.services.maxVisitMinutes === 150 ? t.twoServicesMax
