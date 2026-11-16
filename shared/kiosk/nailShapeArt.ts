@@ -30,16 +30,16 @@ export const nailShapeArtUrl = (name: string): string | null => {
 };
 
 /**
- * Each shape at every length (owner, 2026-11-16): public/kiosk-art/nail-lengths/<shape>/<xxs|xs|s|m|l|xl>.webp,
+ * Each shape at every length (owner, 2026-11-16): public/kiosk-art/nail-lengths/<shape>/<xxs|xs|s|m|l|xl|xxl>.webp,
  * 512×768, all drawn to one scale on one baseline so the lengths compare. Shapes get a set as the pictures arrive.
  */
-export type NailLengthArtKey = "xxs" | "xs" | "s" | "m" | "l" | "xl";
+export type NailLengthArtKey = "xxs" | "xs" | "s" | "m" | "l" | "xl" | "xxl";
 const LENGTH_SETS: NailShapeArtKey[] = ["coffin-ballerina", "almond", "stiletto", "square", "round", "oval-coffin", "oval", "squoval"];
-/** Most specific first: "XXS" before "XS" before "S"; "XXL" has no picture. */
+/** Most specific first: "XXS" before "XS" before "S", "XXL" before "XL". */
 const LENGTH_RULES: Array<[RegExp, NailLengthArtKey | null]> = [
   [/\bxxs\b|extra[\s-]*extra[\s-]*short/, "xxs"],
   [/\bxs\b|extra[\s-]*short/, "xs"],
-  [/\bxxl\b|extra[\s-]*extra[\s-]*long/, null],
+  [/\bxxl\b|extra[\s-]*extra[\s-]*long/, "xxl"],
   [/\bxl\b|extra[\s-]*long/, "xl"],
   [/\bs\b|short/, "s"],
   [/\bm\b|medium/, "m"],
