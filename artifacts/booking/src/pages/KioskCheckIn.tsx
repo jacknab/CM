@@ -87,6 +87,8 @@ interface SmartInfo {
 }
 interface StoreConfig        { name: string; phone: string; address: string; }
 interface KioskConfig        { /** Catalog category → its line under the name on the Order Board (by name). */ categoryDescriptions?: Record<string, string>; kioskEnabled: boolean; welcomeHeadline: string | null; welcomeSubText: string | null; loyaltyPromoText: string | null; categoryImages: Record<string, string> | null; timezone: string | null; showServicePrice: boolean; showServiceDuration: boolean; dualScreenMode: boolean;
+  /** The points program: off → no points on the review. Rewards cheapest first. */
+  loyalty?: { enabled: boolean; pointsPerDollar: number; rewards: Array<{ name: string; pointsCost: number }> };
   /** A nail salon: the Order Board shows the theme's nail-category icons. */ nailSalon?: boolean; }
 interface TicketData         { token: string; clientName: string; appointmentId: number | null; ticketNumber?: number | null; services: ServiceItem[]; addons?: AddonItem[]; staffName: string | null;
   /** Checked in through the POS tablet over the salon hub with no internet: no server ticket (and no QR) yet. */
@@ -559,7 +561,8 @@ function KioskCheckInScreens() {
     setBusyStaffIds(d.busyStaffIds || []);
     setStaffServiceIds(d.staffServiceIds || {});
     setKioskConfig({ categoryDescriptions: Object.fromEntries((Array.isArray(d.categories) ? d.categories : []).filter((c: any) => c?.description).map((c: any) => [String(c.name), String(c.description)])),
-      kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true, nailSalon: d.businessType === "nail" });
+      kioskEnabled: d.kioskEnabled !== false, welcomeHeadline: d.welcomeHeadline ?? null, welcomeSubText: d.welcomeSubText ?? null, loyaltyPromoText: d.loyaltyPromoText ?? null, categoryImages: d.categoryImages ?? null, timezone: d.timezone ?? null, showServicePrice: d.showServicePrice !== false, showServiceDuration: d.showServiceDuration !== false, dualScreenMode: d.dualScreenMode === true, nailSalon: d.businessType === "nail",
+      loyalty: d.loyalty ? { enabled: d.loyalty.enabled !== false, pointsPerDollar: Number(d.loyalty.pointsPerDollar) || 1, rewards: Array.isArray(d.loyalty.rewards) ? d.loyalty.rewards : [] } : undefined });
     setSalonTimeZone(d.timezone);
     // Whether a check-in slip prints (front desk setup → Printing).
     if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
@@ -2328,7 +2331,7 @@ body *{cursor:default}`;
         showPrice={showPrice} serif={NAIL_LOOK}
         labels={{ back: t.backBtn.replace(/^[←‹<]\s*/, ""), noThanks: t.noThanks, length: tx("questionLength"), shape: tx("questionShape"), design: tx("questionDesign"),
           onNowTitle: t.onNowTitle, onNowToesTitle: t.onNowToesTitle, onNowNothing: t.onNowNothing, onNowPolish: t.onNowPolish, onNowGel: t.onNowGel,
-          onNowEnhancement: t.onNowEnhancement, removalPrice: t.removalPrice, polishTitle: t.polishTitle, included: t.included, noDesign: t.noDesign,
+          onNowEnhancement: t.onNowEnhancement, removalPrice: t.removalPrice, polishTitle: t.polishTitle, included: t.included, gelLasts: t.gelLasts, noDesign: t.noDesign,
           addPedicureTitle: t.addPedicureTitle, addManicureTitle: t.addManicureTitle, upgradeTitle: t.upgradeTitle, yesAddIt: t.yesAddIt, pitch: t.pitch,
           upgradeAgainTitle: t.upgradeAgainTitle, usualPitch: t.usualPitch }}
         onBack={() => goBack("questions")}
@@ -3187,6 +3190,11 @@ body *{cursor:default}`;
     const total = lines.reduce((sum, l) => sum + l.price, 0);
     const tech = selectedStaff && selectedStaff !== "none" ? (selectedStaff as StaffItem).name : t.nextAvailable;
     const back = () => goBack("review");
+    // The Order Board's review shows the points this visit earns and the next reward, when the salon's loyalty is on.
+    const loyalty = boardFlow() && kioskConfig?.loyalty?.enabled ? kioskConfig.loyalty : null;
+    const earned = loyalty ? Math.round(Math.max(0, total) * loyalty.pointsPerDollar) : 0;
+    const balance = clientInfo?.loyaltyPoints ?? 0;
+    const nextReward = loyalty?.rewards.find((r) => r.pointsCost > balance) ?? null;
     return (
       <div className="fixed inset-0 flex flex-col select-none" onContextMenu={e => e.preventDefault()} style={{ ...NO_SELECT, background: screenBg("review") }} data-testid="kiosk-review">
         <div className="px-8 py-6 text-center shrink-0" style={{ borderBottom: `1.5px solid ${BORDER}`, background: SURFACE }}>
@@ -3209,6 +3217,16 @@ body *{cursor:default}`;
               <div className="flex items-baseline justify-between gap-6" style={{ paddingTop: 16 }}>
                 <span className="font-bold uppercase" style={{ color: PRIMARY, fontSize: 15, letterSpacing: ".18em" }}>{t.estimatedTotal}</span>
                 <span className="font-black tabular-nums" style={{ color: TEXT, fontSize: 36 }} data-testid="kiosk-review-total">{fmtPrice(total)}</span>
+              </div>
+            )}
+            {loyalty && earned > 0 && (
+              <div style={{ paddingTop: 14 }} data-testid="kiosk-review-points">
+                <p className="font-bold" style={{ color: TEXT, fontSize: 20 }}>{t.pointsThisVisit(earned)}</p>
+                {nextReward && (
+                  <p className="font-semibold" style={{ color: MUTED, fontSize: 18, marginTop: 4 }}>
+                    {balance + earned >= nextReward.pointsCost ? t.rewardAfterToday(nextReward.name) : t.pointsToReward(nextReward.pointsCost - balance - earned, nextReward.name)}
+                  </p>
+                )}
               </div>
             )}
           </div>

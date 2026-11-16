@@ -25964,6 +25964,10 @@ or
         loyalty: {
           enabled: prefs.loyalty?.enabled !== false,
           pointsPerDollar: Number(prefs.loyalty?.pointsPerDollar) > 0 ? Number(prefs.loyalty.pointsPerDollar) : 1,
+          // The rewards, cheapest first: the Order Board's review says how far the client is from the next one.
+          rewards: (await pool.query(
+            `SELECT name, points_cost AS "pointsCost" FROM loyalty_rewards WHERE store_id = $1 AND is_active ORDER BY points_cost, sort_order`, [store.id],
+          )).rows,
         },
         // Only images the owner explicitly set: the catalog category's own image
         // (Catalog → Categories) wins, with the legacy kiosk-settings upload as a

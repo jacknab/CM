@@ -91,7 +91,7 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
   labels: {
     back: string; noThanks: string; length: string; shape: string; design: string;
     onNowTitle: string; onNowToesTitle: string; onNowNothing: string; onNowPolish: string; onNowGel: string; onNowEnhancement: string;
-    removalPrice: (price: string) => string; polishTitle: string; included: string; noDesign: string;
+    removalPrice: (price: string) => string; polishTitle: string; included: string; gelLasts: string; noDesign: string;
     addPedicureTitle: string; addManicureTitle: string; upgradeTitle: (name: string) => string; yesAddIt: string;
     pitch: Record<UpgradeFamily, string>; upgradeAgainTitle: (name: string) => string; usualPitch: string;
   };
@@ -159,10 +159,11 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
   }
   if (step === "polish" && plan.gelPolish) {
     title = L.polishTitle;
-    choices = [
-      { key: "regular", title: L.onNowPolish, sub: L.included, on: gel === false, pick: () => { setGel(false); next(); } },
-      { key: "gel", title: L.onNowGel, sub: p.showPrice ? `+${money(plan.gelPolish.price)}` : null, on: gel === true, pick: () => { setGel(true); next(); } },
-    ];
+    const regular: Choice = { key: "regular", title: L.onNowPolish, sub: L.included, on: gel === false, pick: () => { setGel(false); next(); } };
+    const gelChoice: Choice = { key: "gel", title: L.onNowGel, sub: p.showPrice ? `+${money(plan.gelPolish.price)}` : null, on: gel === true, pick: () => { setGel(true); next(); } };
+    // Manicures list gel first, with how long it lasts (owner, 2026-11-16).
+    const fingers = plan.kind === "manicure" || plan.kind === "manipedi";
+    choices = fingers ? [{ ...gelChoice, sub: [gelChoice.sub, L.gelLasts].filter(Boolean).join(" · ") }, regular] : [regular, gelChoice];
   }
   if (step === "crossSell" && plan.crossSell) {
     title = plan.crossSell.toes ? L.addPedicureTitle : L.addManicureTitle;

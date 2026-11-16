@@ -167,6 +167,10 @@ export interface KioskStrings {
   removalPrice: (price: string) => string;
   polishTitle: string;
   included: string;
+  gelLasts: string;
+  pointsThisVisit: (n: number) => string;
+  rewardAfterToday: (reward: string) => string;
+  pointsToReward: (n: number, reward: string) => string;
   noDesign: string;
   addPedicureTitle: string;
   addManicureTitle: string;
@@ -344,6 +348,10 @@ const en: KioskStrings = {
   removalPrice: (price) => `+${price} removal`,
   polishTitle: "Which polish would you like?",
   included: "Included",
+  gelLasts: "Lasts 2–3 weeks",
+  pointsThisVisit: (n) => `This visit earns you ${n} points`,
+  rewardAfterToday: (r) => `After today you'll have enough for ${r}`,
+  pointsToReward: (n, r) => `${n} more points to ${r}`,
   noDesign: "No design, keep it simple",
   addPedicureTitle: "Would you like to add a pedicure?",
   addManicureTitle: "Would you like to add a manicure?",
@@ -525,6 +533,10 @@ const es: KioskStrings = {
   removalPrice: (price) => `+${price} por retirarlo`,
   polishTitle: "¿Qué esmalte le gustaría?",
   included: "Incluido",
+  gelLasts: "Dura 2–3 semanas",
+  pointsThisVisit: (n) => `Esta visita le da ${n} puntos`,
+  rewardAfterToday: (r) => `Después de hoy le alcanza para ${r}`,
+  pointsToReward: (n, r) => `Le faltan ${n} puntos para ${r}`,
   noDesign: "Sin diseño, algo sencillo",
   addPedicureTitle: "¿Le gustaría agregar un pedicure?",
   addManicureTitle: "¿Le gustaría agregar un manicure?",
@@ -706,6 +718,10 @@ const vi: KioskStrings = {
   removalPrice: (price) => `+${price} phí tháo`,
   polishTitle: "Bạn muốn sơn loại nào?",
   included: "Đã bao gồm",
+  gelLasts: "Bền 2–3 tuần",
+  pointsThisVisit: (n) => `Lần này bạn được ${n} điểm`,
+  rewardAfterToday: (r) => `Sau hôm nay bạn đủ điểm cho ${r}`,
+  pointsToReward: (n, r) => `Còn ${n} điểm nữa là được ${r}`,
   noDesign: "Không vẽ, đơn giản thôi",
   addPedicureTitle: "Bạn có muốn làm thêm chân không?",
   addManicureTitle: "Bạn có muốn làm thêm tay không?",
@@ -887,6 +903,10 @@ const zh: KioskStrings = {
   removalPrice: (price) => `+${price} 卸甲`,
   polishTitle: "您想要哪种指甲油？",
   included: "已包含",
+  gelLasts: "可保持2–3周",
+  pointsThisVisit: (n) => `本次可获得${n}积分`,
+  rewardAfterToday: (r) => `今天之后您的积分可兑换${r}`,
+  pointsToReward: (n, r) => `再积${n}分可兑换${r}`,
   noDesign: "不要图案，简单就好",
   addPedicureTitle: "要加一个足部护理吗？",
   addManicureTitle: "要加一个手部护理吗？",
@@ -1068,6 +1088,10 @@ const ko: KioskStrings = {
   removalPrice: (price) => `+${price} 제거`,
   polishTitle: "어떤 폴리시를 원하세요?",
   included: "포함",
+  gelLasts: "2–3주 지속",
+  pointsThisVisit: (n) => `이번 방문으로 ${n}포인트 적립`,
+  rewardAfterToday: (r) => `오늘 이후 ${r} 사용 가능`,
+  pointsToReward: (n, r) => `${r}까지 ${n}포인트 남음`,
   noDesign: "디자인 없이 심플하게",
   addPedicureTitle: "페디큐어도 추가하시겠어요?",
   addManicureTitle: "매니큐어도 추가하시겠어요?",
