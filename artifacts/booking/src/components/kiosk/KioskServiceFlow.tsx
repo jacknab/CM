@@ -10,6 +10,7 @@ import {
   FLOW_STEPS, ENHANCEMENT_REMOVAL, GEL_POLISH, GEL_REMOVAL, addonsForService, isFill, pickUpgrade, serviceKind, upgradeFamily,
   type FlowStep, type OnNow, type ServiceFlowSettings, type ServiceKind, type UpgradeFamily,
 } from "@shared/kiosk/serviceFlows";
+import { SHAPE_ADDON, nailShapeArtUrl, nailShapeLabel, sortNailShapes } from "@shared/kiosk/nailShapeArt";
 import type { BoardColors } from "./KioskOrderBoard";
 
 export interface FlowService { id: number; name: string; category: string; price: number; duration: number; imageUrl?: string | null; optionCount?: number }
@@ -22,6 +23,8 @@ export interface FlowPlan<S extends FlowService, A extends FlowAddon> {
   steps: FlowStep[];
   removal: { gel: A | null; enhancement: A | null };
   gelPolish: A | null;
+  /** The salon's "Shape: …" add-ons: the shape question picks one and it goes on the ticket (included $0, else priced). */
+  shapeAddons: A[];
   /** swap: a mani-pedi service takes the place of the client's service; else the chosen one is added. */
   crossSell: { toes: boolean; swap: boolean; options: S[] } | null;
   upgrade: { addon: A; pitch: string; family: UpgradeFamily; usual: boolean } | null;
@@ -59,6 +62,7 @@ export function planServiceFlow<S extends FlowService, A extends FlowAddon>(a: {
       if (adds.length) crossSell = { toes: want === "pedicure", swap: false, options: adds };
     }
   }
+  const shapeAddons = sortNailShapes(a.addons.filter((x) => SHAPE_ADDON.test(x.name) && (!x.serviceIds.length || x.serviceIds.includes(a.service.id))));
   const upgrade = pickUpgrade(kind, pool, a.service.id, a.settings, a.chosenAddonIds, a.usualAddonIds);
   const steps = FLOW_STEPS[kind].filter((st) => {
     if (st === "length") return !!a.nail?.sizes?.length;
@@ -69,7 +73,7 @@ export function planServiceFlow<S extends FlowService, A extends FlowAddon>(a: {
     if (st === "crossSell") return !!crossSell;
     return !!upgrade;
   });
-  return { kind, steps, removal, gelPolish, crossSell, upgrade };
+  return { kind, steps, removal, gelPolish, shapeAddons, crossSell, upgrade };
 }
 
 export interface FlowResult<S, A> {
@@ -83,7 +87,9 @@ export interface FlowResult<S, A> {
 const money = (n: number) => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
 const u = (px: number) => `min(${(px / 10.8).toFixed(3)}cqw, ${px}px)`;
 
-interface Choice { key: string; title: string; sub?: string | null; imageUrl?: string | null; swatch?: string | null; on: boolean; pick: () => void }
+interface Choice { key: string; title: string; sub?: string | null; imageUrl?: string | null; swatch?: string | null; on: boolean; pick: () => void;
+  /** A shape card: the transparent picture of the shape, and a second name ("Ballerina"). */
+  art?: string | null; note?: string | null }
 
 export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: {
   service: S; plan: FlowPlan<S, A>; nail: FlowNailConfig | null;
@@ -102,7 +108,7 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
   const [at, setAt] = useState(0);
   // The answers, kept as they're given (a tap's answer is read the same moment when it's the last screen).
   const ans = useRef<{ size: FlowNailOption | null; shape: FlowNailOption | null; effect: FlowNailOption | null | "none";
-    onNow: OnNow | null; gel: boolean | null; cross: S | null | "none" }>({ size: null, shape: null, effect: null, onNow: null, gel: null, cross: null });
+    onNow: OnNow | null; gel: boolean | null; cross: S | null | "none"; shapeAddon: A | null }>({ size: null, shape: null, effect: null, onNow: null, gel: null, cross: null, shapeAddon: null });
   const { size, shape, effect, onNow, gel, cross } = ans.current;
   const setSize = (v: FlowNailOption) => { ans.current.size = v; };
   const setShape = (v: FlowNailOption) => { ans.current.shape = v; };
@@ -122,6 +128,7 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
     if (onNow === "gel" && plan.removal.gel) addAddons.push(plan.removal.gel);
     if (onNow === "enhancement" && plan.removal.enhancement) addAddons.push(plan.removal.enhancement);
     if (gel && plan.gelPolish) addAddons.push(plan.gelPolish);
+    if (ans.current.shapeAddon) addAddons.push(ans.current.shapeAddon);
     if (upgradeYes && plan.upgrade) addAddons.push(plan.upgrade.addon);
     const chosen = cross && cross !== "none" ? cross : null;
     p.onDone({ size, shape, effect: effect === "none" ? null : effect, addAddons,
@@ -144,7 +151,19 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
   let title = "";
   let choices: Choice[] = [];
   if (step === "length") { title = L.length; choices = nailChoices(p.nail?.sizes ?? [], size, setSize); }
-  if (step === "shape") { title = L.shape; choices = nailChoices(p.nail?.shapes ?? [], shape, setShape); }
+  const shapeCards = step === "shape" && plan.shapeAddons.length > 0;
+  if (step === "shape") {
+    title = L.shape;
+    // The salon's shape add-ons, when it has them: the shape goes on the ticket as "Shape: Almond" with its price.
+    choices = shapeCards
+      ? plan.shapeAddons.map((a) => {
+          const { title: t, note } = nailShapeLabel(a.name);
+          return { key: `shape-${a.id}`, title: t, note, art: nailShapeArtUrl(a.name) ?? a.imageUrl ?? null, on: ans.current.shapeAddon?.id === a.id,
+            sub: !p.showPrice ? null : a.price > 0 ? `+${money(a.price)}` : L.included,
+            pick: () => { ans.current.shapeAddon = a; ans.current.shape = null; next(); } };
+        })
+      : nailChoices(p.nail?.shapes ?? [], shape, setShape);
+  }
   if (step === "design") {
     title = L.design;
     choices = [{ key: "none", title: L.noDesign, on: effect === "none", pick: () => { setEffect("none"); next(); } },
@@ -171,7 +190,7 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
       sub: p.showPrice ? money(s.price) : null, pick: () => { setCross(s); next(); } }));
   }
   const pictures = choices.some((x) => x.imageUrl || x.swatch);
-  const cols = choices.length <= 4 ? 2 : 3;
+  const cols = shapeCards || choices.length <= 4 ? 2 : 3;
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: c.bg, color: c.text, userSelect: "none", overflow: "hidden", containerType: "inline-size" }} data-testid="kiosk-service-flow" data-step={step}>
@@ -204,7 +223,21 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
         <>
           <h2 data-testid="flow-title" style={{ margin: 0, padding: `${u(16)} ${u(56)} ${u(32)}`, textAlign: "center", fontSize: u(56), fontWeight: 900, lineHeight: 1.1, fontFamily: heading }}>{title}</h2>
           <div style={{ scrollbarWidth: "none", flex: 1, minHeight: u(0), overflowY: "auto", padding: `${u(6)} ${u(48)} ${u(24)}`, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: u(22), alignContent: "start" }}>
-            {choices.map((ch) => (
+            {shapeCards ? choices.map((ch) => (
+              <button key={ch.key} type="button" {...press(ch.pick)} data-testid={`flow-choice-${ch.key}`} aria-pressed={ch.on}
+                style={{ position: "relative", borderRadius: u(28), padding: `${u(14)} ${u(18)} 0`, overflow: "hidden", display: "flex", alignItems: "stretch", gap: u(12), textAlign: "left",
+                  minHeight: u(300), background: c.surface, color: c.text, border: `4px solid ${ch.on ? c.primary : "transparent"}`,
+                  boxShadow: ch.on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
+                <span style={{ width: "44%", flexShrink: 0, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                  {ch.art && <img src={ch.art} alt="" draggable={false} style={{ width: "100%", maxHeight: u(286), objectFit: "contain", objectPosition: "bottom", display: "block" }} />}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: u(6), paddingBottom: u(14) }}>
+                  <span style={{ fontSize: u(40), fontWeight: 900, lineHeight: 1.05, fontFamily: heading }}>{ch.title}</span>
+                  {ch.note && <span style={{ fontSize: u(26), fontWeight: 700, color: c.muted }}>({ch.note})</span>}
+                  {ch.sub && <span style={{ fontSize: u(28), fontWeight: 800, color: ch.sub === L.included ? c.muted : c.primary }}>{ch.sub}</span>}
+                </span>
+              </button>
+            )) : choices.map((ch) => (
               <button key={ch.key} type="button" {...press(ch.pick)} data-testid={`flow-choice-${ch.key}`} aria-pressed={ch.on}
                 style={{ position: "relative", borderRadius: u(28), padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "stretch", textAlign: "center",
                   background: c.surface, color: c.text, border: `4px solid ${ch.on ? c.primary : "transparent"}`, minHeight: pictures ? undefined : u(190),
