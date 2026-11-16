@@ -7,6 +7,7 @@ import { useParams } from "react-router-dom";
 import { NailChoiceStep } from "./kiosk/NailChoiceStep";
 import { KioskMenuScreen } from "../components/kiosk/KioskMenuScreen";
 import { KioskOrderBoard } from "@/components/kiosk/KioskOrderBoard";
+import { KioskServiceFlow, planServiceFlow, type FlowPlan, type FlowResult } from "@/components/kiosk/KioskServiceFlow";
 import { KioskPictureScreen } from "../components/kiosk/KioskPictureScreen";
 import { KIOSK_LANGS, LangCode, translations, type KioskStrings } from "../lib/kioskTranslations";
 import {
@@ -39,7 +40,7 @@ import KioskSuspendedScreen from "../components/kiosk/KioskSuspendedScreen";
 import { keepSocketAlive } from "@/lib/ws-keepalive";
 type Screen =
   | "idle" | "phone" | "loading" | "welcome"
-  | "name_entry" | "service_type" | "services" | "service_options" | "menu" | "board"
+  | "name_entry" | "service_type" | "services" | "service_options" | "menu" | "board" | "service_flow"
   | "nail_size" | "nail_shape" | "nail_effects"
   | "addons" | "stylist" | "review" | "ticket"
   | "appointment_confirmed" | "error" | "wait_confirm" | "fully_booked"
@@ -500,6 +501,10 @@ function KioskCheckInScreens() {
   const [selectedOption, setSelectedOption]   = useState<ServiceOptionItem | null>(null);
   // Nail configuration (length / shape / effect) for fake-nail services
   const [nailCfg, setNailCfg]     = useState<NailConfig | null>(null);
+  // The Order Board's service workflow (components/kiosk/KioskServiceFlow.tsx): the service it is for and what it asks.
+  const [flow, setFlow] = useState<{ service: ServiceItem; plan: FlowPlan<ServiceItem, AddonItem>; nail: NailConfig | null } | null>(null);
+  /** The add-ons the workflow put on, taken off again when the client comes back to it. */
+  const flowAddedRef = useRef<number[]>([]);
   const [nailSize, setNailSize]   = useState<NailOption | null>(null);
   const [nailShape, setNailShape] = useState<NailOption | null>(null);
   const [nailEffect, setNailEffect] = useState<NailOption | null>(null); // null = "plain / no design"
@@ -1067,7 +1072,15 @@ function KioskCheckInScreens() {
   };
   const nailCfgHasOptions = (cfg: NailConfig | null) =>
     !!cfg?.enabled && !!(cfg.sizes?.length || cfg.shapes?.length || cfg.effects?.length);
+  // The Order Board asks its service workflow in place of the nail questions (owner, 2026-11-16).
+  const boardFlow = () => layout.menuMode !== "screens" && layout.servicesView === "board";
+  const planFor = (svc: ServiceItem, cfg: NailConfig | null, addons: AddonItem[] = selectedAddons) => planServiceFlow({
+    service: svc, nail: cfg, services: allServices, addons: allAddons, selected: selectedServices,
+    chosenAddonIds: addons.filter((a) => !flowAddedRef.current.includes(a.id)).map((a) => a.id),
+    settings: layout.serviceFlows, maxServices: layout.services.maxServices, maxVisitMinutes: layout.services.maxVisitMinutes,
+  });
   const stepApplies = (id: KioskStepId, svc: ServiceItem | undefined, cfg: NailConfig | null): boolean => {
+    if (id === "questions" && boardFlow()) return !!svc && planFor(svc, cfg).steps.length > 0;
     if (id === "questions") return nailCfgHasOptions(cfg);
     if (id === "addons") return addonsFor(svc).length > 0;
     if (id === "provider") return allStaff.length > 0;
@@ -1077,6 +1090,15 @@ function KioskCheckInScreens() {
 
   /** Shows a step. `backwards`: arriving from the step after it (questions open on their last screen). */
   const enterStep = (id: KioskStepId | "review" | null, svc: ServiceItem | undefined, cfg: NailConfig | null, backwards = false) => {
+    if (id === "questions" && svc && boardFlow()) {
+      kick();
+      // Coming back to it: what it put on comes off, and it asks again.
+      const kept = selectedAddons.filter((a) => !flowAddedRef.current.includes(a.id));
+      setSelectedAddons(kept);
+      flowAddedRef.current = [];
+      setFlow({ service: svc, plan: planFor(svc, cfg, kept), nail: cfg });
+      return setScreen("service_flow");
+    }
     if (id === "questions" && cfg) {
       kick();
       if (backwards) return setScreen(cfg.effects?.length ? "nail_effects" : cfg.shapes?.length ? "nail_shape" : "nail_size");
@@ -2243,6 +2265,41 @@ body *{cursor:default}`;
 
   // ── SERVICE TYPE PICKER ─────────────────────────────────────────────────────
   // ── ORDER BOARD (Order Board theme) ─────────────────────────────────────────
+  // ── SERVICE WORKFLOW (Order Board) ──────────────────────────────────────────
+  if (screen === "service_flow" && flow) {
+    const done = (r: FlowResult<ServiceItem, AddonItem>) => {
+      const old = flow.service;
+      // A mani-pedi takes the service's place; an added pedicure or manicure joins it.
+      const primary = r.swapTo ?? old;
+      const services = r.swapTo ? selectedServices.map((sv) => (sv.id === old.id ? r.swapTo! : sv))
+        : r.addService ? [...selectedServices, r.addService] : selectedServices;
+      setSel(services);
+      const kept = selectedAddons.map((a) => (r.swapTo && a.forServiceId === old.id ? { ...a, forServiceId: primary.id } : a));
+      const added = r.addAddons.filter((a) => !kept.some((x) => x.id === a.id)).map((a) => ({ ...a, forServiceId: primary.id }));
+      setSelectedAddons([...kept, ...added]);
+      flowAddedRef.current = added.map((a) => a.id);
+      const cfg = flow.nail;
+      setNailSize(cfg?.sizes.find((o) => o.nailVocabId === r.size?.nailVocabId) ?? null);
+      setNailShape(cfg?.shapes.find((o) => o.nailVocabId === r.shape?.nailVocabId) ?? null);
+      setNailEffect(cfg?.effects.find((o) => o.nailVocabId === r.effect?.nailVocabId) ?? null);
+      advance("questions", primary, cfg);
+    };
+    return (
+      <KioskServiceFlow
+        key={`${flow.service.id}-${flow.plan.steps.join(",")}`}
+        service={flow.service} plan={flow.plan} nail={flow.nail}
+        colors={{ primary: PRIMARY, bg: BG, surface: SURFACE, text: TEXT, muted: MUTED, border: BORDER, selected: layout.theme.colors.selected ?? PRIMARY_S, tint: TINT }}
+        showPrice={showPrice} serif={NAIL_LOOK}
+        labels={{ back: t.backBtn.replace(/^[←‹<]\s*/, ""), noThanks: t.noThanks, length: tx("questionLength"), shape: tx("questionShape"), design: tx("questionDesign"),
+          onNowTitle: t.onNowTitle, onNowToesTitle: t.onNowToesTitle, onNowNothing: t.onNowNothing, onNowPolish: t.onNowPolish, onNowGel: t.onNowGel,
+          onNowEnhancement: t.onNowEnhancement, removalPrice: t.removalPrice, polishTitle: t.polishTitle, included: t.included, noDesign: t.noDesign,
+          addPedicureTitle: t.addPedicureTitle, addManicureTitle: t.addManicureTitle, upgradeTitle: t.upgradeTitle, yesAddIt: t.yesAddIt, pitch: t.pitch }}
+        onBack={() => goBack("questions")}
+        onDone={done}
+      />
+    );
+  }
+
   if (screen === "board") {
     const catImgs = kioskConfig?.categoryImages ?? {};
     const descs = kioskConfig?.categoryDescriptions ?? {};
@@ -3075,10 +3132,10 @@ body *{cursor:default}`;
 
   // ── SUMMARY — what the ticket will say, before it is made ───────────────────
   if (screen === "review") {
-    const svc = selectedServices[0];
     const nailLines = [nailSize, nailShape, nailEffect].filter((o): o is NailOption => !!o);
-    const lines: { label: string; price: number }[] = [
-      ...(svc ? [{ label: svc.name, price: svc.price }] : []),
+    // Every chosen service (a second one was left off before, 2026-11-16), then the nail choices and add-ons.
+    const lines: { label: string; price: number; main?: boolean }[] = [
+      ...selectedServices.map((sv) => ({ label: sv.name, price: sv.price, main: true })),
       ...nailLines.map((o) => ({ label: o.name, price: o.priceAdjustment })),
       ...selectedAddons.map((a) => ({ label: a.name, price: a.price })),
     ];
@@ -3095,8 +3152,8 @@ body *{cursor:default}`;
           <div className={`max-w-2xl mx-auto ${NAIL_LOOK ? "" : "rounded-3xl"}`} style={{ background: SURFACE, border: `1px solid ${NAIL_LOOK ? PRIMARY : BORDER}`, boxShadow: NAIL_LOOK ? "none" : SHADOW, padding: "clamp(18px, 3vh, 30px) clamp(20px, 3vw, 36px)" }}>
             {lines.map((l, i) => (
               <div key={i} className="flex items-baseline justify-between gap-6" style={{ padding: "10px 0", borderBottom: `1px solid ${BORDER}` }}>
-                <span className={i === 0 ? "font-black" : "font-semibold"} style={{ color: TEXT, fontSize: i === 0 ? 26 : 20 }}>{i === 0 ? l.label : `+ ${l.label}`}</span>
-                {showPrice && (i === 0 || l.price !== 0) && <span className="font-bold tabular-nums" style={{ color: TEXT, fontSize: i === 0 ? 24 : 20 }}>{i === 0 ? fmtPrice(l.price) : `${l.price < 0 ? "−" : "+"}${fmtPrice(Math.abs(l.price))}`}</span>}
+                <span className={l.main ? "font-black" : "font-semibold"} style={{ color: TEXT, fontSize: l.main ? 26 : 20 }}>{l.main ? l.label : `+ ${l.label}`}</span>
+                {showPrice && (l.main || l.price !== 0) && <span className="font-bold tabular-nums" style={{ color: TEXT, fontSize: l.main ? 24 : 20 }}>{l.main ? fmtPrice(l.price) : `${l.price < 0 ? "−" : "+"}${fmtPrice(Math.abs(l.price))}`}</span>}
               </div>
             ))}
             <div className="flex items-baseline justify-between gap-6" style={{ padding: "10px 0", borderBottom: showPrice ? `1px solid ${BORDER}` : "none" }}>

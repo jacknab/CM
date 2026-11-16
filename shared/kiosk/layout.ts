@@ -11,6 +11,7 @@
 
 import { isBusinessTypeKey, type BusinessTypeKey } from "./businessTypes";
 import { KIOSK_LANG_CODES, kioskTextKey, type KioskLang, type KioskText } from "./text";
+import { normalizeServiceFlows, type ServiceFlowSettings } from "./serviceFlows";
 
 export const KIOSK_LAYOUT_SCHEMA_VERSION = 1;
 
@@ -304,6 +305,11 @@ export interface KioskLayout {
    * Continue waits until one is chosen. Compared without case.
    */
   requiredGroups: string[];
+  /**
+   * The Order Board's service workflows (shared/kiosk/serviceFlows.ts; owner, 2026-11-16): per kind of service, the
+   * owner's own upgrade and its words. A kind not here gets Certxa's pick.
+   */
+  serviceFlows: ServiceFlowSettings;
 }
 
 export const KIOSK_LIMITS = {
@@ -329,6 +335,7 @@ export const KIOSK_DEFAULTS: Omit<KioskLayout, "preset"> = {
   workflows: [],
   menus: [],
   requiredGroups: [],
+  serviceFlows: {},
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -580,6 +587,7 @@ export function normalizeKioskLayout(raw: unknown, fallbackPreset: BusinessTypeK
     })(),
     requiredGroups: normalizeGroupNames(r.requiredGroups),
     servicesView: r.servicesView === "board" ? "board" : "cards",
+    serviceFlows: normalizeServiceFlows(r.serviceFlows),
     screenPictures: Object.fromEntries(KIOSK_SCREEN_PICTURE_KEYS.flatMap((k) => (isKioskImageUrl(r.screenPictures?.[k]) ? [[k, r.screenPictures[k]]] : []))),
   };
 }

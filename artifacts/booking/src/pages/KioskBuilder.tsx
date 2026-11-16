@@ -25,6 +25,7 @@ import {
 } from "@shared/kiosk/layout";
 import type { BusinessType } from "@shared/kiosk/businessTypes";
 import { KIOSK_LANG_CODES, type KioskLang, type KioskTextKey } from "@shared/kiosk/text";
+import { SERVICE_KINDS, SERVICE_FLOW_PITCH_MAX } from "@shared/kiosk/serviceFlows";
 import type { KioskPreviewTarget } from "@/pages/KioskCheckIn";
 import { ScreensPanel } from "@/pages/kiosk-builder/ScreensPanel";
 import "@/pages/kiosk-builder/kxDark.css";
@@ -211,11 +212,12 @@ export default function KioskBuilder() {
     }).catch((e) => setLoadError(e.message));
   }, [id]);
   useEffect(() => {
-    if (!slug || !editingOwn || catalog) return;
+    // Own screens need the services; the order board's upgrade offers need the add-ons.
+    if (!slug || !(editingOwn || (scr === "services" && draft?.servicesView === "board")) || catalog) return;
     api<any>(`/api/public/kiosk/${slug}/config?preview=config-${id}`)
       .then((d) => setCatalog({ services: d.services ?? [], categories: d.categories ?? [], addons: d.addons ?? [], storeName: d.store?.name ?? "" }))
       .catch((e) => toast({ title: "Couldn't load your services", description: e.message, variant: "destructive" }));
-  }, [slug, editingOwn, catalog, toast, id]);
+  }, [slug, editingOwn, catalog, toast, id, scr, draft?.servicesView]);
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       const fd = new FormData();
@@ -763,9 +765,43 @@ export default function KioskBuilder() {
               <Field id="smart" focus={focus} title="Suggestions">
                 <Row label="Suggest a returning client's usual service"><Switch checked={draft.smartCheckin} onCheckedChange={(v) => update((d) => ({ ...d, smartCheckin: v }))} /></Row>
               </Field>
-              <Field id="questions" focus={focus} title="Nail questions" about="Length, shape and design, for services set up in Catalog › Nail Config.">
+              <Field id="questions" focus={focus} title={draft.servicesView === "board" ? "Service questions" : "Nail questions"}
+                about={draft.servicesView === "board"
+                  ? "Questions for each kind of service: length, shape and design (Catalog › Nail Config), what's on their nails now, polish, adding a pedicure or manicure, then one upgrade."
+                  : "Length, shape and design, for services set up in Catalog › Nail Config."}>
                 {showSwitch("questions", "Ask them after the service")}
               </Field>
+              {draft.servicesView === "board" && (
+                <Field id="upgrades" focus={focus} title="Upgrade offers"
+                  about="The last question offers one add-on with a line on what it does for them. Certxa picks one from your add-ons for each kind of service; choose your own here.">
+                  {!catalog ? <div className="flex items-center gap-2 text-slate-500 py-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading your add-ons…</div> : SERVICE_KINDS.map(({ key, name }) => {
+                    const own = draft.serviceFlows[key];
+                    const value = !own ? "certxa" : own.upgradeAddonId == null ? "none" : String(own.upgradeAddonId);
+                    const setOwn = (next: { upgradeAddonId: number | null; pitch: string } | null) => update((d) => {
+                      const flows = { ...d.serviceFlows };
+                      if (next) flows[key] = next; else delete flows[key];
+                      return { ...d, serviceFlows: flows };
+                    });
+                    return (
+                      <div key={key} className="py-2 border-b border-slate-100 last:border-0" data-testid={`upgrade-${key}`}>
+                        <Row label={name}>
+                          <select className={selectClass} value={value}
+                            onChange={(e) => { const v = e.target.value; setOwn(v === "certxa" ? null : { upgradeAddonId: v === "none" ? null : Number(v), pitch: own?.pitch ?? "" }); }}>
+                            <option value="certxa">Certxa's pick</option>
+                            <option value="none">No offer</option>
+                            {catalog.addons.filter((a) => !a.kioskExtra).map((a) => <option key={a.id} value={a.id}>{a.name} (${Number(a.price).toFixed(2)})</option>)}
+                          </select>
+                        </Row>
+                        {own?.upgradeAddonId != null && (
+                          <input className="mt-1 w-full rounded-md border border-slate-200 px-3 h-9 text-sm" maxLength={SERVICE_FLOW_PITCH_MAX}
+                            placeholder="What it does for them (empty: Certxa's words)" value={own.pitch}
+                            onChange={(e) => setOwn({ upgradeAddonId: own.upgradeAddonId, pitch: e.target.value })} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </Field>
+              )}
             </>),
             addons: (<>
               {screenPictureField("addons")}
