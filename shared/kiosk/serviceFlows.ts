@@ -2,7 +2,7 @@
  * Service workflows on the kiosk's Order Board (owner, 2026-11-16): after a client chooses a service, questions made
  * for that kind of service, then one upgrade offered with a line on what it does for them.
  *
- *   Acrylic, Gel X, hard gel, dip: length → shape → what's on the nails now → design → upgrade
+ *   Acrylic, Gel X, hard gel, dip: shape → length (that shape at each length) → what's on the nails now → design → upgrade
  *   Manicure:                      what's on now → polish → design → add a pedicure? → upgrade
  *   Pedicure:                      what's on now → polish → add a manicure? → upgrade
  *   Mani-pedi:                     what's on now → polish → upgrade
@@ -26,7 +26,7 @@ export const SERVICE_KINDS: Array<{ key: ServiceKind; name: string }> = [
 
 export type FlowStep = "length" | "shape" | "onNow" | "polish" | "design" | "crossSell" | "upgrade";
 export const FLOW_STEPS: Record<ServiceKind, FlowStep[]> = {
-  enhancement: ["length", "shape", "onNow", "design", "upgrade"],
+  enhancement: ["shape", "length", "onNow", "design", "upgrade"],
   manicure: ["onNow", "polish", "design", "crossSell", "upgrade"],
   pedicure: ["onNow", "polish", "crossSell", "upgrade"],
   manipedi: ["onNow", "polish", "upgrade"],

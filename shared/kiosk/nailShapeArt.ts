@@ -29,6 +29,36 @@ export const nailShapeArtUrl = (name: string): string | null => {
   return key ? `/kiosk-art/nail-shapes/${key}.webp` : null;
 };
 
+/**
+ * Each shape at every length (owner, 2026-11-16): public/kiosk-art/nail-lengths/<shape>/<xxs|xs|s|m|l|xl>.webp,
+ * 512×768, all drawn to one scale on one baseline so the lengths compare. Shapes get a set as the pictures arrive.
+ */
+export type NailLengthArtKey = "xxs" | "xs" | "s" | "m" | "l" | "xl";
+const LENGTH_SETS: NailShapeArtKey[] = ["coffin-ballerina", "almond", "stiletto", "square", "round", "oval-coffin"];
+/** Most specific first: "XXS" before "XS" before "S"; "XXL" has no picture. */
+const LENGTH_RULES: Array<[RegExp, NailLengthArtKey | null]> = [
+  [/\bxxs\b|extra[\s-]*extra[\s-]*short/, "xxs"],
+  [/\bxs\b|extra[\s-]*short/, "xs"],
+  [/\bxxl\b|extra[\s-]*extra[\s-]*long/, null],
+  [/\bxl\b|extra[\s-]*long/, "xl"],
+  [/\bs\b|short/, "s"],
+  [/\bm\b|medium/, "m"],
+  [/\bl\b|long/, "l"],
+];
+export const nailLengthArtKey = (sizeName: string): NailLengthArtKey | null => {
+  const hit = LENGTH_RULES.find(([re]) => re.test(sizeName.toLowerCase()));
+  return hit ? hit[1] : null;
+};
+/** The picture of this shape at this length; null when the shape has no set yet or the length has no picture. */
+export function nailLengthArtUrl(shapeName: string | null | undefined, sizeName: string): string | null {
+  const shape = shapeName ? nailShapeArtKey(shapeName) : null;
+  const len = nailLengthArtKey(sizeName);
+  return shape && len && LENGTH_SETS.includes(shape) ? `/kiosk-art/nail-lengths/${shape}/${len}.webp` : null;
+}
+
+/** One of these pictures (tall and transparent: shown whole, never cropped to fill a card). */
+export const isNailShapeArt = (url: string | null | undefined): boolean => !!url && /\/kiosk-art\/nail-(shapes|lengths)\//.test(url);
+
 /** "Shape: Coffin (Ballerina)" → { title: "Coffin", note: "Ballerina" }. */
 export function nailShapeLabel(addonName: string): { title: string; note: string | null } {
   const bare = addonName.replace(SHAPE_ADDON, "").trim();

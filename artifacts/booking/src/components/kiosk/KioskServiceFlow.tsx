@@ -10,7 +10,7 @@ import {
   FLOW_STEPS, ENHANCEMENT_REMOVAL, GEL_POLISH, GEL_REMOVAL, addonsForService, isFill, pickUpgrade, serviceKind, upgradeFamily,
   type FlowStep, type OnNow, type ServiceFlowSettings, type ServiceKind, type UpgradeFamily,
 } from "@shared/kiosk/serviceFlows";
-import { SHAPE_ADDON, nailShapeArtUrl, nailShapeLabel, sortNailShapes } from "@shared/kiosk/nailShapeArt";
+import { SHAPE_ADDON, isNailShapeArt, nailLengthArtUrl, nailShapeArtUrl, nailShapeLabel, sortNailShapes } from "@shared/kiosk/nailShapeArt";
 import type { BoardColors } from "./KioskOrderBoard";
 
 export interface FlowService { id: number; name: string; category: string; price: number; duration: number; imageUrl?: string | null; optionCount?: number }
@@ -150,7 +150,13 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
 
   let title = "";
   let choices: Choice[] = [];
-  if (step === "length") { title = L.length; choices = nailChoices(p.nail?.sizes ?? [], size, setSize); }
+  if (step === "length") {
+    title = L.length;
+    // The shape they just chose, drawn at each length (owner, 2026-11-16), when that shape has its pictures.
+    const shapeName = ans.current.shapeAddon?.name ?? ans.current.shape?.name ?? null;
+    choices = nailChoices(p.nail?.sizes ?? [], size, setSize).map((ch, i) => ({ ...ch, art: nailLengthArtUrl(shapeName, (p.nail?.sizes ?? [])[i]?.name ?? "") }));
+  }
+  const lengthCards = step === "length" && choices.some((ch) => ch.art);
   const shapeCards = step === "shape" && plan.shapeAddons.length > 0;
   if (step === "shape") {
     title = L.shape;
@@ -223,7 +229,18 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
         <>
           <h2 data-testid="flow-title" style={{ margin: 0, padding: `${u(16)} ${u(56)} ${u(32)}`, textAlign: "center", fontSize: u(56), fontWeight: 900, lineHeight: 1.1, fontFamily: heading }}>{title}</h2>
           <div style={{ scrollbarWidth: "none", flex: 1, minHeight: u(0), overflowY: "auto", padding: `${u(6)} ${u(48)} ${u(24)}`, display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: u(22), alignContent: "start" }}>
-            {shapeCards ? choices.map((ch) => (
+            {lengthCards ? choices.map((ch) => (
+              <button key={ch.key} type="button" {...press(ch.pick)} data-testid={`flow-choice-${ch.key}`} aria-pressed={ch.on}
+                style={{ position: "relative", borderRadius: u(28), padding: `${u(16)} ${u(12)} ${u(18)}`, overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", gap: u(8),
+                  background: c.surface, color: c.text, border: `4px solid ${ch.on ? c.primary : "transparent"}`,
+                  boxShadow: ch.on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
+                <span style={{ width: "100%", aspectRatio: "2 / 3", display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+                  {ch.art && <img src={ch.art} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain", objectPosition: "bottom", display: "block" }} />}
+                </span>
+                <span style={{ fontSize: u(34), fontWeight: 900, lineHeight: 1.1, fontFamily: heading }}>{ch.title}</span>
+                {ch.sub && <span style={{ fontSize: u(26), fontWeight: 800, color: c.primary }}>{ch.sub}</span>}
+              </button>
+            )) : shapeCards ? choices.map((ch) => (
               <button key={ch.key} type="button" {...press(ch.pick)} data-testid={`flow-choice-${ch.key}`} aria-pressed={ch.on}
                 style={{ position: "relative", borderRadius: u(28), padding: `${u(14)} ${u(18)} 0`, overflow: "hidden", display: "flex", alignItems: "stretch", gap: u(12), textAlign: "left",
                   minHeight: u(300), background: c.surface, color: c.text, border: `4px solid ${ch.on ? c.primary : "transparent"}`,
@@ -243,7 +260,8 @@ export function KioskServiceFlow<S extends FlowService, A extends FlowAddon>(p: 
                   background: c.surface, color: c.text, border: `4px solid ${ch.on ? c.primary : "transparent"}`, minHeight: pictures ? undefined : u(190),
                   boxShadow: ch.on ? `0 0 0 4px ${c.primary}26, 0 10px 24px rgba(15,23,42,.12)` : "0 6px 18px rgba(15,23,42,.10)" }}>
                 {pictures && (ch.imageUrl
-                  ? <img src={ch.imageUrl} alt="" draggable={false} style={{ width: "100%", aspectRatio: "4 / 3", objectFit: "cover", display: "block" }} />
+                  ? <img src={ch.imageUrl} alt="" draggable={false} style={{ width: "100%", aspectRatio: "4 / 3", display: "block",
+                      ...(isNailShapeArt(ch.imageUrl) ? { objectFit: "contain", objectPosition: "bottom", paddingTop: u(12) } : { objectFit: "cover" }) }} />
                   : <div style={{ width: "100%", aspectRatio: "4 / 3", display: "grid", placeItems: "center", background: c.tint }}>
                       {ch.swatch && <span style={{ width: u(110), height: u(110), borderRadius: "50%", background: ch.swatch, border: "4px solid #fff", boxShadow: "0 4px 12px rgba(0,0,0,.15)" }} />}
                     </div>)}

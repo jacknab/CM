@@ -16,6 +16,7 @@ import {
 } from "@shared/kiosk/layout";
 import { isBusinessTypeKey } from "@shared/kiosk/businessTypes";
 import { nailCategoryIconUrl } from "@shared/kiosk/nailCategoryIcons";
+import { isNailShapeArt } from "@shared/kiosk/nailShapeArt";
 import { fillKioskText, resolveKioskText, type KioskText } from "@shared/kiosk/text";
 import { isValidNanpPrefix } from "../lib/phone-validation";
 import { useShake } from "../hooks/use-shake";
@@ -3114,7 +3115,8 @@ body *{cursor:default}`;
                   }}>
                   <div className="w-full flex-shrink-0" style={{ height: 150 }}>
                     {o?.imageUrl ? (
-                      <img src={o.imageUrl} alt={o.name} className="w-full h-full object-cover" loading="lazy" />
+                      <img src={o.imageUrl} alt={o.name} loading="lazy"
+                        className={isNailShapeArt(o.imageUrl) ? "w-full h-full object-contain object-bottom pt-2" : "w-full h-full object-cover"} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center"
                         style={{ background: o?.swatchHex || (isSel ? `${PRIMARY}12` : TINT) }}>
