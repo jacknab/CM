@@ -25903,6 +25903,20 @@ or
         ORDER BY a.name
       `, [store.id]);
 
+      // The add-ons each service gets through its Add-on Groups, in group order: the Order Board kiosk offers only these.
+      const { rows: groupAddonRows } = await pool.query(`
+        SELECT sag.service_id AS "serviceId", agi.addon_id AS "addonId"
+          FROM service_addon_groups sag
+          JOIN addon_groups ag ON ag.id = sag.group_id AND ag.store_id = $1
+          JOIN addon_group_items agi ON agi.group_id = ag.id
+         ORDER BY sag.service_id, ag.sort_order, ag.id, agi.sort_order, agi.id
+      `, [store.id]);
+      const serviceGroupAddons: Record<number, number[]> = {};
+      for (const r of groupAddonRows) {
+        const list = (serviceGroupAddons[r.serviceId] ??= []);
+        if (!list.includes(r.addonId)) list.push(r.addonId);
+      }
+
       // Fetch all active service options for this store's services
       const serviceIds = resolvedServices.map(s => s.id);
       const serviceOptionsMap: Record<number, Array<{ id: number; name: string; description: string | null; durationMinutes: number; price: number; isDefault: boolean; displayOrder: number }>> = {};
@@ -25941,6 +25955,7 @@ or
         staffServiceIds,
         busyStaffIds,
         addons: addonRows,
+        serviceGroupAddons,
         kioskEnabled: true,
         welcomeHeadline: ks.welcomeHeadline ?? null,
         welcomeSubText: ks.welcomeSubText ?? null,

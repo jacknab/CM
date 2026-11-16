@@ -497,6 +497,7 @@ function KioskCheckInScreens() {
   const [staffServiceIds, setStaffServiceIds] = useState<Record<number, number[]>>({});
   const [lang, setLang]                       = useState<LangCode>("en");
   const [serviceOptionsMap, setServiceOptionsMap] = useState<Record<number, ServiceOptionItem[]>>({});
+  const [serviceGroupAddons, setServiceGroupAddons] = useState<Record<number, number[]>>({});
   const [parentServiceForOptions, setParentServiceForOptions] = useState<ServiceItem | null>(null);
   const [selectedOption, setSelectedOption]   = useState<ServiceOptionItem | null>(null);
   // Nail configuration (length / shape / effect) for fake-nail services
@@ -552,6 +553,7 @@ function KioskCheckInScreens() {
     // Whether a check-in slip prints (front desk setup → Printing).
     if (d.checkinSlip === "auto" || d.checkinSlip === "none") setPrintSettings({ checkinSlip: d.checkinSlip });
     setServiceOptionsMap(d.serviceOptionsMap ?? {});
+    setServiceGroupAddons(d.serviceGroupAddons ?? {});
     // The kiosk layout. A config kept from before the Kiosk Builder has none: nail salons had the nail look.
     const next = d.layout
       ? normalizeKioskLayout(d.layout, isBusinessTypeKey(d.businessType) ? d.businessType : "other")
@@ -970,8 +972,13 @@ function KioskCheckInScreens() {
   // After the services come the layout's own steps, in its order: questions (a nail service's length, shape
   // and design), add-ons, and who does it. A step with nothing to show for this client is passed over.
   const nailCfgRef = useRef<NailConfig | null>(null);
-  const addonsFor = (svc: ServiceItem | undefined) =>
-    svc ? allAddons.filter((a) => !a.kioskExtra && (a.serviceIds.length === 0 || a.serviceIds.includes(svc.id))) : [];
+  // The Order Board offers only the add-ons of the service's Add-on Groups, and no add-ons screen without one (owner, 2026-11-16).
+  const addonsFor = (svc: ServiceItem | undefined) => {
+    if (!svc) return [];
+    if (layout.menuMode !== "screens" && layout.servicesView === "board")
+      return (serviceGroupAddons[svc.id] ?? []).map((id) => allAddons.find((a) => a.id === id)).filter((a): a is AddonItem => !!a && !a.kioskExtra);
+    return allAddons.filter((a) => !a.kioskExtra && (a.serviceIds.length === 0 || a.serviceIds.includes(svc.id)));
+  };
   /**
    * An add-on or Kiosk Extra tapped on one of the business's own screens: added to the chosen service, or taken off
    * if it was on. A Kiosk Extra in a group (say "Nail shape") replaces the one already chosen from that group.
